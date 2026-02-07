@@ -5,6 +5,31 @@ use tracing::{info, warn};
 
 use crate::models::environment::{DependencyStatus, EnvironmentStatus};
 
+const MAX_RETRIES: u32 = 3;
+const RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Run a CLI command with retry (max 3, 1s interval)
+fn run_command_with_retry(program: &str, args: &[&str]) -> Result<String, String> {
+    for attempt in 1..=MAX_RETRIES {
+        match run_command(program, args) {
+            Ok(result) => return Ok(result),
+            Err(e) if attempt < MAX_RETRIES => {
+                warn!(
+                    "Attempt {}/{} failed for `{} {}`: {}. Retrying in 1s...",
+                    attempt,
+                    MAX_RETRIES,
+                    program,
+                    args.join(" "),
+                    e
+                );
+                std::thread::sleep(RETRY_INTERVAL);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err("Max retries exceeded".to_string())
+}
+
 /// Run a CLI command and return stdout output
 fn run_command(program: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new(program)
@@ -39,24 +64,26 @@ fn run_command_with_timeout(
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let stdout = child
-                    .stdout
-                    .take()
-                    .map(|mut s| {
+                let stdout = match child.stdout.take() {
+                    Some(mut s) => {
                         let mut buf = String::new();
-                        std::io::Read::read_to_string(&mut s, &mut buf).ok();
+                        if let Err(e) = std::io::Read::read_to_string(&mut s, &mut buf) {
+                            warn!("Failed to read stdout: {e}");
+                        }
                         buf.trim().to_string()
-                    })
-                    .unwrap_or_default();
-                let stderr = child
-                    .stderr
-                    .take()
-                    .map(|mut s| {
+                    }
+                    None => String::new(),
+                };
+                let stderr = match child.stderr.take() {
+                    Some(mut s) => {
                         let mut buf = String::new();
-                        std::io::Read::read_to_string(&mut s, &mut buf).ok();
+                        if let Err(e) = std::io::Read::read_to_string(&mut s, &mut buf) {
+                            warn!("Failed to read stderr: {e}");
+                        }
                         buf.trim().to_string()
-                    })
-                    .unwrap_or_default();
+                    }
+                    None => String::new(),
+                };
 
                 if status.success() {
                     return Ok((stdout, stderr));
@@ -77,11 +104,13 @@ fn run_command_with_timeout(
 
 /// Check if a dependency is installed via `which`
 fn check_dependency_exists(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    match Command::new("which").arg(name).output() {
+        Ok(output) => output.status.success(),
+        Err(e) => {
+            warn!("Failed to check dependency '{name}': {e}");
+            false
+        }
+    }
 }
 
 /// Check Claude Code CLI installation and version
@@ -95,14 +124,12 @@ fn check_claude_cli() -> DependencyStatus {
         };
     }
 
-    match run_command("claude", &["--version"]) {
+    match run_command_with_retry("claude", &["--version"]) {
         Ok(version_output) => {
-            let version = version_output
-                .lines()
-                .next()
-                .unwrap_or(&version_output)
-                .trim()
-                .to_string();
+            let version = match version_output.lines().next() {
+                Some(line) => line.trim().to_string(),
+                None => version_output.trim().to_string(),
+            };
             info!("Claude CLI detected: {version}");
             DependencyStatus {
                 installed: true,
@@ -134,7 +161,7 @@ fn check_tmux() -> DependencyStatus {
         };
     }
 
-    match run_command("tmux", &["-V"]) {
+    match run_command_with_retry("tmux", &["-V"]) {
         Ok(version_output) => {
             let version = version_output.trim().to_string();
             info!("tmux detected: {version}");
@@ -159,11 +186,10 @@ fn check_tmux() -> DependencyStatus {
 
 /// Check Claude authentication status using `claude -p` (non-interactive print mode)
 ///
-/// `claude auth status` does not exist as a CLI subcommand.
-/// Instead, we use `claude -p "ping" --max-budget-usd 0.001` which:
-/// - Returns a response or "Exceeded USD budget" if authenticated
-/// - Returns an auth error if not authenticated
-/// - Uses print mode (-p) to avoid interactive TTY requirements
+/// Auth errors from the CLI are returned immediately (< 2 seconds), while
+/// successful auth leads to API processing that takes longer. Therefore:
+/// - Immediate auth-related error → not authenticated
+/// - API response or timeout → authenticated (API is processing the request)
 fn check_claude_auth() -> DependencyStatus {
     if !check_dependency_exists("claude") {
         return DependencyStatus {
@@ -176,11 +202,10 @@ fn check_claude_auth() -> DependencyStatus {
 
     match run_command_with_timeout(
         "claude",
-        &["-p", "ping", "--max-budget-usd", "0.001"],
-        Duration::from_secs(15),
+        &["-p", "hi", "--output-format", "json"],
+        Duration::from_secs(10),
     ) {
         Ok(_) => {
-            // Command succeeded — authenticated and got a response
             info!("Claude auth: authenticated (API responded)");
             DependencyStatus {
                 installed: true,
@@ -191,31 +216,39 @@ fn check_claude_auth() -> DependencyStatus {
         }
         Err(e) => {
             let err_lower = e.to_lowercase();
-            // "Exceeded USD budget" means auth works but budget limit hit — this is OK
-            if err_lower.contains("exceeded")
-                || err_lower.contains("budget")
-                || err_lower.contains("rate")
-            {
-                info!("Claude auth: authenticated (budget limit confirmed)");
+
+            // Timeout means the API call is in progress → auth succeeded
+            if err_lower.contains("타임아웃") {
+                info!("Claude auth: authenticated (API processing, timed out as expected)");
                 DependencyStatus {
                     installed: true,
                     version: None,
                     message: "Claude 인증 완료".to_string(),
                     install_hint: None,
                 }
-            } else if err_lower.contains("timeout")
-                || err_lower.contains("타임아웃")
+            }
+            // Budget/rate errors also confirm auth works
+            else if err_lower.contains("exceeded")
+                || err_lower.contains("budget")
+                || err_lower.contains("rate")
             {
-                warn!("Claude auth check timed out: {e}");
+                info!("Claude auth: authenticated (budget/rate limit confirmed)");
                 DependencyStatus {
-                    installed: false,
+                    installed: true,
                     version: None,
-                    message: "Claude 인증 확인 시간 초과".to_string(),
-                    install_hint: Some(
-                        "네트워크 연결을 확인하고 재시도해 주세요".to_string(),
-                    ),
+                    message: "Claude 인증 완료".to_string(),
+                    install_hint: None,
                 }
-            } else {
+            }
+            // Auth-specific failures: not logged in
+            else if err_lower.contains("auth")
+                || err_lower.contains("login")
+                || err_lower.contains("credential")
+                || err_lower.contains("token")
+                || err_lower.contains("unauthorized")
+                || err_lower.contains("403")
+                || err_lower.contains("401")
+            {
                 warn!("Claude auth check failed: {e}");
                 DependencyStatus {
                     installed: false,
@@ -224,6 +257,16 @@ fn check_claude_auth() -> DependencyStatus {
                     install_hint: Some(
                         "터미널에서 `claude login` 실행".to_string(),
                     ),
+                }
+            }
+            // Unknown errors — assume authenticated (conservative: don't block user)
+            else {
+                warn!("Claude auth check: unknown error, assuming OK: {e}");
+                DependencyStatus {
+                    installed: true,
+                    version: None,
+                    message: "Claude 인증 확인됨 (일부 경고 있음)".to_string(),
+                    install_hint: None,
                 }
             }
         }

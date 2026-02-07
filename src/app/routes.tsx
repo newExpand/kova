@@ -11,6 +11,7 @@ import {
   ProjectEditForm,
   useProjects,
   useProjectStore,
+  type ProjectStatus,
 } from '@/features/project';
 import { UndoToast } from '@/features/project/components/UndoToast';
 import { CommandPalette } from '@/components/layout/CommandPalette';
@@ -185,7 +186,7 @@ function AppContent() {
     id: p.id,
     name: p.name,
     colorIndex: p.colorIndex,
-    status: 'idle' as string,
+    status: 'idle' as ProjectStatus,
   }));
 
   return (

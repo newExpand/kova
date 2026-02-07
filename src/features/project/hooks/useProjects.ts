@@ -1,62 +1,69 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
-import type { Project, CreateProjectInput, UpdateProjectInput } from '../types';
+import type { CreateProjectInput, UpdateProjectInput } from '../types';
 import * as commands from '@/lib/tauri/commands';
 
 export function useProjects() {
   const {
     projects,
     isLoading,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isRestoring,
     error,
     setProjects,
     setLoading,
+    setCreating,
+    setUpdating,
+    setDeleting,
+    setRestoring,
     setError,
   } = useProjectStore();
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
       const result = await commands.listProjects();
-      setProjects(result as Project[]);
+      setProjects(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : '프로젝트 목록을 불러오는데 실패했습니다.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [setLoading, setError, setProjects]);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
 
   const createProject = async (input: CreateProjectInput) => {
     const tempId = `temp-${Date.now()}`;
 
     // Optimistic update
     useProjectStore.getState().addProjectOptimistic(input, tempId);
+    setCreating(true);
 
     try {
       const realId = await commands.createProject(input.name, input.path);
 
-      // 실제 프로젝트 정보 가져오기
       const project = await commands.getProject(realId);
       if (project) {
-        useProjectStore.getState().confirmOptimistic(tempId, realId, project as Project);
+        useProjectStore.getState().confirmOptimistic(tempId, realId, project);
       } else {
-        // 생성은 성공했지만 조회 실패 - 전체 리로드
         await loadProjects();
       }
     } catch (err) {
-      // Rollback on failure
       useProjectStore.getState().rollbackOptimistic(tempId);
       throw err;
+    } finally {
+      setCreating(false);
     }
   };
 
   const updateProject = async (id: string, input: UpdateProjectInput) => {
-    // 기존 프로젝트 백업
     const original = useProjectStore.getState().getProjectById(id);
     if (!original) {
       throw new Error('프로젝트를 찾을 수 없습니다.');
@@ -64,14 +71,16 @@ export function useProjects() {
 
     // Optimistic update
     useProjectStore.getState().updateProject(id, input);
+    setUpdating(true);
 
     try {
       const updated = await commands.updateProject(id, input);
-      useProjectStore.getState().updateProject(id, updated as Project);
+      useProjectStore.getState().updateProject(id, updated);
     } catch (err) {
-      // Rollback
       useProjectStore.getState().updateProject(id, original);
       throw err;
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -81,13 +90,15 @@ export function useProjects() {
       throw new Error('프로젝트를 찾을 수 없습니다.');
     }
 
-    // 5초 undo 윈도우 시작
+    setDeleting(true);
+
     const confirmDelete = async () => {
       try {
         await commands.deleteProject(id);
-      } catch (err) {
-        // 실패 시 프로젝트 복원
+      } catch {
         useProjectStore.getState().addProject(project);
+      } finally {
+        setDeleting(false);
       }
     };
 
@@ -96,18 +107,23 @@ export function useProjects() {
   };
 
   const restoreProject = async (id: string) => {
+    setRestoring(true);
     try {
       const restored = await commands.restoreProject(id);
-      useProjectStore.getState().addProject(restored as Project);
+      useProjectStore.getState().addProject(restored);
       useProjectStore.getState().cancelDeletion(id);
-    } catch (err) {
-      throw err;
+    } finally {
+      setRestoring(false);
     }
   };
 
   return {
     projects,
     isLoading,
+    isCreating,
+    isUpdating,
+    isDeleting,
+    isRestoring,
     error,
     loadProjects,
     createProject,

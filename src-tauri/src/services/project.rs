@@ -39,7 +39,7 @@ pub fn create_project(conn: &Connection, name: String, path: String) -> Result<S
 
     conn.execute(
         "INSERT INTO projects (id, name, path, color_index, is_active, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, 1, datetime('now'), datetime('now'))",
+         VALUES (?1, ?2, ?3, ?4, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
         rusqlite::params![id, name, path, color_index],
     )?;
 
@@ -169,7 +169,7 @@ pub fn update_project(
     }
 
     // 동적 쿼리 빌드 (명시적 파라미터 인덱싱)
-    let mut query = String::from("UPDATE projects SET updated_at = datetime('now')");
+    let mut query = String::from("UPDATE projects SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![];
     let mut idx = 1u32;
 
@@ -222,7 +222,7 @@ pub fn update_project(
 /// - 프로젝트가 존재하지 않으면 `AppError::NotFound`
 pub fn delete_project(conn: &Connection, id: String) -> Result<(), AppError> {
     let rows_affected = conn.execute(
-        "UPDATE projects SET is_active = 0, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE projects SET is_active = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
         rusqlite::params![id],
     )?;
 
@@ -244,7 +244,7 @@ pub fn delete_project(conn: &Connection, id: String) -> Result<(), AppError> {
 /// - 프로젝트가 존재하지 않으면 `AppError::NotFound`
 pub fn restore_project(conn: &Connection, id: String) -> Result<Project, AppError> {
     let rows_affected = conn.execute(
-        "UPDATE projects SET is_active = 1, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE projects SET is_active = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?1",
         rusqlite::params![id],
     )?;
 

@@ -10,6 +10,10 @@ interface ProjectStore {
   projects: Project[];
   selectedProjectId: string | null;
   isLoading: boolean;
+  isCreating: boolean;
+  isUpdating: boolean;
+  isDeleting: boolean;
+  isRestoring: boolean;
   error: string | null;
   pendingDeleteIds: string[]; // undo 대기 중인 프로젝트 ID 목록
 
@@ -23,6 +27,10 @@ interface ProjectStore {
   removeProject: (id: string) => void;
   selectProject: (id: string | null) => void;
   setLoading: (isLoading: boolean) => void;
+  setCreating: (isCreating: boolean) => void;
+  setUpdating: (isUpdating: boolean) => void;
+  setDeleting: (isDeleting: boolean) => void;
+  setRestoring: (isRestoring: boolean) => void;
   setError: (error: string | null) => void;
 
   // Optimistic actions (Story 1.3)
@@ -43,6 +51,10 @@ const initialState = {
   projects: [] as Project[],
   selectedProjectId: null as string | null,
   isLoading: false,
+  isCreating: false,
+  isUpdating: false,
+  isDeleting: false,
+  isRestoring: false,
   error: null as string | null,
   pendingDeleteIds: [] as string[],
 };
@@ -91,6 +103,14 @@ export const useProjectStore = create<ProjectStore>()(
       selectProject: (id) => set({ selectedProjectId: id }, false, 'selectProject'),
 
       setLoading: (isLoading) => set({ isLoading }, false, 'setLoading'),
+
+      setCreating: (isCreating) => set({ isCreating }, false, 'setCreating'),
+
+      setUpdating: (isUpdating) => set({ isUpdating }, false, 'setUpdating'),
+
+      setDeleting: (isDeleting) => set({ isDeleting }, false, 'setDeleting'),
+
+      setRestoring: (isRestoring) => set({ isRestoring }, false, 'setRestoring'),
 
       setError: (error) => set({ error }, false, 'setError'),
 

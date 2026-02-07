@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS projects (
     account_id TEXT,
     default_prompt TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS team_sessions (
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS team_sessions (
     status TEXT NOT NULL DEFAULT 'idle',
     started_at TEXT,
     stopped_at TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);

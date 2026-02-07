@@ -45,14 +45,14 @@ impl DbConnection {
             "CREATE TABLE IF NOT EXISTS _migrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+                applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
             );",
         )?;
 
-        let already_applied: bool = conn
+        let count: i32 = conn
             .prepare("SELECT COUNT(*) FROM _migrations WHERE name = ?1")?
-            .query_row(rusqlite::params!["001_initial"], |row| row.get(0))
-            .unwrap_or(false);
+            .query_row(rusqlite::params!["001_initial"], |row| row.get(0))?;
+        let already_applied = count > 0;
 
         if !already_applied {
             conn.execute_batch(MIGRATION_001)?;
