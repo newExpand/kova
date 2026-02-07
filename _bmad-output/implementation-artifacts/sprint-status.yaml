@@ -1,0 +1,82 @@
+# generated: 2026-02-07
+# project: flow-orche
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-07
+project: flow-orche
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # === Epic 1: 프로젝트 기반 & 대시보드 ===
+  epic-1: in-progress
+  1-1-tauri-app-init-basic-shell: review
+  1-2-environment-auto-detect-onboarding: review
+  1-3-project-registration-card-dashboard: review
+  1-4-project-edit-delete-offline-management: review
+  1-5-cmd-k-command-palette-keyboard-navigation: review
+  epic-1-retrospective: optional
+
+  # === Epic 2: 팀 프리셋 관리 ===
+  epic-2: backlog
+  2-1-default-preset-creation: backlog
+  2-2-role-prompt-customization: backlog
+  2-3-preset-edit-delete: backlog
+  epic-2-retrospective: optional
+
+  # === Epic 3: 원클릭 팀 실행 & 제어 ===
+  epic-3: backlog
+  3-1-tmux-session-oneclick-team-start: backlog
+  3-2-prompt-detect-preset-auto-send: backlog
+  3-3-team-stop-tmux-cleanup: backlog
+  3-4-multi-project-concurrent-execution: backlog
+  3-5-spawn-failure-detect-retry: backlog
+  3-6-focus-mode-agent-detail-view: backlog
+  3-7-agent-terminal-ghostty-web-view: backlog
+  epic-3-retrospective: optional
+
+  # === Epic 4: 프로젝트별 알림 시스템 (Phase 1b) ===
+  epic-4: backlog
+  4-1-claude-hooks-event-in-app-notification: backlog
+  4-2-macos-native-notification: backlog
+  4-3-notification-history: backlog
+  epic-4-retrospective: optional
+
+  # === Epic 5: 다중 계정 관리 (Phase 1b) ===
+  epic-5: backlog
+  5-1-account-profile-registration: backlog
+  5-2-oneclick-account-switch-data-independence: backlog
+  5-3-running-team-account-switch-warning: backlog
+  epic-5-retrospective: optional

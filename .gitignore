@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Rust build output (handled by src-tauri/.gitignore)
+src-tauri/target/
+src-tauri/gen/schemas
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Lock files (keep bun.lock)
+
+# Temporary
+*.tmp

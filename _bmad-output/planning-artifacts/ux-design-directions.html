@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>flow-orche — Design Direction Mockups</title>
+<style>
+  :root {
+    --base: #09090B;
+    --surface1: #18181B;
+    --surface2: #27272A;
+    --surface3: #3F3F46;
+    --border: #3F3F46;
+    --text-primary: #FAFAFA;
+    --text-secondary: #A1A1AA;
+    --text-muted: #71717A;
+    --primary: #6366F1;
+    --primary-hover: #818CF8;
+    --success: #10B981;
+    --warning: #F59E0B;
+    --error: #F43F5E;
+    --project-sky: #38BDF8;
+    --project-violet: #8B5CF6;
+    --project-emerald: #34D399;
+    --project-amber: #FBBF24;
+    --project-rose: #FB7185;
+    --project-cyan: #22D3EE;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #000;
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  /* Navigation */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(9,9,11,0.9); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .nav h1 { font-size: 16px; font-weight: 600; color: var(--primary); }
+  .nav-tabs { display: flex; gap: 4px; margin-left: 24px; }
+  .nav-tab {
+    padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    background: transparent; border: 1px solid transparent; color: var(--text-secondary);
+    transition: all 0.2s;
+  }
+  .nav-tab:hover { background: var(--surface2); color: var(--text-primary); }
+  .nav-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+  /* Sections */
+  .section {
+    display: none; min-height: 100vh; padding: 80px 32px 32px;
+  }
+  .section.active { display: block; }
+  .section-title {
+    font-size: 24px; font-weight: 600; margin-bottom: 8px;
+  }
+  .section-desc {
+    font-size: 14px; color: var(--text-secondary); margin-bottom: 32px; max-width: 600px;
+  }
+
+  /* Direction A: Sidebar + Card Grid */
+  .mockup-frame {
+    background: var(--base); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; max-width: 1200px; margin: 0 auto;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  }
+  .titlebar {
+    height: 36px; background: var(--surface1); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 12px; gap: 8px;
+  }
+  .titlebar-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .titlebar-dot.red { background: #FF5F57; }
+  .titlebar-dot.yellow { background: #FEBC2E; }
+  .titlebar-dot.green { background: #28C840; }
+  .titlebar-title { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+
+  .app-layout { display: flex; height: 600px; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 240px; background: var(--surface1); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .sidebar-section { padding: 16px 12px 8px; }
+  .sidebar-label {
+    font-size: 11px; font-weight: 500; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    border-radius: 6px; font-size: 13px; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .sidebar-item:hover { background: var(--surface2); color: var(--text-primary); }
+  .sidebar-item.active { background: var(--surface2); color: var(--text-primary); }
+  .sidebar-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .sidebar-status {
+    width: 6px; height: 6px; border-radius: 50%; margin-left: auto; flex-shrink: 0;
+  }
+  .sidebar-bottom {
+    margin-top: auto; padding: 12px; border-top: 1px solid var(--border);
+  }
+  .account-switcher {
+    display: flex; align-items: center; gap: 8px; padding: 8px;
+    border-radius: 6px; font-size: 13px; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .account-switcher:hover { background: var(--surface2); }
+  .account-avatar {
+    width: 24px; height: 24px; border-radius: 6px; background: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: white;
+  }
+
+  /* Main Content */
+  .main { flex: 1; padding: 24px; overflow-y: auto; }
+  .main-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .main-title { font-size: 20px; font-weight: 600; }
+  .main-actions { display: flex; gap: 8px; }
+
+  /* Buttons */
+  .btn {
+    padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
+    cursor: pointer; border: 1px solid transparent; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border); }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text-primary); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-error { background: rgba(244,63,94,0.15); color: var(--error); border-color: rgba(244,63,94,0.3); }
+
+  /* Project Cards */
+  .card-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .project-card {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; transition: all 0.15s; cursor: pointer;
+    position: relative; overflow: hidden;
+  }
+  .project-card:hover {
+    border-color: var(--primary); background: #2a2a2e;
+  }
+  .project-card-accent {
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .card-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .card-title-group { display: flex; flex-direction: column; gap: 2px; }
+  .card-title { font-size: 15px; font-weight: 500; }
+  .card-path {
+    font-size: 12px; color: var(--text-muted);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+  }
+  .badge-running { background: rgba(16,185,129,0.15); color: var(--success); }
+  .badge-idle { background: rgba(113,113,122,0.15); color: var(--text-muted); }
+  .badge-error { background: rgba(244,63,94,0.15); color: var(--error); }
+  .badge-launching { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .card-team {
+    display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .team-badge {
+    padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    background: rgba(99,102,241,0.1); color: var(--primary-hover);
+    border: 1px solid rgba(99,102,241,0.2);
+  }
+
+  .card-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  .card-meta { font-size: 11px; color: var(--text-muted); }
+
+  /* Launch Progress */
+  .launch-progress {
+    background: var(--surface1); border-radius: 6px; padding: 12px;
+    margin-bottom: 12px;
+  }
+  .launch-step {
+    display: flex; align-items: center; gap: 8px; padding: 4px 0;
+    font-size: 12px;
+  }
+  .launch-step-icon {
+    width: 16px; height: 16px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; flex-shrink: 0;
+  }
+  .launch-step-done { background: var(--success); color: white; }
+  .launch-step-active { background: var(--warning); color: white; animation: pulse 1.5s infinite; }
+  .launch-step-pending { background: var(--surface3); color: var(--text-muted); }
+  .launch-step-text { color: var(--text-secondary); }
+  .launch-step-text.done { color: var(--text-primary); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Status Bar */
+  .statusbar {
+    height: 28px; background: var(--surface1); border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px; font-size: 11px; color: var(--text-muted);
+  }
+  .statusbar-left, .statusbar-right { display: flex; align-items: center; gap: 12px; }
+  .status-indicator {
+    display: flex; align-items: center; gap: 4px;
+  }
+  .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Command Palette */
+  .cmd-palette {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 500px; background: var(--surface1); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+    overflow: hidden; z-index: 10;
+  }
+  .cmd-input {
+    width: 100%; padding: 14px 16px; background: transparent; border: none;
+    border-bottom: 1px solid var(--border); color: var(--text-primary);
+    font-size: 15px; outline: none;
+  }
+  .cmd-input::placeholder { color: var(--text-muted); }
+  .cmd-results { padding: 8px; }
+  .cmd-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 6px; font-size: 13px; color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .cmd-item:first-child, .cmd-item:hover { background: var(--surface2); color: var(--text-primary); }
+  .cmd-icon { font-size: 14px; width: 20px; text-align: center; }
+  .cmd-shortcut { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .cmd-kbd {
+    padding: 1px 5px; background: var(--surface3); border-radius: 3px;
+    font-family: 'SF Mono', monospace; font-size: 10px;
+  }
+
+  /* Direction B: List View */
+  .project-list { display: flex; flex-direction: column; gap: 2px; }
+  .project-list-item {
+    display: grid; grid-template-columns: 8px 1fr 120px 100px 80px 100px;
+    align-items: center; gap: 12px; padding: 10px 12px;
+    border-radius: 6px; font-size: 13px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .project-list-item:hover { background: var(--surface2); }
+  .list-project-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .list-col-name { font-weight: 500; }
+  .list-col-team { color: var(--text-secondary); font-size: 12px; }
+  .list-col-status { }
+  .list-col-time { color: var(--text-muted); font-size: 12px; }
+  .list-col-action { text-align: right; }
+
+  /* Direction C: Focus Card */
+  .focus-layout { display: flex; gap: 24px; height: 100%; }
+  .focus-sidebar-mini {
+    width: 64px; background: var(--surface1); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 8px;
+  }
+  .focus-project-icon {
+    width: 40px; height: 40px; border-radius: 10px; display: flex;
+    align-items: center; justify-content: center; font-size: 14px;
+    font-weight: 600; color: white; cursor: pointer; transition: all 0.15s;
+    opacity: 0.6;
+  }
+  .focus-project-icon:hover, .focus-project-icon.active { opacity: 1; transform: scale(1.05); }
+  .focus-main { flex: 1; padding: 24px; overflow-y: auto; }
+  .focus-header { margin-bottom: 24px; }
+  .focus-title { font-size: 24px; font-weight: 600; margin-bottom: 4px; }
+  .focus-subtitle { font-size: 13px; color: var(--text-muted); font-family: 'SF Mono', monospace; }
+  .focus-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px;
+  }
+  .stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .stat-value { font-size: 20px; font-weight: 600; }
+  .stat-value.running { color: var(--success); }
+  .stat-value.warning { color: var(--warning); }
+
+  .agent-list { display: flex; flex-direction: column; gap: 8px; }
+  .agent-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .agent-role {
+    padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 500;
+    min-width: 36px; text-align: center;
+  }
+  .agent-role.sm { background: rgba(99,102,241,0.2); color: var(--primary-hover); }
+  .agent-role.dev { background: rgba(56,189,248,0.2); color: var(--project-sky); }
+  .agent-role.qa { background: rgba(139,92,246,0.2); color: var(--project-violet); }
+  .agent-info { flex: 1; }
+  .agent-task { font-size: 13px; }
+  .agent-detail { font-size: 11px; color: var(--text-muted); }
+
+  /* Notification Panel */
+  .notification-panel {
+    width: 320px; background: var(--surface1); border-left: 1px solid var(--border);
+    flex-shrink: 0; overflow-y: auto;
+  }
+  .notif-header {
+    padding: 16px; border-bottom: 1px solid var(--border);
+    font-size: 14px; font-weight: 500;
+  }
+  .notif-item {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .notif-item:hover { background: var(--surface2); }
+  .notif-project {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 500; margin-bottom: 4px;
+  }
+  .notif-project-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .notif-text { font-size: 13px; margin-bottom: 4px; }
+  .notif-time { font-size: 11px; color: var(--text-muted); }
+
+  /* Direction labels */
+  .direction-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
+    background: rgba(99,102,241,0.1); color: var(--primary-hover);
+    border: 1px solid rgba(99,102,241,0.2); margin-bottom: 20px;
+  }
+
+  .comparison-note {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-top: 24px; font-size: 13px; color: var(--text-secondary);
+  }
+  .comparison-note strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <h1>flow-orche</h1>
+  <span style="color:var(--text-muted); font-size:13px;">Design Directions</span>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="showSection('a')">A. Dashboard Grid</div>
+    <div class="nav-tab" onclick="showSection('b')">B. Compact List</div>
+    <div class="nav-tab" onclick="showSection('c')">C. Focus Mode</div>
+    <div class="nav-tab" onclick="showSection('d')">D. Cmd+K Flow</div>
+    <div class="nav-tab" onclick="showSection('e')">E. Notification Center</div>
+    <div class="nav-tab" onclick="showSection('f')">F. Launch Animation</div>
+  </div>
+</nav>
+
+<!-- Direction A: Dashboard Grid -->
+<div class="section active" id="section-a">
+  <div class="direction-label">Direction A — Dashboard Card Grid</div>
+  <div class="section-title">사이드바 + 카드 그리드 대시보드</div>
+  <div class="section-desc">
+    Vercel/Docker Desktop 스타일. 프로젝트를 카드 그리드로 배치하여 한눈에 전체 상태를 파악.
+    가장 직관적이고 정보 밀도가 높은 레이아웃.
+  </div>
+
+  <div class="mockup-frame">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — Dashboard</span>
+    </div>
+    <div class="app-layout">
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-label">Projects</div>
+          <div class="sidebar-item active">
+            <div class="sidebar-dot" style="background:var(--project-sky)"></div>
+            결제 시스템
+            <div class="sidebar-status" style="background:var(--success)"></div>
+          </div>
+          <div class="sidebar-item">
+            <div class="sidebar-dot" style="background:var(--project-violet)"></div>
+            SaaS Auth
+            <div class="sidebar-status" style="background:var(--success)"></div>
+          </div>
+          <div class="sidebar-item">
+            <div class="sidebar-dot" style="background:var(--project-emerald)"></div>
+            OSS 라이브러리
+            <div class="sidebar-status" style="background:var(--text-muted)"></div>
+          </div>
+          <div class="sidebar-item">
+            <div class="sidebar-dot" style="background:var(--project-amber)"></div>
+            flow-orche
+            <div class="sidebar-status" style="background:var(--warning)"></div>
+          </div>
+          <div class="sidebar-item">
+            <div class="sidebar-dot" style="background:var(--project-rose)"></div>
+            포트폴리오
+            <div class="sidebar-status" style="background:var(--text-muted)"></div>
+          </div>
+          <div class="sidebar-item">
+            <div class="sidebar-dot" style="background:var(--project-cyan)"></div>
+            API 게이트웨이
+            <div class="sidebar-status" style="background:var(--text-muted)"></div>
+          </div>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="account-switcher">
+            <div class="account-avatar">A</div>
+            <div>
+              <div style="font-size:13px;color:var(--text-primary)">계정 A</div>
+              <div style="font-size:11px;color:var(--text-muted)">Max*20 · 활성</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main">
+        <div class="main-header">
+          <div class="main-title">All Projects</div>
+          <div class="main-actions">
+            <button class="btn btn-ghost btn-sm">⌘K</button>
+            <button class="btn btn-primary btn-sm">+ New Project</button>
+          </div>
+        </div>
+        <div class="card-grid">
+          <!-- Card 1: Running -->
+          <div class="project-card">
+            <div class="project-card-accent" style="background:var(--project-sky)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">결제 시스템</div>
+                <div class="card-path">~/projects/payment-system</div>
+              </div>
+              <div class="badge badge-running"><div class="badge-dot" style="background:var(--success)"></div> Running</div>
+            </div>
+            <div class="card-team">
+              <span class="team-badge">SM ×1</span>
+              <span class="team-badge">Dev ×2</span>
+              <span class="team-badge">QA ×1</span>
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">3분 전 활동</div>
+              <button class="btn btn-error btn-sm">Stop</button>
+            </div>
+          </div>
+          <!-- Card 2: Running -->
+          <div class="project-card">
+            <div class="project-card-accent" style="background:var(--project-violet)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">SaaS Auth</div>
+                <div class="card-path">~/projects/saas-auth</div>
+              </div>
+              <div class="badge badge-running"><div class="badge-dot" style="background:var(--success)"></div> Running</div>
+            </div>
+            <div class="card-team">
+              <span class="team-badge">SM ×1</span>
+              <span class="team-badge">Dev ×1</span>
+              <span class="team-badge">QA ×1</span>
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">1분 전 활동</div>
+              <button class="btn btn-error btn-sm">Stop</button>
+            </div>
+          </div>
+          <!-- Card 3: Idle -->
+          <div class="project-card">
+            <div class="project-card-accent" style="background:var(--project-emerald)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">OSS 라이브러리</div>
+                <div class="card-path">~/projects/oss-lib</div>
+              </div>
+              <div class="badge badge-idle"><div class="badge-dot" style="background:var(--text-muted)"></div> Idle</div>
+            </div>
+            <div class="card-team">
+              <span class="team-badge">SM ×1</span>
+              <span class="team-badge">Dev ×1</span>
+              <span class="team-badge">QA ×1</span>
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">2시간 전</div>
+              <button class="btn btn-primary btn-sm">Start</button>
+            </div>
+          </div>
+          <!-- Card 4: Launching -->
+          <div class="project-card">
+            <div class="project-card-accent" style="background:var(--project-amber)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">flow-orche</div>
+                <div class="card-path">~/projects/flow-orche</div>
+              </div>
+              <div class="badge badge-launching"><div class="badge-dot" style="background:var(--warning);animation:pulse 1.5s infinite"></div> Launching</div>
+            </div>
+            <div class="launch-progress">
+              <div class="launch-step">
+                <div class="launch-step-icon launch-step-done">✓</div>
+                <span class="launch-step-text done">tmux 세션 생성</span>
+              </div>
+              <div class="launch-step">
+                <div class="launch-step-icon launch-step-done">✓</div>
+                <span class="launch-step-text done">Claude Code 실행</span>
+              </div>
+              <div class="launch-step">
+                <div class="launch-step-icon launch-step-active">⟳</div>
+                <span class="launch-step-text">프롬프트 준비 감지 중...</span>
+              </div>
+              <div class="launch-step">
+                <div class="launch-step-icon launch-step-pending">○</div>
+                <span class="launch-step-text">팀 프리셋 전송</span>
+              </div>
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">방금 시작됨</div>
+              <button class="btn btn-ghost btn-sm">Cancel</button>
+            </div>
+          </div>
+          <!-- Card 5: Idle -->
+          <div class="project-card">
+            <div class="project-card-accent" style="background:var(--project-rose)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">포트폴리오</div>
+                <div class="card-path">~/projects/portfolio</div>
+              </div>
+              <div class="badge badge-idle"><div class="badge-dot" style="background:var(--text-muted)"></div> Idle</div>
+            </div>
+            <div class="card-team">
+              <span class="team-badge">SM ×1</span>
+              <span class="team-badge">Dev ×1</span>
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">1일 전</div>
+              <button class="btn btn-primary btn-sm">Start</button>
+            </div>
+          </div>
+          <!-- Card 6: Error -->
+          <div class="project-card" style="border-color:rgba(244,63,94,0.3)">
+            <div class="project-card-accent" style="background:var(--error)"></div>
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-title">API 게이트웨이</div>
+                <div class="card-path">~/projects/api-gateway</div>
+              </div>
+              <div class="badge badge-error"><div class="badge-dot" style="background:var(--error)"></div> Error</div>
+            </div>
+            <div style="background:rgba(244,63,94,0.08);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--error)">
+              ⚠ Claude Code 응답 없음 (타임아웃 30초 초과)
+            </div>
+            <div class="card-footer">
+              <div class="card-meta">5분 전 실패</div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-primary btn-sm">Retry</button>
+                <button class="btn btn-ghost btn-sm">Details</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <div class="statusbar-left">
+        <div class="status-indicator">
+          <div class="status-dot-sm" style="background:var(--success)"></div>
+          계정 A · Max*20
+        </div>
+        <span>|</span>
+        <span>2 running · 1 launching · 1 error</span>
+      </div>
+      <div class="statusbar-right">
+        <span>tmux ✓</span>
+        <span>Claude CLI ✓</span>
+      </div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction A 특징:</strong> 가장 정보 밀도가 높은 레이아웃. 6개 프로젝트를 한 화면에서 상태/팀/액션까지 모두 확인 가능.
+    런칭 진행 상태와 에러 상태가 카드 내에서 인라인으로 표시되어 별도 화면 전환 없이 모든 상태를 파악할 수 있음.
+  </div>
+</div>
+
+<!-- Direction B: Compact List -->
+<div class="section" id="section-b">
+  <div class="direction-label">Direction B — Compact List View</div>
+  <div class="section-title">컴팩트 리스트 뷰</div>
+  <div class="section-desc">
+    Linear 스타일. 프로젝트를 테이블/리스트 형태로 표시. 프로젝트 수가 많을 때 효율적.
+    정보를 열(column) 기반으로 정렬하여 비교 용이.
+  </div>
+
+  <div class="mockup-frame">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — Projects</span>
+    </div>
+    <div class="app-layout">
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-label">Views</div>
+          <div class="sidebar-item active">
+            <span>📋</span> All Projects
+          </div>
+          <div class="sidebar-item">
+            <span>🟢</span> Running
+          </div>
+          <div class="sidebar-item">
+            <span>⚠️</span> Errors
+          </div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-label">Accounts</div>
+          <div class="sidebar-item">
+            <div class="account-avatar" style="width:20px;height:20px;font-size:10px;border-radius:4px">A</div>
+            계정 A <span style="color:var(--success);font-size:11px;margin-left:auto">active</span>
+          </div>
+          <div class="sidebar-item">
+            <div class="account-avatar" style="width:20px;height:20px;font-size:10px;border-radius:4px;background:var(--project-violet)">B</div>
+            계정 B
+          </div>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="sidebar-item" style="color:var(--text-muted)">
+            <span>⚙️</span> Settings
+          </div>
+        </div>
+      </div>
+      <div class="main">
+        <div class="main-header">
+          <div class="main-title">All Projects <span style="font-size:14px;color:var(--text-muted);font-weight:400">6</span></div>
+          <div class="main-actions">
+            <button class="btn btn-ghost btn-sm">⌘K</button>
+            <button class="btn btn-primary btn-sm">+ New</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:8px 1fr 120px 100px 80px 100px;gap:12px;padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border);margin-bottom:4px">
+          <div></div><div>PROJECT</div><div>TEAM</div><div>STATUS</div><div>LAST</div><div style="text-align:right">ACTION</div>
+        </div>
+        <div class="project-list">
+          <div class="project-list-item">
+            <div class="list-project-dot" style="background:var(--project-sky)"></div>
+            <div class="list-col-name">결제 시스템 <span style="font-size:11px;color:var(--text-muted);font-family:monospace">~/payment</span></div>
+            <div class="list-col-team">SM·1 Dev·2 QA·1</div>
+            <div class="list-col-status"><div class="badge badge-running" style="font-size:11px"><div class="badge-dot" style="background:var(--success)"></div>Running</div></div>
+            <div class="list-col-time">3분</div>
+            <div class="list-col-action"><button class="btn btn-error btn-sm">Stop</button></div>
+          </div>
+          <div class="project-list-item">
+            <div class="list-project-dot" style="background:var(--project-violet)"></div>
+            <div class="list-col-name">SaaS Auth <span style="font-size:11px;color:var(--text-muted);font-family:monospace">~/saas-auth</span></div>
+            <div class="list-col-team">SM·1 Dev·1 QA·1</div>
+            <div class="list-col-status"><div class="badge badge-running" style="font-size:11px"><div class="badge-dot" style="background:var(--success)"></div>Running</div></div>
+            <div class="list-col-time">1분</div>
+            <div class="list-col-action"><button class="btn btn-error btn-sm">Stop</button></div>
+          </div>
+          <div class="project-list-item">
+            <div class="list-project-dot" style="background:var(--project-amber)"></div>
+            <div class="list-col-name">flow-orche <span style="font-size:11px;color:var(--text-muted);font-family:monospace">~/flow-orche</span></div>
+            <div class="list-col-team">SM·1 Dev·1 QA·1</div>
+            <div class="list-col-status"><div class="badge badge-launching" style="font-size:11px"><div class="badge-dot" style="background:var(--warning);animation:pulse 1.5s infinite"></div>Launching</div></div>
+            <div class="list-col-time">now</div>
+            <div class="list-col-action"><button class="btn btn-ghost btn-sm">Cancel</button></div>
+          </div>
+          <div class="project-list-item">
+            <div class="list-project-dot" style="background:var(--project-emerald)"></div>
+            <div class="list-col-name">OSS 라이브러리 <span style="font-size:11px;color:var(--text-muted);font-family:monospace">~/oss-lib</span></div>
+            <div class="list-col-team">SM·1 Dev·1 QA·1</div>
+            <div class="list-col-status"><div class="badge badge-idle" style="font-size:11px"><div class="badge-dot" style="background:var(--text-muted)"></div>Idle</div></div>
+            <div class="list-col-time">2h</div>
+            <div class="list-col-action"><button class="btn btn-primary btn-sm">Start</button></div>
+          </div>
+          <div class="project-list-item">
+            <div class="list-project-dot" style="background:var(--project-rose)"></div>
+            <div class="list-col-name">포트폴리오 <span style="font-size:11px;color:var(--text-muted);font-family:monospace">~/portfolio</span></div>
+            <div class="list-col-team">SM·1 Dev·1</div>
+            <div class="list-col-status"><div class="badge badge-idle" style="font-size:11px"><div class="badge-dot" style="background:var(--text-muted)"></div>Idle</div></div>
+            <div class="list-col-time">1d</div>
+            <div class="list-col-action"><button class="btn btn-primary btn-sm">Start</button></div>
+          </div>
+          <div class="project-list-item" style="background:rgba(244,63,94,0.05)">
+            <div class="list-project-dot" style="background:var(--error)"></div>
+            <div class="list-col-name" style="color:var(--error)">API 게이트웨이 <span style="font-size:11px;font-family:monospace">~/api-gw</span></div>
+            <div class="list-col-team">SM·1 Dev·2 QA·1</div>
+            <div class="list-col-status"><div class="badge badge-error" style="font-size:11px"><div class="badge-dot" style="background:var(--error)"></div>Error</div></div>
+            <div class="list-col-time">5분</div>
+            <div class="list-col-action"><button class="btn btn-primary btn-sm">Retry</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <div class="statusbar-left">
+        <div class="status-indicator"><div class="status-dot-sm" style="background:var(--success)"></div>계정 A</div>
+        <span>2 running · 1 launching · 1 error</span>
+      </div>
+      <div class="statusbar-right"><span>⌘K Quick Actions</span></div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction B 특징:</strong> 리스트 형태로 더 많은 프로젝트를 컴팩트하게 표시.
+    열 기반 정렬로 상태별/시간별 비교가 용이. 프로젝트가 10개 이상으로 늘어나도 스크롤 부담 적음.
+    단, 런칭 진행 상태나 에러 상세는 별도 클릭이 필요.
+  </div>
+</div>
+
+<!-- Direction C: Focus Mode -->
+<div class="section" id="section-c">
+  <div class="direction-label">Direction C — Focus Mode (Single Project)</div>
+  <div class="section-title">포커스 모드 — 단일 프로젝트 상세</div>
+  <div class="section-desc">
+    선택한 프로젝트에 집중하는 뷰. 에이전트 상태, 알림, 활동을 한 화면에서 상세히 파악.
+    왼쪽 미니 사이드바로 프로젝트 전환. Dashboard Grid(A)에서 카드 클릭 시 이 뷰로 진입.
+  </div>
+
+  <div class="mockup-frame">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — 결제 시스템</span>
+    </div>
+    <div style="display:flex;height:600px">
+      <div class="focus-sidebar-mini">
+        <div class="focus-project-icon active" style="background:var(--project-sky)">결</div>
+        <div class="focus-project-icon" style="background:var(--project-violet)">S</div>
+        <div class="focus-project-icon" style="background:var(--project-emerald)">O</div>
+        <div class="focus-project-icon" style="background:var(--project-amber)">F</div>
+        <div class="focus-project-icon" style="background:var(--project-rose)">포</div>
+        <div style="flex:1"></div>
+        <div class="focus-project-icon" style="background:var(--surface3);font-size:18px">+</div>
+      </div>
+      <div class="focus-main">
+        <div class="focus-header">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+            <div class="focus-title">결제 시스템</div>
+            <div class="badge badge-running"><div class="badge-dot" style="background:var(--success)"></div> Running</div>
+          </div>
+          <div class="focus-subtitle">~/projects/payment-system</div>
+        </div>
+        <div class="focus-stats">
+          <div class="stat-card">
+            <div class="stat-label">AGENTS</div>
+            <div class="stat-value">4</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">ACTIVE</div>
+            <div class="stat-value running">3</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">WAITING</div>
+            <div class="stat-value warning">1</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">UPTIME</div>
+            <div class="stat-value" style="font-size:16px">1h 23m</div>
+          </div>
+        </div>
+        <div style="font-size:14px;font-weight:500;margin-bottom:12px">Agent Status</div>
+        <div class="agent-list">
+          <div class="agent-item">
+            <div class="agent-role sm">SM</div>
+            <div class="agent-info">
+              <div class="agent-task">스토리 할당 완료, QA 결과 대기 중</div>
+              <div class="agent-detail">worktree: main · 마지막 활동: 2분 전</div>
+            </div>
+            <div class="badge badge-running" style="font-size:11px"><div class="badge-dot" style="background:var(--success)"></div>Active</div>
+          </div>
+          <div class="agent-item">
+            <div class="agent-role dev">D1</div>
+            <div class="agent-info">
+              <div class="agent-task">결제 API 리팩토링 — PaymentService 수정 중</div>
+              <div class="agent-detail">worktree: feat/payment-refactor · 마지막 활동: 30초 전</div>
+            </div>
+            <div class="badge badge-running" style="font-size:11px"><div class="badge-dot" style="background:var(--success)"></div>Active</div>
+          </div>
+          <div class="agent-item">
+            <div class="agent-role dev">D2</div>
+            <div class="agent-info">
+              <div class="agent-task">주문 조회 최적화 — OrderRepository 쿼리 개선</div>
+              <div class="agent-detail">worktree: feat/order-optimization · 마지막 활동: 1분 전</div>
+            </div>
+            <div class="badge badge-running" style="font-size:11px"><div class="badge-dot" style="background:var(--success)"></div>Active</div>
+          </div>
+          <div class="agent-item">
+            <div class="agent-role qa">QA</div>
+            <div class="agent-info">
+              <div class="agent-task">사용자 입력 대기 — 코드 리뷰 범위 확인 필요</div>
+              <div class="agent-detail">worktree: main · 마지막 활동: 5분 전</div>
+            </div>
+            <div class="badge badge-launching" style="font-size:11px"><div class="badge-dot" style="background:var(--warning)"></div>Waiting</div>
+          </div>
+        </div>
+      </div>
+      <div class="notification-panel">
+        <div class="notif-header">Notifications</div>
+        <div class="notif-item">
+          <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-sky)"></div>결제 시스템</div>
+          <div class="notif-text">QA가 사용자 입력을 대기하고 있습니다</div>
+          <div class="notif-time">5분 전</div>
+        </div>
+        <div class="notif-item">
+          <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-sky)"></div>결제 시스템</div>
+          <div class="notif-text">Dev2 스토리 완료: 주문 조회 최적화</div>
+          <div class="notif-time">8분 전</div>
+        </div>
+        <div class="notif-item">
+          <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-violet)"></div>SaaS Auth</div>
+          <div class="notif-text">팀 구성 완료 — 작업 지시를 입력하세요</div>
+          <div class="notif-time">15분 전</div>
+        </div>
+        <div class="notif-item">
+          <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-amber)"></div>flow-orche</div>
+          <div class="notif-text">팀 시작 중... (프롬프트 감지 단계)</div>
+          <div class="notif-time">방금</div>
+        </div>
+        <div class="notif-item">
+          <div class="notif-project"><div class="notif-project-dot" style="background:var(--error)"></div>API 게이트웨이</div>
+          <div class="notif-text" style="color:var(--error)">팀 스폰 실패 — Claude Code 응답 없음</div>
+          <div class="notif-time">20분 전</div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <div class="statusbar-left">
+        <div class="status-indicator"><div class="status-dot-sm" style="background:var(--success)"></div>계정 A</div>
+        <span>결제 시스템 · SM(1) Dev(2) QA(1)</span>
+      </div>
+      <div class="statusbar-right">
+        <button class="btn btn-error btn-sm" style="padding:2px 8px;font-size:10px">Stop Team</button>
+      </div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction C 특징:</strong> 프로젝트 하나에 집중하여 에이전트별 활동을 상세히 파악.
+    미니 사이드바로 프로젝트 간 빠른 전환. 알림 패널이 우측에 상시 표시.
+    Direction A(Grid)에서 카드 클릭 시 이 뷰로 드릴다운하는 구조가 자연스러움.
+  </div>
+</div>
+
+<!-- Direction D: Cmd+K Flow -->
+<div class="section" id="section-d">
+  <div class="direction-label">Direction D — Command Palette (Cmd+K)</div>
+  <div class="section-title">커맨드 팔레트 중심 인터랙션</div>
+  <div class="section-desc">
+    Raycast/Linear 스타일의 Cmd+K 팔레트. 키보드에서 손을 떼지 않고 프로젝트 시작/전환/제어 가능.
+    대시보드 위에 오버레이로 동작.
+  </div>
+
+  <div class="mockup-frame" style="position:relative">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — Dashboard</span>
+    </div>
+    <div style="height:600px;background:var(--base);filter:brightness(0.4);padding:24px">
+    </div>
+    <div class="cmd-palette">
+      <input class="cmd-input" placeholder="Search projects, actions..." value="결제">
+      <div class="cmd-results">
+        <div class="cmd-item">
+          <span class="cmd-icon" style="color:var(--project-sky)">●</span>
+          <div>
+            <div>결제 시스템</div>
+            <div style="font-size:11px;color:var(--text-muted)">Running · SM(1) Dev(2) QA(1)</div>
+          </div>
+          <span class="cmd-shortcut"><span class="cmd-kbd">↵</span> Open</span>
+        </div>
+        <div class="cmd-item">
+          <span class="cmd-icon">⏹</span>
+          결제 시스템 — Stop Team
+          <span class="cmd-shortcut"><span class="cmd-kbd">⌘</span><span class="cmd-kbd">S</span></span>
+        </div>
+        <div class="cmd-item">
+          <span class="cmd-icon">📋</span>
+          결제 시스템 — Edit Preset
+          <span class="cmd-shortcut"><span class="cmd-kbd">⌘</span><span class="cmd-kbd">E</span></span>
+        </div>
+        <div class="cmd-item">
+          <span class="cmd-icon">📁</span>
+          결제 시스템 — Open in Terminal
+          <span class="cmd-shortcut"><span class="cmd-kbd">⌘</span><span class="cmd-kbd">T</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <div class="statusbar-left">
+        <span>⌘K to search · ⌘1-6 Quick Switch</span>
+      </div>
+      <div class="statusbar-right"><span>ESC to close</span></div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction D 특징:</strong> 키보드 중심 인터랙션.
+    프로젝트 검색, 시작/중지, 프리셋 편집, 터미널 열기 등 모든 액션을 Cmd+K 하나로 접근.
+    이 패턴은 독립 뷰가 아니라 Direction A/B/C 위에 오버레이로 동작하는 보조 인터페이스.
+  </div>
+</div>
+
+<!-- Direction E: Notification Center -->
+<div class="section" id="section-e">
+  <div class="direction-label">Direction E — Notification Center</div>
+  <div class="section-title">프로젝트별 알림 센터</div>
+  <div class="section-desc">
+    모든 프로젝트의 알림을 프로젝트별로 구분하여 시간순으로 표시.
+    필터링으로 특정 프로젝트나 이벤트 유형만 볼 수 있음.
+  </div>
+
+  <div class="mockup-frame">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — Notifications</span>
+    </div>
+    <div class="app-layout">
+      <div class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-label">Filter</div>
+          <div class="sidebar-item active"><span>🔔</span> All Notifications</div>
+          <div class="sidebar-item"><span>⚡</span> Actions Required</div>
+          <div class="sidebar-item"><span>✅</span> Completed</div>
+          <div class="sidebar-item"><span>❌</span> Errors</div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-label">Projects</div>
+          <div class="sidebar-item"><div class="sidebar-dot" style="background:var(--project-sky)"></div>결제 시스템 <span style="margin-left:auto;font-size:11px;color:var(--warning)">3</span></div>
+          <div class="sidebar-item"><div class="sidebar-dot" style="background:var(--project-violet)"></div>SaaS Auth <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">1</span></div>
+          <div class="sidebar-item"><div class="sidebar-dot" style="background:var(--project-amber)"></div>flow-orche <span style="margin-left:auto;font-size:11px;color:var(--warning)">1</span></div>
+          <div class="sidebar-item"><div class="sidebar-dot" style="background:var(--error)"></div>API 게이트웨이 <span style="margin-left:auto;font-size:11px;color:var(--error)">1</span></div>
+        </div>
+      </div>
+      <div class="main" style="padding:16px">
+        <div class="main-header">
+          <div class="main-title">Notifications</div>
+          <button class="btn btn-ghost btn-sm">Mark all read</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">TODAY</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div class="notif-item" style="border:none;border-radius:6px;background:rgba(245,158,11,0.05);border-left:3px solid var(--warning)">
+            <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-sky)"></div>결제 시스템 · <span style="color:var(--warning)">Action Required</span></div>
+            <div class="notif-text">QA가 사용자 입력을 대기하고 있습니다 — 코드 리뷰 범위 확인 필요</div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary btn-sm">Open Terminal</button>
+              <button class="btn btn-ghost btn-sm">Dismiss</button>
+            </div>
+            <div class="notif-time" style="margin-top:4px">5분 전</div>
+          </div>
+          <div class="notif-item" style="border:none;border-radius:6px">
+            <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-sky)"></div>결제 시스템</div>
+            <div class="notif-text">Dev2 스토리 완료: 주문 조회 최적화 → QA 리뷰 자동 트리거</div>
+            <div class="notif-time">8분 전</div>
+          </div>
+          <div class="notif-item" style="border:none;border-radius:6px">
+            <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-violet)"></div>SaaS Auth</div>
+            <div class="notif-text">팀 구성 완료 — SM(1) Dev(1) QA(1) 가동 중. 작업 지시를 입력하세요.</div>
+            <div class="notif-time">15분 전</div>
+          </div>
+          <div class="notif-item" style="border:none;border-radius:6px;background:rgba(244,63,94,0.05);border-left:3px solid var(--error)">
+            <div class="notif-project"><div class="notif-project-dot" style="background:var(--error)"></div>API 게이트웨이 · <span style="color:var(--error)">Error</span></div>
+            <div class="notif-text">팀 스폰 실패 — Claude Code 응답 없음 (타임아웃 30초 초과)</div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary btn-sm">Retry</button>
+              <button class="btn btn-ghost btn-sm">View Details</button>
+            </div>
+            <div class="notif-time" style="margin-top:4px">20분 전</div>
+          </div>
+          <div class="notif-item" style="border:none;border-radius:6px">
+            <div class="notif-project"><div class="notif-project-dot" style="background:var(--project-sky)"></div>결제 시스템</div>
+            <div class="notif-text">Dev1 스토리 시작: 결제 API 리팩토링 — PaymentService 분석 중</div>
+            <div class="notif-time">25분 전</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction E 특징:</strong> 프로젝트별로 구분된 알림 타임라인.
+    "Action Required" 알림에는 인라인 액션 버튼이 포함되어 즉시 대응 가능.
+    에러 알림은 좌측 빨간 보더로 시각적 강조. 이 뷰는 Direction A/C와 함께 탭으로 전환 가능.
+  </div>
+</div>
+
+<!-- Direction F: Launch Animation -->
+<div class="section" id="section-f">
+  <div class="direction-label">Direction F — Launch Sequence Animation</div>
+  <div class="section-title">팀 시작 시퀀스 애니메이션</div>
+  <div class="section-desc">
+    [시작] 클릭 후 팀이 구성되는 과정의 시각적 피드백.
+    "원클릭 마법" 순간을 인상적으로 전달하는 마이크로인터랙션.
+  </div>
+
+  <div class="mockup-frame">
+    <div class="titlebar">
+      <div class="titlebar-dot red"></div>
+      <div class="titlebar-dot yellow"></div>
+      <div class="titlebar-dot green"></div>
+      <span class="titlebar-title">flow-orche — Launching...</span>
+    </div>
+    <div style="height:600px;background:var(--base);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div style="width:12px;height:12px;border-radius:50%;background:var(--project-amber)"></div>
+        <div style="font-size:24px;font-weight:600">flow-orche</div>
+      </div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:48px;font-family:monospace">~/projects/flow-orche</div>
+
+      <div style="width:400px;display:flex;flex-direction:column;gap:20px">
+        <!-- Step 1: Done -->
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:var(--success);font-size:18px">✓</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500">tmux 세션 생성</div>
+            <div style="font-size:12px;color:var(--text-muted)">session: flow-orche-main · 0.3s</div>
+          </div>
+          <div style="font-size:12px;color:var(--success)">완료</div>
+        </div>
+        <!-- Step 2: Done -->
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;color:var(--success);font-size:18px">✓</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500">Claude Code 실행</div>
+            <div style="font-size:12px;color:var(--text-muted)">claude --teammate-mode tmux · 1.2s</div>
+          </div>
+          <div style="font-size:12px;color:var(--success)">완료</div>
+        </div>
+        <!-- Step 3: Active -->
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="width:40px;height:40px;border-radius:10px;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;color:var(--warning);font-size:18px;animation:pulse 1.5s infinite">⟳</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500;color:var(--text-primary)">프롬프트 준비 감지</div>
+            <div style="font-size:12px;color:var(--text-muted)">폴링 중... (500ms 간격)</div>
+          </div>
+          <div style="font-size:12px;color:var(--warning)">진행 중</div>
+        </div>
+        <!-- Progress bar -->
+        <div style="width:100%;height:2px;background:var(--surface3);border-radius:1px;overflow:hidden;margin:-8px 0">
+          <div style="width:60%;height:100%;background:var(--primary);border-radius:1px;animation:progress 2s ease-in-out infinite"></div>
+        </div>
+        <!-- Step 4: Pending -->
+        <div style="display:flex;align-items:center;gap:16px;opacity:0.4">
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px">4</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500">팀 프리셋 전송</div>
+            <div style="font-size:12px;color:var(--text-muted)">SM(1) + Dev(1) + QA(1)</div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted)">대기</div>
+        </div>
+        <!-- Step 5: Pending -->
+        <div style="display:flex;align-items:center;gap:16px;opacity:0.4">
+          <div style="width:40px;height:40px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px">5</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:500">팀 스폰 완료</div>
+            <div style="font-size:12px;color:var(--text-muted)">에이전트 활동 시작 확인</div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted)">대기</div>
+        </div>
+      </div>
+
+      <div style="margin-top:32px;display:flex;gap:8px">
+        <button class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div class="comparison-note">
+    <strong>Direction F 특징:</strong> 팀 시작 시 전체 화면으로 진행 상황을 보여주는 몰입형 애니메이션.
+    각 단계의 소요 시간과 상세 정보를 표시하여 "무엇이 일어나고 있는지" 투명하게 전달.
+    Direction A의 카드 내 인라인 진행 표시와 대안적 선택 — 인라인이 더 실용적이나, 첫 경험에서 이 풀스크린 뷰가 감탄을 줄 수 있음.
+  </div>
+</div>
+
+<style>
+  @keyframes progress {
+    0% { width: 55%; }
+    50% { width: 70%; }
+    100% { width: 55%; }
+  }
+</style>
+
+<script>
+  function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('section-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
