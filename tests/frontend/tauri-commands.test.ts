@@ -210,6 +210,76 @@ describe("Tauri IPC Command Wrappers", () => {
       expect(call[0]).toBe("list_tmux_panes");
       expect(call[1]).toEqual({ sessionName: "my-session" });
     });
+
+    it("createTmuxSession should pass name, cols, and rows", async () => {
+      getMockInvoke().mockResolvedValue(undefined);
+
+      const { createTmuxSession } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await createTmuxSession("my-project", 120, 40);
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("create_tmux_session");
+      expect(call[1]).toEqual({ name: "my-project", cols: 120, rows: 40 });
+    });
+
+    it("killTmuxSession should pass name", async () => {
+      getMockInvoke().mockResolvedValue(undefined);
+
+      const { killTmuxSession } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await killTmuxSession("my-project");
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("kill_tmux_session");
+      expect(call[1]).toEqual({ name: "my-project" });
+    });
+
+    it("registerTmuxSession should pass projectId and sessionName", async () => {
+      getMockInvoke().mockResolvedValue({
+        id: "reg-1",
+        projectId: "proj-1",
+        sessionName: "my-session",
+        createdAt: "2026-02-13T00:00:00Z",
+      });
+
+      const { registerTmuxSession } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await registerTmuxSession("proj-1", "my-session");
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("register_tmux_session");
+      expect(call[1]).toEqual({ projectId: "proj-1", sessionName: "my-session" });
+    });
+
+    it("unregisterTmuxSession should pass sessionName", async () => {
+      getMockInvoke().mockResolvedValue(undefined);
+
+      const { unregisterTmuxSession } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await unregisterTmuxSession("my-session");
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("unregister_tmux_session");
+      expect(call[1]).toEqual({ sessionName: "my-session" });
+    });
+
+    it("listTmuxSessionsWithOwnership should call invoke", async () => {
+      getMockInvoke().mockResolvedValue([]);
+
+      const { listTmuxSessionsWithOwnership } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await listTmuxSessionsWithOwnership();
+
+      expect(getMockInvoke().mock.calls[0][0]).toBe(
+        "list_tmux_sessions_with_ownership",
+      );
+    });
   });
 
   // ── Notification Commands ─────────────────────────────────────────

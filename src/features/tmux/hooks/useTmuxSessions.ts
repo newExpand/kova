@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useMemo, useEffect } from "react";
 import { useTmuxStore } from "../stores/tmuxStore";
 
-export function useTmuxSessions() {
+export function useTmuxSessions(projectId?: string) {
   const checkAvailability = useTmuxStore((s) => s.checkAvailability);
   const fetchSessions = useTmuxStore((s) => s.fetchSessions);
   const isAvailable = useTmuxStore((s) => s.isAvailable);
@@ -21,5 +21,16 @@ export function useTmuxSessions() {
     }
   }, [isAvailable, fetchSessions]);
 
-  return { sessions, isAvailable, isLoading, error };
+  const projectSessions = useMemo(() => {
+    if (!projectId) return [];
+    return sessions.filter((s) => s.isAppSession && s.projectId === projectId);
+  }, [sessions, projectId]);
+
+  return {
+    sessions,
+    projectSessions,
+    isAvailable,
+    isLoading,
+    error,
+  };
 }

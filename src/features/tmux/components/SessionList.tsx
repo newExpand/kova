@@ -1,9 +1,9 @@
 import { useTmuxStore } from "../stores/tmuxStore";
-import type { TmuxSession } from "../types";
+import type { SessionInfo } from "../types";
 import { cn } from "../../../lib/utils";
 
 interface SessionItemProps {
-  session: TmuxSession;
+  session: SessionInfo;
   isSelected: boolean;
   onSelect: (name: string) => void;
 }
@@ -14,7 +14,9 @@ function SessionItem({ session, isSelected, onSelect }: SessionItemProps) {
       onClick={() => onSelect(session.name)}
       className={cn(
         "flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors",
-        isSelected ? "bg-surface text-text" : "text-text-secondary hover:bg-surface-hover",
+        isSelected
+          ? "bg-surface text-text"
+          : "text-text-secondary hover:bg-surface-hover",
       )}
     >
       <div className="flex items-center gap-2 min-w-0">
@@ -33,8 +35,11 @@ function SessionItem({ session, isSelected, onSelect }: SessionItemProps) {
   );
 }
 
-function SessionList() {
-  const sessions = useTmuxStore((s) => s.sessions);
+interface SessionListProps {
+  sessions: SessionInfo[];
+}
+
+function SessionList({ sessions }: SessionListProps) {
   const selectedSession = useTmuxStore((s) => s.selectedSession);
   const selectSession = useTmuxStore((s) => s.selectSession);
   const isLoading = useTmuxStore((s) => s.isLoading);

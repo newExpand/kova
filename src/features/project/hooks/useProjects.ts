@@ -1,7 +1,9 @@
 import { useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useProjectStore } from "../stores/projectStore";
 
 export function useProjects() {
+  const navigate = useNavigate();
   const projects = useProjectStore((s) => s.projects);
   const selectedId = useProjectStore((s) => s.selectedId);
   const isLoading = useProjectStore((s) => s.isLoading);
@@ -26,8 +28,9 @@ export function useProjects() {
   const navigateToProject = useCallback(
     (id: string) => {
       selectProject(id);
+      navigate(`/projects/${id}`);
     },
-    [selectProject],
+    [selectProject, navigate],
   );
 
   return {

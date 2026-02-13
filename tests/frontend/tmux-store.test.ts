@@ -1,40 +1,57 @@
 /**
- * tmux Store Tests — PLAN.md Feature: tmux 세션 통합
+ * tmux Store Tests — Session ownership tracking
  *
  * Tests:
- * - Session list fetch
+ * - Session list fetch (with ownership info)
  * - Pane list fetch
  * - Session selection triggers pane fetch
  * - tmux availability check
  * - Empty states (no tmux server)
+ * - Register/unregister session
+ * - Project vs external session filtering
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act } from "@testing-library/react";
 
 vi.mock("../../src/lib/tauri/commands", () => ({
-  listTmuxSessions: vi.fn(),
+  listTmuxSessionsWithOwnership: vi.fn(),
   listTmuxPanes: vi.fn(),
   checkTmuxAvailable: vi.fn(),
+  registerTmuxSession: vi.fn(),
+  unregisterTmuxSession: vi.fn(),
 }));
 
 import { useTmuxStore } from "../../src/features/tmux/stores/tmuxStore";
 import * as commands from "../../src/lib/tauri/commands";
-import type { TmuxSession, TmuxPane } from "../../src/lib/tauri/commands";
+import type { SessionInfo, TmuxPane } from "../../src/lib/tauri/commands";
 
 const mockCommands = vi.mocked(commands);
 
-const MOCK_SESSION: TmuxSession = {
+const MOCK_APP_SESSION: SessionInfo = {
   name: "flow-orche-mvp",
   windows: 3,
   created: "1706000000",
   attached: true,
+  isAppSession: true,
+  projectId: "proj-1",
 };
 
-const MOCK_SESSION_2: TmuxSession = {
-  name: "test-session",
+const MOCK_EXTERNAL_SESSION: SessionInfo = {
+  name: "external-session",
   windows: 1,
   created: "1706000001",
   attached: false,
+  isAppSession: false,
+  projectId: null,
+};
+
+const MOCK_OTHER_PROJECT_SESSION: SessionInfo = {
+  name: "other-project",
+  windows: 2,
+  created: "1706000002",
+  attached: false,
+  isAppSession: true,
+  projectId: "proj-2",
 };
 
 const MOCK_PANE: TmuxPane = {
@@ -97,12 +114,12 @@ describe("TmuxStore", () => {
     });
   });
 
-  // ── Feature: 세션 목록 조회 ────────────────────────────────────────
+  // ── Feature: 세션 목록 조회 (ownership 포함) ────────────────────────
   describe("fetchSessions", () => {
-    it("should fetch tmux sessions from backend", async () => {
-      mockCommands.listTmuxSessions.mockResolvedValue([
-        MOCK_SESSION,
-        MOCK_SESSION_2,
+    it("should fetch sessions with ownership info", async () => {
+      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([
+        MOCK_APP_SESSION,
+        MOCK_EXTERNAL_SESSION,
       ]);
 
       await act(async () => {
@@ -111,14 +128,15 @@ describe("TmuxStore", () => {
 
       const state = useTmuxStore.getState();
       expect(state.sessions).toHaveLength(2);
-      expect(state.sessions[0].name).toBe("flow-orche-mvp");
-      expect(state.sessions[0].attached).toBe(true);
-      expect(state.sessions[1].attached).toBe(false);
+      expect(state.sessions[0].isAppSession).toBe(true);
+      expect(state.sessions[0].projectId).toBe("proj-1");
+      expect(state.sessions[1].isAppSession).toBe(false);
+      expect(state.sessions[1].projectId).toBeNull();
       expect(state.isLoading).toBe(false);
     });
 
     it("should handle empty session list (no tmux server)", async () => {
-      mockCommands.listTmuxSessions.mockResolvedValue([]);
+      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([]);
 
       await act(async () => {
         await useTmuxStore.getState().fetchSessions();
@@ -129,7 +147,7 @@ describe("TmuxStore", () => {
     });
 
     it("should handle fetch error", async () => {
-      mockCommands.listTmuxSessions.mockRejectedValue(
+      mockCommands.listTmuxSessionsWithOwnership.mockRejectedValue(
         new Error("tmux error"),
       );
 
@@ -139,6 +157,47 @@ describe("TmuxStore", () => {
 
       expect(useTmuxStore.getState().error).toBe("tmux error");
       expect(useTmuxStore.getState().isLoading).toBe(false);
+    });
+  });
+
+  // ── Feature: 세션 등록/해제 ─────────────────────────────────────────
+  describe("registerSession", () => {
+    it("should register a session and refetch", async () => {
+      mockCommands.registerTmuxSession.mockResolvedValue({
+        id: "reg-1",
+        projectId: "proj-1",
+        sessionName: "new-session",
+        createdAt: "2026-02-13T00:00:00Z",
+      });
+      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([
+        MOCK_APP_SESSION,
+      ]);
+
+      await act(async () => {
+        await useTmuxStore.getState().registerSession("proj-1", "new-session");
+      });
+
+      expect(mockCommands.registerTmuxSession).toHaveBeenCalledWith(
+        "proj-1",
+        "new-session",
+      );
+      expect(mockCommands.listTmuxSessionsWithOwnership).toHaveBeenCalled();
+    });
+  });
+
+  describe("unregisterSession", () => {
+    it("should unregister a session and refetch", async () => {
+      mockCommands.unregisterTmuxSession.mockResolvedValue(undefined);
+      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([]);
+
+      await act(async () => {
+        await useTmuxStore.getState().unregisterSession("old-session");
+      });
+
+      expect(mockCommands.unregisterTmuxSession).toHaveBeenCalledWith(
+        "old-session",
+      );
+      expect(mockCommands.listTmuxSessionsWithOwnership).toHaveBeenCalled();
     });
   });
 
@@ -221,11 +280,38 @@ describe("TmuxStore", () => {
     });
   });
 
+  // ── Feature: Project/External 분리 필터링 ──────────────────────────
+  describe("session filtering", () => {
+    it("should separate project and external sessions", async () => {
+      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([
+        MOCK_APP_SESSION,
+        MOCK_EXTERNAL_SESSION,
+        MOCK_OTHER_PROJECT_SESSION,
+      ]);
+
+      await act(async () => {
+        await useTmuxStore.getState().fetchSessions();
+      });
+
+      const { sessions } = useTmuxStore.getState();
+      const projectSessions = sessions.filter(
+        (s) => s.isAppSession && s.projectId === "proj-1",
+      );
+      const externalSessions = sessions.filter(
+        (s) => !s.isAppSession || s.projectId !== "proj-1",
+      );
+
+      expect(projectSessions).toHaveLength(1);
+      expect(projectSessions[0].name).toBe("flow-orche-mvp");
+      expect(externalSessions).toHaveLength(2);
+    });
+  });
+
   // ── Reset ─────────────────────────────────────────────────────────
   describe("reset", () => {
     it("should reset to initial state", () => {
       useTmuxStore.setState({
-        sessions: [MOCK_SESSION],
+        sessions: [MOCK_APP_SESSION],
         selectedSession: "flow-orche-mvp",
         panes: { "flow-orche-mvp": [MOCK_PANE] },
         isAvailable: true,

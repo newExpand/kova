@@ -34,6 +34,13 @@ pub fn create(
         )));
     }
 
+    // Purge any soft-deleted project with the same path
+    // (so the UNIQUE constraint on path doesn't block re-registration)
+    conn.execute(
+        "DELETE FROM projects WHERE path = ?1 AND is_active = 0",
+        [&path_str],
+    )?;
+
     // Generate UUID
     let id = Uuid::new_v4().to_string();
 
@@ -237,6 +244,27 @@ mod tests {
         let updated = update(&conn, &project.id, &input).unwrap();
         assert_eq!(updated.name, "Updated");
         assert_eq!(updated.color_index, 5);
+    }
+
+    #[test]
+    fn test_soft_delete_then_recreate_same_path() {
+        let conn = setup_test_db();
+        let project = create(&conn, "Original", "/tmp", 0).unwrap();
+
+        // Soft delete
+        soft_delete(&conn, &project.id).unwrap();
+        let projects = list(&conn).unwrap();
+        assert_eq!(projects.len(), 0);
+
+        // Re-create with same path should succeed
+        let new_project = create(&conn, "Recreated", "/tmp", 3).unwrap();
+        assert_ne!(new_project.id, project.id); // New UUID
+        assert_eq!(new_project.name, "Recreated");
+        assert_eq!(new_project.color_index, 3);
+
+        // Old soft-deleted record should be purged
+        let result = get(&conn, &project.id);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -25,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_pty::init())
         .setup(|app| {
             // Initialize database
             let db = DbConnection::initialize(app)?;
@@ -54,6 +55,11 @@ pub fn run() {
             commands::tmux::check_tmux_available,
             commands::tmux::list_tmux_sessions,
             commands::tmux::list_tmux_panes,
+            commands::tmux::create_tmux_session,
+            commands::tmux::kill_tmux_session,
+            commands::tmux::register_tmux_session,
+            commands::tmux::unregister_tmux_session,
+            commands::tmux::list_tmux_sessions_with_ownership,
             // Notification commands
             commands::notification::list_project_notifications,
             // Environment commands

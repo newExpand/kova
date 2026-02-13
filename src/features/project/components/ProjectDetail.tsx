@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useProjectStore } from "../stores/projectStore";
 import { useNotificationStore } from "../../notification/stores/notificationStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
@@ -10,9 +10,12 @@ import { NotificationPanel } from "../../notification/components/NotificationPan
 import { StatusIndicator } from "./StatusIndicator";
 import { COLOR_PALETTE } from "../types";
 import { PageLayout } from "../../../components/layout/PageLayout";
+import { Button } from "../../../components/ui/button";
+import { Terminal } from "lucide-react";
 
 function ProjectDetail() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   );
@@ -20,7 +23,7 @@ function ProjectDetail() {
 
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
 
-  const { isAvailable } = useTmuxSessions();
+  const { isAvailable, projectSessions } = useTmuxSessions(projectId);
   const selectedSession = useTmuxStore((s) => s.selectedSession);
   const panes = useTmuxStore((s) =>
     selectedSession ? s.panes[selectedSession] : undefined,
@@ -51,22 +54,33 @@ function ProjectDetail() {
       <div className="space-y-6">
         {/* Project info */}
         <section className="rounded-lg border border-border bg-bg-secondary p-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="h-4 w-4 rounded-sm"
-              style={{ backgroundColor: colorVar }}
-            />
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-text">
-                  {project.name}
-                </h2>
-                <StatusIndicator active={project.isActive} />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="h-4 w-4 rounded-sm"
+                style={{ backgroundColor: colorVar }}
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-text">
+                    {project.name}
+                  </h2>
+                  <StatusIndicator active={project.isActive} />
+                </div>
+                <p className="mt-0.5 text-xs text-text-muted font-mono">
+                  {project.path}
+                </p>
               </div>
-              <p className="mt-0.5 text-xs text-text-muted font-mono">
-                {project.path}
-              </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => navigate(`/projects/${projectId}/terminal`)}
+            >
+              <Terminal className="h-4 w-4" />
+              Open Terminal
+            </Button>
           </div>
         </section>
 
@@ -86,7 +100,7 @@ function ProjectDetail() {
               </div>
             ) : (
               <div className="flex flex-col">
-                <SessionList />
+                <SessionList sessions={projectSessions} />
                 {selectedSession && (
                   <div className="border-t border-border p-3">
                     <h4 className="mb-2 text-xs font-medium text-text-secondary">
@@ -100,7 +114,7 @@ function ProjectDetail() {
                       <div className="grid gap-2">
                         {panes.map((pane) => (
                           <PaneCard
-                            key={`${pane.windowIndex}-${pane.paneIndex}`}
+                            key={`${pane.sessionName}-${pane.windowIndex}-${pane.paneIndex}`}
                             pane={pane}
                           />
                         ))}

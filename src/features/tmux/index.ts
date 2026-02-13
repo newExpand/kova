@@ -1,5 +1,10 @@
 // Types
-export type { TmuxSession, TmuxPane } from "./types";
+export type {
+  TmuxSession,
+  TmuxPane,
+  ProjectTmuxSession,
+  SessionInfo,
+} from "./types";
 
 // Store
 export { useTmuxStore } from "./stores/tmuxStore";

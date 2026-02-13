@@ -19,3 +19,25 @@ pub struct TmuxPane {
     pub pane_current_command: String,
     pub pane_active: bool,
 }
+
+/// DB record mapping a tmux session to a project
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTmuxSession {
+    pub id: String,
+    pub project_id: String,
+    pub session_name: String,
+    pub created_at: String,
+}
+
+/// Combined session info: live tmux data + DB ownership
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionInfo {
+    pub name: String,
+    pub windows: i32,
+    pub created: String,
+    pub attached: bool,
+    pub is_app_session: bool,
+    pub project_id: Option<String>,
+}

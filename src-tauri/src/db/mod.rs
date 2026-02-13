@@ -68,6 +68,24 @@ impl DbConnection {
             info!("Migration 001 already applied, skipping");
         }
 
+        // Check if migration 002 has been applied
+        let version_2: Option<i32> = conn
+            .query_row(
+                "SELECT version FROM _migrations WHERE version = 2",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if version_2.is_none() {
+            info!("Running migration 002_tmux_sessions.sql");
+            let migration_sql = include_str!("migrations/002_tmux_sessions.sql");
+            conn.execute_batch(migration_sql)?;
+            info!("Migration 002 applied successfully");
+        } else {
+            info!("Migration 002 already applied, skipping");
+        }
+
         Ok(())
     }
 }

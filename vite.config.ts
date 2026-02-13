@@ -22,6 +22,15 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-unicode11"],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

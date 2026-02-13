@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { TmuxSession, TmuxPane } from "../types";
+import type { SessionInfo, TmuxPane } from "../types";
 import * as commands from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
@@ -8,7 +8,7 @@ import * as commands from "../../../lib/tauri/commands";
 // ---------------------------------------------------------------------------
 
 interface TmuxState {
-  sessions: TmuxSession[];
+  sessions: SessionInfo[];
   panes: Record<string, TmuxPane[]>;
   isAvailable: boolean | null;
   isLoading: boolean;
@@ -22,17 +22,12 @@ interface TmuxState {
 // ---------------------------------------------------------------------------
 
 interface TmuxActions {
-  // Availability
   checkAvailability: () => Promise<void>;
-
-  // Sessions
   fetchSessions: () => Promise<void>;
+  registerSession: (projectId: string, sessionName: string) => Promise<void>;
+  unregisterSession: (sessionName: string) => Promise<void>;
   selectSession: (name: string | null) => void;
-
-  // Panes
   fetchPanes: (sessionName: string) => Promise<void>;
-
-  // Reset
   reset: () => void;
 }
 
@@ -86,7 +81,7 @@ export const useTmuxStore = create<TmuxStore>()(
           "fetchSessions/start",
         );
         try {
-          const sessions = await commands.listTmuxSessions();
+          const sessions = await commands.listTmuxSessionsWithOwnership();
           set(
             { sessions, isLoading: false },
             undefined,
@@ -99,6 +94,26 @@ export const useTmuxStore = create<TmuxStore>()(
             undefined,
             "fetchSessions/error",
           );
+        }
+      },
+
+      registerSession: async (projectId: string, sessionName: string) => {
+        try {
+          await commands.registerTmuxSession(projectId, sessionName);
+          await get().fetchSessions();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set({ error: message }, undefined, "registerSession/error");
+        }
+      },
+
+      unregisterSession: async (sessionName: string) => {
+        try {
+          await commands.unregisterTmuxSession(sessionName);
+          await get().fetchSessions();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set({ error: message }, undefined, "unregisterSession/error");
         }
       },
 

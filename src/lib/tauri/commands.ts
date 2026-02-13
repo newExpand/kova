@@ -43,6 +43,22 @@ export interface TmuxPane {
   paneActive: boolean;
 }
 
+export interface ProjectTmuxSession {
+  id: string;
+  projectId: string;
+  sessionName: string;
+  createdAt: string;
+}
+
+export interface SessionInfo {
+  name: string;
+  windows: number;
+  created: string;
+  attached: boolean;
+  isAppSession: boolean;
+  projectId: string | null;
+}
+
 export interface NotificationRecord {
   id: string;
   projectId: string;
@@ -126,6 +142,38 @@ export async function listTmuxSessions(): Promise<TmuxSession[]> {
 
 export async function listTmuxPanes(sessionName: string): Promise<TmuxPane[]> {
   return invoke<TmuxPane[]>("list_tmux_panes", { sessionName });
+}
+
+export async function createTmuxSession(
+  name: string,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  return invoke<void>("create_tmux_session", { name, cols, rows });
+}
+
+export async function killTmuxSession(name: string): Promise<void> {
+  return invoke<void>("kill_tmux_session", { name });
+}
+
+export async function registerTmuxSession(
+  projectId: string,
+  sessionName: string,
+): Promise<ProjectTmuxSession> {
+  return invoke<ProjectTmuxSession>("register_tmux_session", {
+    projectId,
+    sessionName,
+  });
+}
+
+export async function unregisterTmuxSession(
+  sessionName: string,
+): Promise<void> {
+  return invoke<void>("unregister_tmux_session", { sessionName });
+}
+
+export async function listTmuxSessionsWithOwnership(): Promise<SessionInfo[]> {
+  return invoke<SessionInfo[]>("list_tmux_sessions_with_ownership");
 }
 
 // ---------------------------------------------------------------------------
