@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
@@ -19,7 +19,12 @@ function Sidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
 
-  const projects = useProjectStore((s) => s.activeProjects());
+  const allProjects = useProjectStore((s) => s.projects);
+  const deletingIds = useProjectStore((s) => s.deletingIds);
+  const projects = useMemo(
+    () => allProjects.filter((p) => p.isActive && !deletingIds.has(p.id)),
+    [allProjects, deletingIds],
+  );
   const selectedId = useProjectStore((s) => s.selectedId);
   const selectProject = useProjectStore((s) => s.selectProject);
   const createProject = useProjectStore((s) => s.createProject);

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { FolderOpen, Plus, Settings } from "lucide-react";
 import {
@@ -19,7 +19,12 @@ interface CommandPaletteProps {
 }
 
 function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
-  const projects = useProjectStore((s) => s.activeProjects());
+  const allProjects = useProjectStore((s) => s.projects);
+  const deletingIds = useProjectStore((s) => s.deletingIds);
+  const projects = useMemo(
+    () => allProjects.filter((p) => p.isActive && !deletingIds.has(p.id)),
+    [allProjects, deletingIds],
+  );
   const selectProject = useProjectStore((s) => s.selectProject);
   const navigate = useNavigate();
 
