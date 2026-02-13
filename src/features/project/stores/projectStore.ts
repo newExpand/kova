@@ -1,0 +1,235 @@
+import { create } from "zustand";
+import { devtools } from "zustand/middleware";
+import type { Project, CreateProjectInput, UpdateProjectInput } from "../types";
+import * as commands from "../../../lib/tauri/commands";
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+interface ProjectState {
+  projects: Project[];
+  selectedId: string | null;
+  isLoading: boolean;
+  isCreating: boolean;
+  error: string | null;
+  deletingIds: Set<string>;
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+interface ProjectActions {
+  // Computed
+  getProjectById: (id: string) => Project | undefined;
+  activeProjects: () => Project[];
+
+  // Data fetching
+  fetchProjects: () => Promise<void>;
+  createProject: (input: CreateProjectInput) => Promise<Project>;
+  updateProject: (id: string, input: UpdateProjectInput) => Promise<void>;
+
+  // Optimistic delete + undo
+  deleteProject: (id: string) => void;
+  undoDelete: (id: string) => void;
+  confirmDelete: (id: string) => Promise<void>;
+
+  // Selection
+  selectProject: (id: string | null) => void;
+
+  // Reset
+  reset: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Combined Store Type
+// ---------------------------------------------------------------------------
+
+type ProjectStore = ProjectState & ProjectActions;
+
+// ---------------------------------------------------------------------------
+// Initial state
+// ---------------------------------------------------------------------------
+
+const initialState: ProjectState = {
+  projects: [],
+  selectedId: null,
+  isLoading: false,
+  isCreating: false,
+  error: null,
+  deletingIds: new Set(),
+};
+
+// ---------------------------------------------------------------------------
+// Store
+// ---------------------------------------------------------------------------
+
+export const useProjectStore = create<ProjectStore>()(
+  devtools(
+    (set, get) => ({
+      ...initialState,
+
+      // -- Computed --------------------------------------------------------
+
+      getProjectById: (id) => get().projects.find((p) => p.id === id),
+
+      activeProjects: () =>
+        get().projects.filter(
+          (p) => p.isActive && !get().deletingIds.has(p.id),
+        ),
+
+      // -- Data fetching ---------------------------------------------------
+
+      fetchProjects: async () => {
+        set({ isLoading: true, error: null }, undefined, "fetchProjects/start");
+        try {
+          const projects = await commands.listProjects();
+          set({ projects, isLoading: false }, undefined, "fetchProjects/success");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set(
+            { error: message, isLoading: false },
+            undefined,
+            "fetchProjects/error",
+          );
+        }
+      },
+
+      createProject: async (input) => {
+        set({ isCreating: true, error: null }, undefined, "createProject/start");
+        try {
+          const project = await commands.createProject(
+            input.name,
+            input.path,
+            input.colorIndex ?? 0,
+          );
+          set(
+            (state) => ({
+              projects: [...state.projects, project],
+              isCreating: false,
+            }),
+            undefined,
+            "createProject/success",
+          );
+          return project;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set(
+            { error: message, isCreating: false },
+            undefined,
+            "createProject/error",
+          );
+          throw err;
+        }
+      },
+
+      updateProject: async (id, input) => {
+        set({ error: null }, undefined, "updateProject/start");
+        try {
+          const updated = await commands.updateProject(id, input);
+          set(
+            (state) => ({
+              projects: state.projects.map((p) =>
+                p.id === id ? updated : p,
+              ),
+            }),
+            undefined,
+            "updateProject/success",
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set({ error: message }, undefined, "updateProject/error");
+          throw err;
+        }
+      },
+
+      // -- Optimistic delete + undo ----------------------------------------
+
+      deleteProject: (id) => {
+        // Step 1: Mark as deleting (optimistic — hide from UI immediately)
+        set(
+          (state) => ({
+            deletingIds: new Set([...state.deletingIds, id]),
+            selectedId: state.selectedId === id ? null : state.selectedId,
+          }),
+          undefined,
+          "deleteProject/optimistic",
+        );
+
+        // Step 2: Call backend soft-delete
+        commands.deleteProject(id).catch((err) => {
+          // Rollback on failure
+          const message = err instanceof Error ? err.message : String(err);
+          set(
+            (state) => {
+              const next = new Set(state.deletingIds);
+              next.delete(id);
+              return { deletingIds: next, error: message };
+            },
+            undefined,
+            "deleteProject/rollback",
+          );
+        });
+      },
+
+      undoDelete: (id) => {
+        // Remove from deleting set and restore on backend
+        set(
+          (state) => {
+            const next = new Set(state.deletingIds);
+            next.delete(id);
+            return { deletingIds: next };
+          },
+          undefined,
+          "undoDelete",
+        );
+
+        commands.restoreProject(id).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          set({ error: message }, undefined, "undoDelete/error");
+        });
+      },
+
+      confirmDelete: async (id) => {
+        // Timer expired — actually purge
+        try {
+          await commands.purgeProject(id);
+          set(
+            (state) => {
+              const next = new Set(state.deletingIds);
+              next.delete(id);
+              return {
+                projects: state.projects.filter((p) => p.id !== id),
+                deletingIds: next,
+              };
+            },
+            undefined,
+            "confirmDelete/success",
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set(
+            (state) => {
+              const next = new Set(state.deletingIds);
+              next.delete(id);
+              return { deletingIds: next, error: message };
+            },
+            undefined,
+            "confirmDelete/error",
+          );
+        }
+      },
+
+      // -- Selection -------------------------------------------------------
+
+      selectProject: (id) =>
+        set({ selectedId: id }, undefined, "selectProject"),
+
+      // -- Reset -----------------------------------------------------------
+
+      reset: () => set(initialState, undefined, "reset"),
+    }),
+    { name: "ProjectStore" },
+  ),
+);
