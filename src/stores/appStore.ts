@@ -7,6 +7,7 @@ import { devtools } from "zustand/middleware";
 
 interface AppState {
   sidebarCollapsed: boolean;
+  sidebarMode: "projects" | "sessions";
   currentRoute: string;
   isOnboarding: boolean;
 }
@@ -18,6 +19,7 @@ interface AppState {
 interface AppActions {
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setSidebarMode: (mode: "projects" | "sessions") => void;
   setCurrentRoute: (route: string) => void;
   setOnboarding: (value: boolean) => void;
   reset: () => void;
@@ -35,6 +37,7 @@ type AppStore = AppState & AppActions;
 
 const initialState: AppState = {
   sidebarCollapsed: false,
+  sidebarMode: "projects",
   currentRoute: "/",
   isOnboarding: false,
 };
@@ -57,6 +60,9 @@ export const useAppStore = create<AppStore>()(
 
       setSidebarCollapsed: (collapsed) =>
         set({ sidebarCollapsed: collapsed }, undefined, "setSidebarCollapsed"),
+
+      setSidebarMode: (mode) =>
+        set({ sidebarMode: mode }, undefined, "setSidebarMode"),
 
       setCurrentRoute: (route) =>
         set({ currentRoute: route }, undefined, "setCurrentRoute"),

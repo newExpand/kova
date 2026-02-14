@@ -10,8 +10,7 @@ export type {
 export { useTmuxStore } from "./stores/tmuxStore";
 
 // Components
-export { SessionList } from "./components/SessionList";
-export { PaneCard } from "./components/PaneCard";
+export { SessionManagerPage } from "./components/SessionManagerPage";
 
 // Hooks
 export { useTmuxSessions } from "./hooks/useTmuxSessions";

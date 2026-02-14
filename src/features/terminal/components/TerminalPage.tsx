@@ -1,25 +1,25 @@
-import { useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTerminalStore } from "../stores/terminalStore";
+import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { SessionSelector } from "./SessionSelector";
 import { TerminalView } from "./TerminalView";
-import { Button } from "../../../components/ui/button";
-import { ArrowLeft } from "lucide-react";
 import type { TerminalConfig } from "../types";
 
 function TerminalPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   );
 
   const status = useTerminalStore((s) => s.status);
-  const sessionName = useTerminalStore((s) => s.sessionName);
-  const reset = useTerminalStore((s) => s.reset);
+
+  const { sessions, projectSessions, isAvailable, isLoading, hasFetchedSessions } =
+    useTmuxSessions(projectId);
 
   const [activeConfig, setActiveConfig] = useState<TerminalConfig | null>(null);
+  const autoConnectAttempted = useRef(false);
 
   const handleConnect = useCallback(
     (config: TerminalConfig) => {
@@ -28,11 +28,55 @@ function TerminalPage() {
     [projectId],
   );
 
-  const handleBack = useCallback(() => {
-    reset();
-    setActiveConfig(null);
-    navigate(projectId ? `/projects/${projectId}` : "/");
-  }, [navigate, projectId, reset]);
+  // Auto-connect: attach existing session or create new one
+  useEffect(() => {
+    if (autoConnectAttempted.current) return;
+    if (isAvailable === null || isLoading || !hasFetchedSessions) return;
+    if (activeConfig) return;
+
+    if (isAvailable === false) {
+      // tmux not installed — fall through to SessionSelector (shows error)
+      autoConnectAttempted.current = true;
+      return;
+    }
+
+    autoConnectAttempted.current = true;
+
+    const slug =
+      project?.name.toLowerCase().replace(/\s+/g, "-") ?? "default";
+    const firstSession = projectSessions[0];
+    const name = firstSession ? firstSession.name : slug;
+
+    // Check if session already exists in tmux (even if not registered in app DB)
+    const existsInTmux = sessions.some((s) => s.name === name);
+    const isNewSession = !firstSession && !existsInTmux;
+
+    handleConnect({
+      projectId: projectId ?? "",
+      sessionName: name,
+      mode: "new", // tmux -A handles attach-or-create
+      cols: 80,
+      rows: 24,
+      cwd: project?.path,
+      initialCommand: isNewSession
+        ? "claude --dangerously-skip-permissions"
+        : undefined,
+    });
+  }, [
+    isAvailable,
+    isLoading,
+    hasFetchedSessions,
+    projectSessions.length,
+    activeConfig,
+    project?.name,
+    projectId,
+    handleConnect,
+    projectSessions,
+    sessions,
+  ]);
+
+  // On error, allow fallback to manual SessionSelector
+  const showFallback = !activeConfig || status === "error";
 
   if (!project) {
     return (
@@ -42,35 +86,27 @@ function TerminalPage() {
     );
   }
 
-  const isConnected = status === "connected";
+  const isConnecting = status === "connecting";
 
   return (
     <div className="flex h-full flex-1 min-w-0 flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-        <Button variant="ghost" size="icon" onClick={handleBack}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-text">
-            Terminal — {project.name}
-          </span>
-          {isConnected && sessionName && (
-            <>
-              <span className="text-xs text-text-muted">({sessionName})</span>
-              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-            </>
-          )}
+      {isConnecting && !activeConfig ? (
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-text-muted">Connecting...</p>
         </div>
-      </header>
-
-      {/* Content */}
-      {!activeConfig ? (
+      ) : showFallback ? (
         <div className="flex-1 overflow-y-auto p-6">
+          {status === "error" && (
+            <div className="mb-4 rounded-lg border border-danger bg-bg-secondary p-3">
+              <p className="text-sm text-danger">
+                Connection failed. Please select a session manually.
+              </p>
+            </div>
+          )}
           <SessionSelector
             projectName={project.name}
             onConnect={handleConnect}
-            disabled={status === "connecting"}
+            disabled={isConnecting}
           />
         </div>
       ) : (

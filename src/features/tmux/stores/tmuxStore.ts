@@ -13,6 +13,7 @@ interface TmuxState {
   isAvailable: boolean | null;
   isLoading: boolean;
   isLoadingPanes: boolean;
+  hasFetchedSessions: boolean;
   error: string | null;
   selectedSession: string | null;
 }
@@ -47,6 +48,7 @@ const initialState: TmuxState = {
   isAvailable: null,
   isLoading: false,
   isLoadingPanes: false,
+  hasFetchedSessions: false,
   error: null,
   selectedSession: null,
 };
@@ -83,14 +85,14 @@ export const useTmuxStore = create<TmuxStore>()(
         try {
           const sessions = await commands.listTmuxSessionsWithOwnership();
           set(
-            { sessions, isLoading: false },
+            { sessions, isLoading: false, hasFetchedSessions: true },
             undefined,
             "fetchSessions/success",
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           set(
-            { error: message, isLoading: false },
+            { error: message, isLoading: false, hasFetchedSessions: true },
             undefined,
             "fetchSessions/error",
           );

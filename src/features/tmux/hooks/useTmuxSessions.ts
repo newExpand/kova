@@ -8,6 +8,7 @@ export function useTmuxSessions(projectId?: string) {
   const sessions = useTmuxStore((s) => s.sessions);
   const isLoading = useTmuxStore((s) => s.isLoading);
   const error = useTmuxStore((s) => s.error);
+  const hasFetchedSessions = useTmuxStore((s) => s.hasFetchedSessions);
 
   useEffect(() => {
     if (isAvailable === null) {
@@ -31,6 +32,7 @@ export function useTmuxSessions(projectId?: string) {
     projectSessions,
     isAvailable,
     isLoading,
+    hasFetchedSessions,
     error,
   };
 }
