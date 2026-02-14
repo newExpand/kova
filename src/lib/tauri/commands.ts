@@ -159,8 +159,8 @@ export async function killTmuxSession(name: string): Promise<void> {
 export async function registerTmuxSession(
   projectId: string,
   sessionName: string,
-): Promise<ProjectTmuxSession> {
-  return invoke<ProjectTmuxSession>("register_tmux_session", {
+): Promise<SessionInfo[]> {
+  return invoke<SessionInfo[]>("register_tmux_session", {
     projectId,
     sessionName,
   });
@@ -168,8 +168,8 @@ export async function registerTmuxSession(
 
 export async function unregisterTmuxSession(
   sessionName: string,
-): Promise<void> {
-  return invoke<void>("unregister_tmux_session", { sessionName });
+): Promise<SessionInfo[]> {
+  return invoke<SessionInfo[]>("unregister_tmux_session", { sessionName });
 }
 
 export async function listTmuxSessionsWithOwnership(): Promise<SessionInfo[]> {

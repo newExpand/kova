@@ -162,16 +162,8 @@ describe("TmuxStore", () => {
 
   // ── Feature: 세션 등록/해제 ─────────────────────────────────────────
   describe("registerSession", () => {
-    it("should register a session and refetch", async () => {
-      mockCommands.registerTmuxSession.mockResolvedValue({
-        id: "reg-1",
-        projectId: "proj-1",
-        sessionName: "new-session",
-        createdAt: "2026-02-13T00:00:00Z",
-      });
-      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([
-        MOCK_APP_SESSION,
-      ]);
+    it("should register a session and update store from response", async () => {
+      mockCommands.registerTmuxSession.mockResolvedValue([MOCK_APP_SESSION]);
 
       await act(async () => {
         await useTmuxStore.getState().registerSession("proj-1", "new-session");
@@ -181,14 +173,15 @@ describe("TmuxStore", () => {
         "proj-1",
         "new-session",
       );
-      expect(mockCommands.listTmuxSessionsWithOwnership).toHaveBeenCalled();
+      // No separate fetchSessions call — sessions come from register response
+      expect(mockCommands.listTmuxSessionsWithOwnership).not.toHaveBeenCalled();
+      expect(useTmuxStore.getState().sessions).toEqual([MOCK_APP_SESSION]);
     });
   });
 
   describe("unregisterSession", () => {
-    it("should unregister a session and refetch", async () => {
-      mockCommands.unregisterTmuxSession.mockResolvedValue(undefined);
-      mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([]);
+    it("should unregister a session and update store from response", async () => {
+      mockCommands.unregisterTmuxSession.mockResolvedValue([]);
 
       await act(async () => {
         await useTmuxStore.getState().unregisterSession("old-session");
@@ -197,7 +190,9 @@ describe("TmuxStore", () => {
       expect(mockCommands.unregisterTmuxSession).toHaveBeenCalledWith(
         "old-session",
       );
-      expect(mockCommands.listTmuxSessionsWithOwnership).toHaveBeenCalled();
+      // No separate fetchSessions call — sessions come from unregister response
+      expect(mockCommands.listTmuxSessionsWithOwnership).not.toHaveBeenCalled();
+      expect(useTmuxStore.getState().sessions).toEqual([]);
     });
   });
 

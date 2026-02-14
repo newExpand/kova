@@ -1,6 +1,6 @@
 use crate::db::DbConnection;
 use crate::errors::AppError;
-use crate::models::tmux::{ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession};
+use crate::models::tmux::{SessionInfo, TmuxPane, TmuxSession};
 use crate::services;
 use std::sync::Mutex;
 use tauri::State;
@@ -35,22 +35,22 @@ pub fn register_tmux_session(
     project_id: String,
     session_name: String,
     state: State<'_, Mutex<DbConnection>>,
-) -> Result<ProjectTmuxSession, AppError> {
+) -> Result<Vec<SessionInfo>, AppError> {
     let conn = state
         .lock()
         .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    services::tmux::register_session(&conn.conn, &project_id, &session_name)
+    services::tmux::register_session_and_list(&conn.conn, &project_id, &session_name)
 }
 
 #[tauri::command]
 pub fn unregister_tmux_session(
     session_name: String,
     state: State<'_, Mutex<DbConnection>>,
-) -> Result<(), AppError> {
+) -> Result<Vec<SessionInfo>, AppError> {
     let conn = state
         .lock()
         .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    services::tmux::unregister_session(&conn.conn, &session_name)
+    services::tmux::unregister_session_and_list(&conn.conn, &session_name)
 }
 
 #[tauri::command]

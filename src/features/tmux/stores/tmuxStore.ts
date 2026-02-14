@@ -101,8 +101,8 @@ export const useTmuxStore = create<TmuxStore>()(
 
       registerSession: async (projectId: string, sessionName: string) => {
         try {
-          await commands.registerTmuxSession(projectId, sessionName);
-          await get().fetchSessions();
+          const sessions = await commands.registerTmuxSession(projectId, sessionName);
+          set({ sessions }, undefined, "registerSession/success");
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           set({ error: message }, undefined, "registerSession/error");
@@ -111,8 +111,8 @@ export const useTmuxStore = create<TmuxStore>()(
 
       unregisterSession: async (sessionName: string) => {
         try {
-          await commands.unregisterTmuxSession(sessionName);
-          await get().fetchSessions();
+          const sessions = await commands.unregisterTmuxSession(sessionName);
+          set({ sessions }, undefined, "unregisterSession/success");
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           set({ error: message }, undefined, "unregisterSession/error");

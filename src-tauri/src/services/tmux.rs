@@ -238,6 +238,26 @@ pub fn register_session(
     .map_err(AppError::from)
 }
 
+/// Register session and return updated session list (single atomic operation).
+/// Avoids double IPC round-trip (register → list).
+pub fn register_session_and_list(
+    conn: &Connection,
+    project_id: &str,
+    session_name: &str,
+) -> Result<Vec<SessionInfo>, AppError> {
+    register_session(conn, project_id, session_name)?;
+    list_sessions_with_ownership(conn)
+}
+
+/// Unregister session and return updated session list (single atomic operation).
+pub fn unregister_session_and_list(
+    conn: &Connection,
+    session_name: &str,
+) -> Result<Vec<SessionInfo>, AppError> {
+    unregister_session(conn, session_name)?;
+    list_sessions_with_ownership(conn)
+}
+
 /// Unregister a tmux session from its project.
 pub fn unregister_session(conn: &Connection, session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
