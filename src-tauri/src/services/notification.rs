@@ -6,8 +6,8 @@ use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
 /// Send a native macOS notification.
-/// In dev mode (debug build) on macOS, falls back to osascript because
-/// tauri-plugin-notification requires a signed/bundled app to work.
+/// On macOS, always uses osascript/alerter because tauri-plugin-notification
+/// requires a signed/bundled app (Apple Developer certificate) to work.
 ///
 /// `notification_style` controls the notification behavior:
 /// - "banner": temporary notification that auto-dismisses (osascript)
@@ -18,7 +18,7 @@ pub fn send_native_notification(
     body: &str,
     notification_style: &str,
 ) -> Result<(), AppError> {
-    if cfg!(debug_assertions) && cfg!(target_os = "macos") {
+    if cfg!(target_os = "macos") {
         return match notification_style {
             "banner" => send_via_osascript(title, body),
             _ => send_via_alerter_or_osascript(title, body),
