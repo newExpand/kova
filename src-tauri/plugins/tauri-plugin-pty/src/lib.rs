@@ -121,13 +121,11 @@ async fn write(
 // Returning raw bytes lets xterm.js's byte parser handle partial sequences correctly.
 #[tauri::command]
 async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<Vec<u8>, String> {
-    let session = state
-        .sessions
-        .read()
-        .await
-        .get(&pid)
-        .ok_or("Unavailable pid")?
-        .clone();
+    let session = match state.sessions.read().await.get(&pid) {
+        Some(s) => s.clone(),
+        // Session was already killed — treat as normal EOF so the JS read loop exits cleanly
+        None => return Err("EOF".to_string()),
+    };
     let mut buf = [0u8; 4096];
     let n = session
         .reader
