@@ -455,6 +455,7 @@ function Sidebar() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>
+            <DialogDescription>Add a new project to manage with Clew</DialogDescription>
           </DialogHeader>
           <ProjectForm
             onSubmit={async (input) => {
