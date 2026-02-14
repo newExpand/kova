@@ -1,31 +1,28 @@
 import { memo, useCallback } from "react";
 import { Button } from "../../../components/ui/button";
-import {
-  splitTmuxPaneVertical,
-  splitTmuxPaneHorizontal,
-  closeTmuxPane,
-} from "../../../lib/tauri/commands";
+import { closeTmuxPane } from "../../../lib/tauri/commands";
+import type { PaneAction } from "../types";
 
 interface PaneToolbarProps {
   sessionName: string;
   disabled: boolean;
+  onRequestAction: (action: PaneAction) => void;
 }
 
 export const PaneToolbar = memo(function PaneToolbar({
   sessionName,
   disabled,
+  onRequestAction,
 }: PaneToolbarProps) {
-  const handleSplitVertical = useCallback(() => {
-    splitTmuxPaneVertical(sessionName).catch((e) =>
-      console.error("Split vertical failed:", e),
-    );
-  }, [sessionName]);
+  const handleSplitVertical = useCallback(
+    () => onRequestAction("split-vertical"),
+    [onRequestAction],
+  );
 
-  const handleSplitHorizontal = useCallback(() => {
-    splitTmuxPaneHorizontal(sessionName).catch((e) =>
-      console.error("Split horizontal failed:", e),
-    );
-  }, [sessionName]);
+  const handleSplitHorizontal = useCallback(
+    () => onRequestAction("split-horizontal"),
+    [onRequestAction],
+  );
 
   const handleClosePane = useCallback(() => {
     closeTmuxPane(sessionName).catch((e) =>

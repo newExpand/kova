@@ -202,6 +202,13 @@ export async function previousTmuxWindow(sessionName: string): Promise<void> {
   return invoke<void>("previous_tmux_window", { sessionName });
 }
 
+export async function sendTmuxKeys(
+  sessionName: string,
+  keys: string,
+): Promise<void> {
+  return invoke<void>("send_tmux_keys", { sessionName, keys });
+}
+
 export async function registerTmuxSession(
   projectId: string,
   sessionName: string,

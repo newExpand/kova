@@ -16,3 +16,5 @@ export interface TerminalConfig {
   cwd?: string;
   initialCommand?: string;
 }
+
+export type PaneAction = "split-vertical" | "split-horizontal" | "new-window";

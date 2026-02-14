@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useTmuxStore } from "../../tmux/stores/tmuxStore";
 import * as commands from "../../../lib/tauri/commands";
-import type { TerminalConfig } from "../types";
+import type { TerminalConfig, PaneAction } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
 
@@ -16,6 +16,7 @@ function escapeShellPath(path: string): string {
 
 interface UseTerminalOptions {
   onDragState?: (isDragging: boolean) => void;
+  onRequestPaneAction?: (action: PaneAction) => void;
 }
 
 interface UseTerminalResult {
@@ -34,6 +35,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   // Keep latest callback ref so drag-drop listener always uses current handler
   const onDragStateRef = useRef(options?.onDragState);
   onDragStateRef.current = options?.onDragState;
+  const onRequestPaneActionRef = useRef(options?.onRequestPaneAction);
+  onRequestPaneActionRef.current = options?.onRequestPaneAction;
   // Guard flag — prevents writes/kills after PTY has exited
   const aliveRef = useRef(false);
   // Monotonic counter — each connect() call gets a unique ID.
@@ -431,12 +434,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             if (event.metaKey && !event.altKey && !event.ctrlKey) {
               const sName = useTerminalStore.getState().sessionName;
               if (sName) {
-                // ⌘T — New window
+                // ⌘T — New window (via dialog)
                 if (event.key.toLowerCase() === "t" && !event.shiftKey) {
                   event.preventDefault();
-                  commands.createTmuxWindow(sName).catch((e) =>
-                    console.error("Create window failed:", e),
-                  );
+                  onRequestPaneActionRef.current?.("new-window");
                   return false;
                 }
                 // ⌘⇧W — Close window (check before ⌘W pane close)
@@ -463,18 +464,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                   );
                   return false;
                 }
+                // ⌘⇧D — Split horizontal (via dialog)
                 if (event.key.toLowerCase() === "d" && event.shiftKey) {
                   event.preventDefault();
-                  commands.splitTmuxPaneHorizontal(sName).catch((e) =>
-                    console.error("Split horizontal failed:", e),
-                  );
+                  onRequestPaneActionRef.current?.("split-horizontal");
                   return false;
                 }
+                // ⌘D — Split vertical (via dialog)
                 if (event.key.toLowerCase() === "d" && !event.shiftKey) {
                   event.preventDefault();
-                  commands.splitTmuxPaneVertical(sName).catch((e) =>
-                    console.error("Split vertical failed:", e),
-                  );
+                  onRequestPaneActionRef.current?.("split-vertical");
                   return false;
                 }
                 if (event.key.toLowerCase() === "w" && !event.shiftKey) {

@@ -279,6 +279,32 @@ pub fn close_pane(session_name: &str) -> Result<(), AppError> {
 }
 
 // ---------------------------------------------------------------------------
+// Send keys
+// ---------------------------------------------------------------------------
+
+/// Send keys (text) to the active pane of a tmux session.
+/// Appends an "Enter" key press automatically.
+pub fn send_keys(session_name: &str, keys: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    if keys.is_empty() {
+        return Err(AppError::InvalidInput("Keys cannot be empty".into()));
+    }
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", session_name, keys, "Enter"])
+        .output()
+        .map_err(|e| AppError::TmuxCommand(format!("Failed to execute tmux send-keys: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux send-keys failed: {}",
+            stderr.trim()
+        )));
+    }
+    info!("Sent keys to session '{}'", session_name);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Window management
 // ---------------------------------------------------------------------------
 
@@ -912,6 +938,32 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Invalid session name"));
+    }
+
+    // ── send_keys tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_send_keys_rejects_invalid_name() {
+        let result = send_keys("bad;name", "echo hello");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_send_keys_rejects_empty_name() {
+        let result = send_keys("", "echo hello");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_send_keys_rejects_empty_keys() {
+        let result = send_keys("valid-session", "");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Keys cannot be empty"));
     }
 
     // ── DB-backed session ownership tests ────────────────────────────

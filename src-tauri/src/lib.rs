@@ -98,6 +98,7 @@ pub fn run() {
             commands::tmux::previous_tmux_window,
             commands::tmux::register_tmux_session,
             commands::tmux::unregister_tmux_session,
+            commands::tmux::send_tmux_keys,
             commands::tmux::list_tmux_sessions_with_ownership,
             // Notification commands
             commands::notification::list_project_notifications,

@@ -94,6 +94,11 @@ pub fn unregister_tmux_session(
 }
 
 #[tauri::command]
+pub fn send_tmux_keys(session_name: String, keys: String) -> Result<(), AppError> {
+    services::tmux::send_keys(&session_name, &keys)
+}
+
+#[tauri::command]
 pub fn list_tmux_sessions_with_ownership(
     state: State<'_, Mutex<DbConnection>>,
 ) -> Result<Vec<SessionInfo>, AppError> {

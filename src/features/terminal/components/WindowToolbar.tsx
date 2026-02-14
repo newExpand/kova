@@ -2,21 +2,23 @@ import { memo, useCallback, useState, useEffect, useRef } from "react";
 import { Button } from "../../../components/ui/button";
 import {
   listTmuxWindows,
-  createTmuxWindow,
   closeTmuxWindow,
   nextTmuxWindow,
   previousTmuxWindow,
 } from "../../../lib/tauri/commands";
 import type { TmuxWindow } from "../../../lib/tauri/commands";
+import type { PaneAction } from "../types";
 
 interface WindowToolbarProps {
   sessionName: string;
   disabled: boolean;
+  onRequestAction: (action: PaneAction) => void;
 }
 
 export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
+  onRequestAction,
 }: WindowToolbarProps) {
   const [windows, setWindows] = useState<TmuxWindow[]>([]);
   const mountedRef = useRef(true);
@@ -46,11 +48,10 @@ export const WindowToolbar = memo(function WindowToolbar({
     return () => clearInterval(interval);
   }, [fetchWindows]);
 
-  const handleNew = useCallback(() => {
-    createTmuxWindow(sessionName)
-      .then(fetchWindows)
-      .catch((e) => console.error("Create window failed:", e));
-  }, [sessionName, fetchWindows]);
+  const handleNew = useCallback(
+    () => onRequestAction("new-window"),
+    [onRequestAction],
+  );
 
   const handleClose = useCallback(() => {
     closeTmuxWindow(sessionName)

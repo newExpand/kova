@@ -2,16 +2,18 @@ import { useEffect, useCallback, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminal } from "../hooks/useTerminal";
 import { useTerminalStore } from "../stores/terminalStore";
-import type { TerminalConfig } from "../types";
+import type { TerminalConfig, PaneAction } from "../types";
 
 interface TerminalViewProps {
   config: TerminalConfig;
+  onRequestPaneAction?: (action: PaneAction) => void;
 }
 
-function TerminalView({ config }: TerminalViewProps) {
+function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const { containerRef, connect, disconnect } = useTerminal({
     onDragState: setIsDragOver,
+    onRequestPaneAction,
   });
   const status = useTerminalStore((s) => s.status);
   const error = useTerminalStore((s) => s.error);
