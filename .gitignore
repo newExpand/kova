@@ -9,9 +9,10 @@ src-tauri/target/
 .env
 .env.*
 
-# IDE
+# IDE / Tools
 .vscode/
 .idea/
+.serena/
 *.swp
 *.swo
 *~
