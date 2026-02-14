@@ -93,6 +93,10 @@ pub fn run() {
             commands::tmux::list_tmux_sessions_with_ownership,
             // Notification commands
             commands::notification::list_project_notifications,
+            // Settings commands
+            commands::settings::get_setting,
+            commands::settings::set_setting,
+            commands::settings::list_settings,
             // Environment commands
             commands::environment::check_environment,
         ])

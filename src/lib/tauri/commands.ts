@@ -191,6 +191,34 @@ export async function listProjectNotifications(
 }
 
 // ---------------------------------------------------------------------------
+// Settings commands
+// ---------------------------------------------------------------------------
+
+export interface AppSetting {
+  key: string;
+  value: string;
+  updatedAt: string;
+}
+
+export async function getSetting(
+  key: string,
+  defaultValue: string,
+): Promise<string> {
+  return invoke<string>("get_setting", { key, default: defaultValue });
+}
+
+export async function setSetting(
+  key: string,
+  value: string,
+): Promise<void> {
+  return invoke<void>("set_setting", { key, value });
+}
+
+export async function listSettings(): Promise<AppSetting[]> {
+  return invoke<AppSetting[]>("list_settings");
+}
+
+// ---------------------------------------------------------------------------
 // Environment commands
 // ---------------------------------------------------------------------------
 

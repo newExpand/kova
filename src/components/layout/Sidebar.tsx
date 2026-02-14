@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Monitor,
   RefreshCw,
+  Settings,
   X,
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
@@ -380,8 +381,8 @@ function Sidebar() {
         )}
       </nav>
 
-      {/* Bottom action — mode-dependent */}
-      <div className="border-t border-border p-2">
+      {/* Bottom actions */}
+      <div className="border-t border-border p-2 space-y-0.5">
         {sidebarMode === "projects" ? (
           <Button
             variant="ghost"
@@ -404,6 +405,19 @@ function Sidebar() {
             {!collapsed && <span>Refresh</span>}
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size={collapsed ? "icon" : "sm"}
+          className={cn(
+            "w-full",
+            !collapsed && "justify-start gap-2",
+            location.pathname === "/settings" && "bg-surface text-text",
+          )}
+          onClick={() => navigate("/settings")}
+        >
+          <Settings className="h-4 w-4" />
+          {!collapsed && <span>Settings</span>}
+        </Button>
       </div>
 
       {/* Add project dialog */}
