@@ -18,7 +18,7 @@ pub fn run() {
         )
         .init();
 
-    tracing::info!("Starting Flow Orche");
+    tracing::info!("Starting Clew");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

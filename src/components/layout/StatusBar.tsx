@@ -36,7 +36,7 @@ function StatusBar({ connected, tmuxAvailable }: StatusBarProps) {
         </span>
       </div>
 
-      <span>Flow Orche v0.1.0</span>
+      <span>Clew v0.1.0</span>
     </footer>
   );
 }

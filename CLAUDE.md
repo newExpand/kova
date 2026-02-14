@@ -1,4 +1,4 @@
-# flow-orche Project Rules
+# Clew Project Rules
 
 ## 1. Architecture Overview
 

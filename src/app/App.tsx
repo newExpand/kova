@@ -35,7 +35,7 @@ function AppShell() {
             className="flex h-[38px] shrink-0 items-center border-b border-white/[0.06] glass-toolbar"
           >
             <span className="mx-auto text-xs font-medium tracking-wide text-text-muted select-none">
-              Flow Orche
+              Clew
             </span>
           </header>
           <AppRoutes />
