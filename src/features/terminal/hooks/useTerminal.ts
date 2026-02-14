@@ -197,10 +197,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // -A flag: create session if not exists, attach if it does
-        const args =
-          config.mode === "new"
-            ? ["new-session", "-A", "-s", config.sessionName, "-x", String(cols), "-y", String(rows)]
-            : ["attach-session", "-t", config.sessionName];
+        const args = ["new-session", "-A", "-s", config.sessionName, "-x", String(cols), "-y", String(rows)];
 
         const pty = spawn("tmux", args, {
           name: "xterm-256color",
@@ -565,7 +562,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // Register session in DB for project ownership tracking
-        if (config.projectId && config.mode === "new") {
+        if (config.projectId) {
           useTmuxStore
             .getState()
             .registerSession(config.projectId, config.sessionName)

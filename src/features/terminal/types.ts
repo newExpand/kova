@@ -5,12 +5,9 @@ export type TerminalStatus =
   | "disconnected"
   | "error";
 
-export type SessionMode = "new" | "attach";
-
 export interface TerminalConfig {
   projectId: string;
   sessionName: string;
-  mode: SessionMode;
   cols: number;
   rows: number;
   cwd?: string;

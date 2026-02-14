@@ -1,11 +1,10 @@
 // Types
-export type { TerminalStatus, SessionMode, TerminalConfig, PaneAction } from "./types";
+export type { TerminalStatus, TerminalConfig, PaneAction } from "./types";
 
 // Store
 export { useTerminalStore } from "./stores/terminalStore";
 
 // Components
-export { SessionSelector } from "./components/SessionSelector";
 export { TerminalView } from "./components/TerminalView";
 export { TerminalPage } from "./components/TerminalPage";
 export { PaneToolbar } from "./components/PaneToolbar";

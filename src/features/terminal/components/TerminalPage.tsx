@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
-import { SessionSelector } from "./SessionSelector";
 import { TerminalView } from "./TerminalView";
 import { PaneToolbar } from "./PaneToolbar";
 import { WindowToolbar } from "./WindowToolbar";
 import { NewPaneDialog } from "./NewPaneDialog";
+import { Button } from "../../../components/ui/button";
 import {
   splitTmuxPaneVertical,
   splitTmuxPaneHorizontal,
@@ -29,6 +30,7 @@ function TerminalPage() {
 
   const [activeConfig, setActiveConfig] = useState<TerminalConfig | null>(null);
   const autoConnectAttempted = useRef(false);
+  const [autoConnectDone, setAutoConnectDone] = useState(false);
   const [pendingAction, setPendingAction] = useState<PaneAction | null>(null);
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -46,12 +48,14 @@ function TerminalPage() {
     if (activeConfig) return;
 
     if (isAvailable === false) {
-      // tmux not installed — fall through to SessionSelector (shows error)
+      // tmux not installed
       autoConnectAttempted.current = true;
+      setAutoConnectDone(true);
       return;
     }
 
     autoConnectAttempted.current = true;
+    setAutoConnectDone(true);
 
     const slug =
       project?.name.toLowerCase().replace(/\s+/g, "-") ?? "default";
@@ -65,7 +69,6 @@ function TerminalPage() {
     handleConnect({
       projectId: projectId ?? "",
       sessionName: name,
-      mode: "new", // tmux -A handles attach-or-create
       cols: 80,
       rows: 24,
       cwd: project?.path,
@@ -85,6 +88,13 @@ function TerminalPage() {
     projectSessions,
     sessions,
   ]);
+
+  const handleRetry = useCallback(() => {
+    autoConnectAttempted.current = false;
+    setAutoConnectDone(false);
+    setActiveConfig(null);
+    useTerminalStore.getState().setStatus("idle");
+  }, []);
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
@@ -140,9 +150,6 @@ function TerminalPage() {
     refocusTerminal();
   }, [refocusTerminal]);
 
-  // On error, allow fallback to manual SessionSelector
-  const showFallback = !activeConfig || status === "error";
-
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -151,30 +158,48 @@ function TerminalPage() {
     );
   }
 
-  const isConnecting = status === "connecting";
+  // Rendering state decisions (priority order)
+  const showLoading = !autoConnectDone && status !== "error";
+  const showTmuxMissing = autoConnectDone && isAvailable === false;
+  const showError = status === "error";
+  const showTerminal = activeConfig && !showError;
 
   return (
     <div className="flex h-full flex-1 min-w-0 flex-col overflow-hidden">
-      {isConnecting && !activeConfig ? (
+      {showLoading && !showTerminal ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-text-muted">Connecting...</p>
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-text-muted" />
+            <p className="text-sm text-text-muted">Connecting...</p>
+          </div>
         </div>
-      ) : showFallback ? (
-        <div className="flex-1 overflow-y-auto p-6">
-          {status === "error" && (
-            <div className="mb-4 rounded-lg border border-danger bg-bg-secondary p-3">
-              <p className="text-sm text-danger">
-                Connection failed. Please select a session manually.
-              </p>
-            </div>
-          )}
-          <SessionSelector
-            projectName={project.name}
-            onConnect={handleConnect}
-            disabled={isConnecting}
-          />
+      ) : showTmuxMissing ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="rounded-lg border border-border bg-bg-secondary p-6 text-center">
+            <p className="text-sm text-text">tmux is not installed</p>
+            <p className="mt-2 text-xs text-text-muted">
+              Install with:{" "}
+              <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                brew install tmux
+              </code>
+            </p>
+          </div>
         </div>
-      ) : (
+      ) : showError ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="rounded-lg border border-danger bg-bg-secondary p-4 text-center">
+            <p className="text-sm text-danger">Connection failed</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={handleRetry}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      ) : showTerminal ? (
         <div
           ref={terminalContainerRef}
           style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
@@ -196,7 +221,7 @@ function TerminalPage() {
             />
           </div>
         </div>
-      )}
+      ) : null}
       <NewPaneDialog
         action={pendingAction}
         onConfirm={handleConfirmAction}

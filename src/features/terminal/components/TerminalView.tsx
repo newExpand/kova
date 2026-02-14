@@ -25,7 +25,7 @@ function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
     };
     // Only reconnect when config identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.sessionName, config.mode]);
+  }, [config.sessionName]);
 
   // Re-focus xterm.js when the user clicks anywhere on the terminal area.
   // This handles cases where focus was lost (e.g., clicking the overlay area
