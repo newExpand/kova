@@ -113,6 +113,32 @@ export function useTerminal(): UseTerminalResult {
           ".xterm-helper-textarea",
         ) as HTMLTextAreaElement | null;
 
+        // ── DOM overlay for IME composing preview ──
+        // Uses a positioned DOM element instead of ANSI escape sequences.
+        // ANSI CUB (cursor-back) based preview breaks when PTY output moves
+        // the terminal cursor between keystrokes (e.g. TUI app redraws).
+        const xtermScreen = container.querySelector(".xterm-screen") as HTMLElement | null;
+        const imeOverlay = document.createElement("div");
+        imeOverlay.style.cssText = [
+          "position:absolute",
+          "pointer-events:none",
+          "z-index:5",
+          "display:none",
+          `font-family:${term.options.fontFamily ?? "monospace"}`,
+          `font-size:${term.options.fontSize ?? 14}px`,
+          "line-height:1",
+          "text-decoration:underline",
+          "color:#c0caf5",
+          "background:#1a1b26",
+          "white-space:pre",
+        ].join(";");
+        if (xtermScreen) {
+          if (getComputedStyle(xtermScreen).position === "static") {
+            xtermScreen.style.position = "relative";
+          }
+          xtermScreen.appendChild(imeOverlay);
+        }
+
         // macOS IME pre-warm: focus textarea early so macOS starts IME context
         // initialisation now. The await below (~100ms+ for fonts + rAF) gives
         // the OS enough time to complete initialisation before user interaction.
@@ -194,42 +220,62 @@ export function useTerminal(): UseTerminalResult {
         // Width (in terminal columns) of current inline preview
         let imePreviewCols = 0;
 
+        // ── DEBUG LOGGING ──
+        const IME_DEBUG = true;
+        const imeLog = (...args: unknown[]) => {
+          if (IME_DEBUG) console.log("[IME]", ...args);
+        };
+
         const isKorean = (ch: string): boolean => {
           const c = ch.charCodeAt(0);
           // Hangul Compatibility Jamo OR Hangul Syllables
           return (c >= 0x3131 && c <= 0x3163) || (c >= 0xAC00 && c <= 0xD7A3);
         };
 
-        // Erase inline preview: move cursor back and clear to end of line
+        // Hide DOM overlay preview
         const imeClearPreview = () => {
-          if (imePreviewCols > 0 && termRef.current) {
-            // CUB (cursor back) + EL (erase to end of line)
-            termRef.current.write(`\x1b[${imePreviewCols}D\x1b[K`);
+          if (imePreviewCols > 0) {
+            imeLog("clearPreview");
+            imeOverlay.style.display = "none";
+            imeOverlay.textContent = "";
             imePreviewCols = 0;
           }
         };
 
-        // Show composing character inline at cursor position (atomic single write)
+        // Calculate cell dimensions from xterm screen size
+        const getCellSize = (): { w: number; h: number } => {
+          if (!xtermScreen || !term.cols || !term.rows) return { w: 8, h: 18 };
+          return {
+            w: xtermScreen.clientWidth / term.cols,
+            h: xtermScreen.clientHeight / term.rows,
+          };
+        };
+
+        // Show composing character as DOM overlay at terminal cursor position.
+        // Reads cursor position from xterm buffer (immune to PTY output race).
         const imeShowPreview = (ch: string) => {
           if (!termRef.current || !ch) return;
           const c = ch.charCodeAt(0);
-          // Hangul Compatibility Jamo (ㄱ-ㅎ,ㅏ-ㅣ) AND Syllables (가-힣) are all 2-col wide in xterm Unicode11
           const newCols = ((c >= 0x3131 && c <= 0x3163) || (c >= 0xAC00 && c <= 0xD7A3)) ? 2 : 1;
-          // Single escape sequence: CUB(cursor back) + SGR4(underline) + char + SGR24 + EL(erase trailing)
-          let seq = "";
-          if (imePreviewCols > 0) {
-            seq += `\x1b[${imePreviewCols}D`;
-          }
-          seq += `\x1b[4m${ch}\x1b[24m`;
-          seq += `\x1b[K`;
+          imeLog("showPreview ch=", JSON.stringify(ch), "U+"+c.toString(16), "cursorX=", termRef.current.buffer.active.cursorX, "cursorY=", termRef.current.buffer.active.cursorY);
+
+          const buf = termRef.current.buffer.active;
+          const { w, h } = getCellSize();
+
+          imeOverlay.textContent = ch;
+          imeOverlay.style.left = `${buf.cursorX * w}px`;
+          imeOverlay.style.top = `${buf.cursorY * h}px`;
+          imeOverlay.style.width = `${newCols * w}px`;
+          imeOverlay.style.height = `${h}px`;
+          imeOverlay.style.display = "block";
           imePreviewCols = newCols;
-          termRef.current.write(seq);
         };
 
         // Send un-flushed finalized text from textarea to PTY
         const imeFlush = () => {
           if (!xtermTextarea || !aliveRef.current || !ptyRef.current) return;
           const val = xtermTextarea.value;
+          imeLog("flush val=", JSON.stringify(val), "flushedLen=", imeFlushedLen, "toSend=", JSON.stringify(val.substring(imeFlushedLen)));
           if (val.length > imeFlushedLen) {
             imeClearPreview();
             ptyRef.current.write(val.substring(imeFlushedLen));
@@ -238,6 +284,7 @@ export function useTerminal(): UseTerminalResult {
         };
 
         const imeReset = () => {
+          imeLog("reset (was active=", imeActive, "flushedLen=", imeFlushedLen, ")");
           imeClearPreview();
           imeActive = false;
           imeFlushedLen = 0;
@@ -246,6 +293,7 @@ export function useTerminal(): UseTerminalResult {
 
         // Terminal → PTY: user keystrokes (with IME guard)
         term.onData((data: string) => {
+          imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
           if (imeActive) return;
           if (aliveRef.current && ptyRef.current) {
             ptyRef.current.write(data);
@@ -262,6 +310,7 @@ export function useTerminal(): UseTerminalResult {
           // we must set imeActive to suppress the subsequent onData call.
           xtermTextarea.addEventListener("beforeinput", (e: Event) => {
             const ie = e as InputEvent;
+            imeLog("beforeinput type=", ie.inputType, "data=", JSON.stringify(ie.data), "imeActive=", imeActive);
 
             // IME updating the composing syllable (e.g. ㅎ→하→한)
             if (ie.inputType === "insertReplacementText") {
@@ -284,7 +333,15 @@ export function useTerminal(): UseTerminalResult {
                   // Syllable boundary: insertText(jamo) after insertReplacementText
                   // means the previous syllable is finalized in the textarea.
                   // Flush it before the new jamo is appended.
+                  imeLog("beforeinput: syllable boundary flush");
                   imeFlush();
+                } else {
+                  // Starting new IME session — skip any pre-existing textarea content
+                  // that was already sent to PTY (e.g. space/punctuation inserted after
+                  // the previous IME reset).
+                  const existing = xtermTextarea?.value.length ?? 0;
+                  imeLog("beforeinput: new IME session, skip existing chars=", existing);
+                  imeFlushedLen = existing;
                 }
                 // Set imeActive BEFORE onData fires for this character
                 imeActive = true;
@@ -293,6 +350,7 @@ export function useTerminal(): UseTerminalResult {
 
               // Non-Korean insertText while IME was active → IME ending
               if (imeActive) {
+                imeLog("beforeinput: non-Korean ends IME");
                 imeFlush();
                 imeReset();
                 // Let the non-Korean char proceed normally (onData will handle it)
@@ -321,14 +379,17 @@ export function useTerminal(): UseTerminalResult {
 
           // Update inline preview and clamp flush tracking
           xtermTextarea.addEventListener("input", () => {
+            imeLog("input event val=", JSON.stringify(xtermTextarea?.value), "imeActive=", imeActive, "flushedLen=", imeFlushedLen);
             if (!imeActive || !xtermTextarea) return;
             const val = xtermTextarea.value;
             // Clamp flush tracking when textarea shrinks (e.g. Backspace)
             if (imeFlushedLen > val.length) {
+              imeLog("input: clamp flushedLen", imeFlushedLen, "→", val.length);
               imeFlushedLen = val.length;
             }
             // Show the current composing character (last char after flushed portion)
             const composing = val.substring(imeFlushedLen);
+            imeLog("input: composing=", JSON.stringify(composing));
             if (composing.length > 0) {
               imeShowPreview(composing.charAt(composing.length - 1));
             } else {
@@ -342,12 +403,14 @@ export function useTerminal(): UseTerminalResult {
         // For non-Korean keys, this is where we detect IME ending.
         term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
           if (event.type === "keydown") {
+            imeLog("keydown key=", event.key, "code=", event.keyCode, "isComposing=", event.isComposing, "imeActive=", imeActive);
             if (event.isComposing || event.keyCode === 229) {
               imeActive = true;
               return false;
             }
             // Non-IME key while composing → flush remaining text and end IME
             if (imeActive) {
+              imeLog("keydown: non-IME key ends composition");
               imeFlush();
               imeReset();
             }
