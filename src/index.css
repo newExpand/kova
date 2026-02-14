@@ -166,21 +166,10 @@ body {
   .sidebar-item-active {
     position: relative;
     background: color-mix(in oklch, var(--item-color) 10%, transparent);
+    border-left: 2px solid var(--item-color);
     box-shadow:
       inset 3px 0 12px -4px color-mix(in oklch, var(--item-color) 25%, transparent),
       0 1px 2px rgba(0, 0, 0, 0.15);
-  }
-  .sidebar-item-active::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 2px;
-    height: 60%;
-    background-color: var(--item-color);
-    border-radius: 0 1px 1px 0;
-    transform: translateY(-50%);
-    animation: active-border-in 200ms var(--ease-out-back) forwards;
   }
 
   /* Tab indicator slide */
@@ -219,11 +208,6 @@ body {
     opacity: 0;
     animation: sidebar-item-enter 150ms var(--ease-out-expo) both;
     animation-delay: calc(var(--stagger-index, 0) * var(--stagger-interval));
-  }
-
-  /* Status indicator breathing */
-  .status-indicator-active {
-    animation: status-breathe 3s ease-in-out infinite;
   }
 
   /* Context menu entrance */
@@ -311,16 +295,6 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes active-border-in {
-  from { height: 0%; opacity: 0; }
-  to   { height: 60%; opacity: 1; }
-}
-
-@keyframes status-breathe {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
-  50%      { opacity: 0.85; box-shadow: 0 0 4px 1px currentColor; }
-}
-
 @keyframes context-menu-in {
   from { opacity: 0; transform: scale(0.95) translateY(-4px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -334,13 +308,9 @@ body {
   .sidebar-list-enter-sessions,
   .sidebar-item-stagger,
   .sidebar-item-hover,
-  .status-indicator-active,
   .sidebar-context-menu {
     animation: none !important;
     transition-duration: 0.01ms !important;
-  }
-  .sidebar-item-active::before {
-    animation: none !important;
   }
 }
 
@@ -361,6 +331,22 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- Glass terminal ---------- */
+
+.terminal-glass {
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+  backdrop-filter: blur(var(--glass-blur-sm));
+}
+.terminal-glass .xterm {
+  background: transparent !important;
+}
+/* xterm 6.0: .xterm-viewport gets background-color: #000 from xterm.css (opaque).
+   The rgba tint is set inline on .xterm-scrollable-element instead.
+   Glass mode needs the viewport wall removed so backdrop-filter blur shows through. */
+.terminal-glass .xterm-viewport {
+  background-color: transparent !important;
 }
 
 /* ---------- xterm.js ---------- */

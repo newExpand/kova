@@ -15,7 +15,6 @@ function AppShell() {
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
-
   useEffect(() => {
     // Load core data on app start (survives page reloads)
     fetchProjects();

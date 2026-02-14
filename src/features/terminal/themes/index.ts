@@ -67,4 +67,4 @@ export const THEME_GROUPS: ThemeGroup[] = (() => {
 })();
 
 export type { TerminalTheme, TerminalThemeUI } from "./types";
-export { applyThemeCSS, getSwatchColors } from "./utils";
+export { applyThemeCSS, getSwatchColors, hexToRgba, applyOpacityToTheme, updateGlassBgOverrides } from "./utils";

@@ -271,10 +271,6 @@ export async function listSettings(): Promise<AppSetting[]> {
   return invoke<AppSetting[]>("list_settings");
 }
 
-export async function setNativeVibrancy(enabled: boolean): Promise<void> {
-  return invoke<void>("set_native_vibrancy", { enabled });
-}
-
 // ---------------------------------------------------------------------------
 // Environment commands
 // ---------------------------------------------------------------------------
