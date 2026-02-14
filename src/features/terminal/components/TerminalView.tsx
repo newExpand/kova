@@ -51,12 +51,12 @@ function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
     >
       {/* Status overlay */}
       {status === "connecting" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <p className="text-sm text-text-muted">Connecting to tmux session...</p>
         </div>
       )}
       {status === "error" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="text-center">
             <p className="text-sm text-danger">Connection failed</p>
             {error && (

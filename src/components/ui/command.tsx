@@ -11,7 +11,7 @@ const Command = forwardRef<
   <CommandPrimitive
     ref={ref}
     className={cn(
-      "flex h-full w-full flex-col overflow-hidden rounded-md bg-bg-secondary text-text",
+      "flex h-full w-full flex-col overflow-hidden glass-elevated rounded-xl text-text",
       className,
     )}
     {...props}
@@ -41,7 +41,7 @@ const CommandInput = forwardRef<
   HTMLInputElement,
   ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-  <div className="flex items-center border-b border-border px-3">
+  <div className="flex items-center border-b border-white/[0.08] px-3">
     <Search className="mr-2 h-4 w-4 shrink-0 text-text-muted" />
     <CommandPrimitive.Input
       ref={ref}
@@ -114,7 +114,7 @@ const CommandItem = forwardRef<
     ref={ref}
     className={cn(
       "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none",
-      "data-[selected=true]:bg-surface-hover data-[selected=true]:text-text",
+      "data-[selected=true]:bg-white/[0.08] data-[selected=true]:text-text",
       "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
       className,
     )}

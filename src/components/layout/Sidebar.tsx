@@ -178,21 +178,26 @@ function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-border bg-bg transition-[width] duration-200",
+        "flex h-full flex-col border-r border-white/[0.10] glass-surface relative z-10 transition-[width] duration-200",
         collapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]",
       )}
     >
+      {/* Traffic light spacer — macOS overlay titlebar */}
+      <div
+        data-tauri-drag-region
+        className="h-[38px] shrink-0"
+      />
       {/* Header with tab toggle */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-3">
+      <div className="flex h-12 items-center justify-between border-b border-white/[0.08] px-3">
         {!collapsed ? (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 rounded-lg p-0.5 glass-inset">
             <button
               onClick={() => handleTabSwitch("projects")}
               className={cn(
-                "rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wider transition-colors",
+                "flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-all duration-150",
                 sidebarMode === "projects"
-                  ? "bg-surface text-text"
-                  : "text-text-muted hover:text-text-secondary",
+                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
+                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
               )}
             >
               Projects
@@ -200,24 +205,24 @@ function Sidebar() {
             <button
               onClick={() => handleTabSwitch("sessions")}
               className={cn(
-                "rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wider transition-colors",
+                "flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-all duration-150",
                 sidebarMode === "sessions"
-                  ? "bg-surface text-text"
-                  : "text-text-muted hover:text-text-secondary",
+                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
+                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
               )}
             >
               Sessions
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-0.5 rounded-lg p-0.5 glass-inset">
             <button
               onClick={() => handleTabSwitch("projects")}
               className={cn(
-                "rounded-md p-1 transition-colors",
+                "rounded-md p-1 transition-all duration-150",
                 sidebarMode === "projects"
-                  ? "bg-surface text-text"
-                  : "text-text-muted hover:text-text-secondary",
+                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
+                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
               )}
               aria-label="Projects"
               title="Projects"
@@ -227,10 +232,10 @@ function Sidebar() {
             <button
               onClick={() => handleTabSwitch("sessions")}
               className={cn(
-                "relative rounded-md p-1 transition-colors",
+                "relative rounded-md p-1 transition-all duration-150",
                 sidebarMode === "sessions"
-                  ? "bg-surface text-text"
-                  : "text-text-muted hover:text-text-secondary",
+                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
+                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
               )}
               aria-label="Sessions"
               title="Sessions"
@@ -277,15 +282,22 @@ function Sidebar() {
                 onContextMenu={(e) => handleContextMenu(e, project)}
                 onMouseEnter={preloadTerminal}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-all duration-150",
                   isActive
-                    ? "bg-surface text-text"
-                    : "text-text-secondary hover:bg-surface-hover hover:text-text",
+                    ? "sidebar-item-active text-text"
+                    : "text-text-secondary hover:bg-white/[0.08] hover:text-text",
                 )}
+                style={{ '--item-color': colorVar } as React.CSSProperties}
               >
                 <span
-                  className="h-3 w-3 shrink-0 rounded-sm"
-                  style={{ backgroundColor: colorVar }}
+                  className={cn(
+                    "shrink-0 rounded-sm transition-all duration-150",
+                    isActive ? "h-3.5 w-3.5" : "h-3 w-3",
+                  )}
+                  style={{
+                    backgroundColor: colorVar,
+                    ...(isActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
+                  }}
                 />
                 {!collapsed && (
                   <>
@@ -320,7 +332,7 @@ function Sidebar() {
               return (
                 <div
                   key={session.name}
-                  className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-text-secondary hover:bg-surface-hover hover:text-text transition-colors"
+                  className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text transition-all duration-150"
                 >
                   <span
                     className={cn(
@@ -357,7 +369,7 @@ function Sidebar() {
             {externalSessions.map((session) => (
               <div
                 key={session.name}
-                className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-text-secondary hover:bg-surface-hover hover:text-text transition-colors"
+                className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text transition-all duration-150"
               >
                 <span
                   className={cn(
@@ -389,7 +401,7 @@ function Sidebar() {
       </nav>
 
       {/* Bottom actions */}
-      <div className="border-t border-border p-2 space-y-0.5">
+      <div className="border-t border-white/[0.10] p-2 space-y-0.5 bg-black/[0.08]">
         {sidebarMode === "projects" ? (
           <Button
             variant="ghost"
@@ -418,7 +430,7 @@ function Sidebar() {
           className={cn(
             "w-full",
             !collapsed && "justify-start gap-2",
-            location.pathname === "/settings" && "bg-surface text-text",
+            location.pathname === "/settings" && "bg-white/[0.10] border border-white/[0.08] text-text",
           )}
           onClick={() => navigate("/settings")}
         >
@@ -447,13 +459,13 @@ function Sidebar() {
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 min-w-[140px] rounded-md border border-border bg-bg-secondary p-1 shadow-lg"
+          className="fixed z-50 min-w-[140px] rounded-xl border border-white/[0.15] glass-elevated p-1"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           role="menu"
         >
           <button
             role="menuitem"
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-text hover:bg-surface-hover transition-colors"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-text hover:bg-white/[0.08] transition-colors"
             onClick={handleEdit}
           >
             <Pencil className="h-3.5 w-3.5" />
@@ -461,7 +473,7 @@ function Sidebar() {
           </button>
           <button
             role="menuitem"
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-danger hover:bg-surface-hover transition-colors"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-danger hover:bg-white/[0.08] transition-colors"
             onClick={handleDelete}
           >
             <Trash2 className="h-3.5 w-3.5" />

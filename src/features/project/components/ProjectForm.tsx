@@ -36,9 +36,9 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       {/* Name */}
-      <div className="space-y-2">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="project-name">Project Name</Label>
         <Input
           id="project-name"
@@ -50,7 +50,7 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
       </div>
 
       {/* Path */}
-      <div className="space-y-2">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="project-path">Project Path</Label>
         <div className="flex gap-2">
           <Input
@@ -67,18 +67,18 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
       </div>
 
       {/* Color Selector */}
-      <div className="space-y-2">
+      <div className="flex flex-col gap-3">
         <Label>Color</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-2.5 py-1">
           {COLOR_PALETTE.map((color, i) => (
             <button
               key={i}
               type="button"
               onClick={() => setColorIndex(i)}
               className={cn(
-                "h-6 w-6 rounded-full transition-all",
+                "h-7 w-7 rounded-full transition-all",
                 colorIndex === i
-                  ? "ring-2 ring-primary ring-offset-2 ring-offset-bg-secondary scale-110"
+                  ? "ring-2 ring-primary ring-offset-2 ring-offset-transparent shadow-[0_0_8px_rgba(100,140,255,0.3)] scale-110"
                   : "hover:scale-105",
               )}
               style={{ backgroundColor: color }}
@@ -89,7 +89,7 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>

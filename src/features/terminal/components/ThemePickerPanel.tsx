@@ -44,7 +44,7 @@ export const ThemePickerPanel = memo(function ThemePickerPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute right-2 top-2 z-20 w-56 rounded-lg border border-border bg-bg-secondary shadow-lg"
+      className="absolute right-2 top-2 z-20 w-56 rounded-xl border border-white/[0.15] glass-elevated glass-specular"
     >
       <div className="p-2">
         <p className="mb-2 px-1 text-xs font-semibold text-text-muted">
@@ -95,7 +95,7 @@ function CompactThemeItem({
         "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
         isSelected
           ? "bg-primary/[0.12] text-text"
-          : "text-text hover:bg-surface-hover",
+          : "text-text hover:bg-white/[0.08]",
       )}
       aria-pressed={isSelected}
     >

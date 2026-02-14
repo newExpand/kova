@@ -185,7 +185,7 @@ function TerminalPage() {
         </div>
       ) : showTmuxMissing ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="rounded-lg border border-border bg-bg-secondary p-6 text-center">
+          <div className="glass-surface rounded-xl p-6 text-center">
             <p className="text-sm text-text">tmux is not installed</p>
             <p className="mt-2 text-xs text-text-muted">
               Install with:{" "}
@@ -197,7 +197,7 @@ function TerminalPage() {
         </div>
       ) : showError ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="rounded-lg border border-danger bg-bg-secondary p-4 text-center">
+          <div className="glass-surface rounded-xl border border-danger/30 p-4 text-center">
             <p className="text-sm text-danger">Connection failed</p>
             <Button
               variant="outline"

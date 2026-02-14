@@ -39,7 +39,7 @@ function RadioOption({
         "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors",
         isSelected
           ? "border-primary bg-primary/[0.06]"
-          : "border-border bg-bg-secondary hover:bg-surface-hover",
+          : "border-white/[0.10] glass-surface glass-hover-lift",
         disabled && "pointer-events-none opacity-50",
       )}
       onClick={() => onChange(value)}
@@ -85,7 +85,7 @@ function ThemeCard({ theme, isSelected, onClick }: ThemeCardProps) {
         "flex flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
         isSelected
           ? "border-primary bg-primary/[0.06]"
-          : "border-border bg-bg-secondary hover:bg-surface-hover",
+          : "border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]",
       )}
       aria-pressed={isSelected}
     >
@@ -137,7 +137,7 @@ function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border px-6 py-4">
+      <div className="flex items-center gap-3 border-b border-white/[0.08] glass-toolbar px-6 py-4">
         <Settings className="h-5 w-5 text-text-muted" strokeWidth={1.5} />
         <div>
           <h1 className="text-lg font-semibold text-text">Settings</h1>

@@ -74,7 +74,7 @@ export const WindowToolbar = memo(function WindowToolbar({
   return (
     <div
       style={{ height: 28, flexShrink: 0 }}
-      className="flex items-center gap-1 border-b border-border bg-bg-secondary px-2"
+      className="flex items-center gap-1 border-b border-white/[0.06] glass-toolbar px-2"
     >
       {/* Window tabs */}
       <div className="flex items-center gap-0.5 overflow-x-auto mr-auto">

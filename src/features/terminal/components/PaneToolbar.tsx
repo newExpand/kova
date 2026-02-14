@@ -36,7 +36,7 @@ export const PaneToolbar = memo(function PaneToolbar({
   return (
     <div
       style={{ height: 28, flexShrink: 0 }}
-      className="flex items-center gap-1 border-b border-border bg-bg-secondary px-2"
+      className="flex items-center gap-1 border-b border-white/[0.06] glass-toolbar px-2"
     >
       <Button
         variant="ghost"

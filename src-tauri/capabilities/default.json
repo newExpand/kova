@@ -19,6 +19,7 @@
     "notification:allow-request-permission",
     "shell:default",
     "shell:allow-open",
-    "pty:default"
+    "pty:default",
+    "core:window:allow-start-dragging"
   ]
 }

@@ -11,14 +11,16 @@
   --color-project-6: oklch(0.7 0.15 290);
   --color-project-7: oklch(0.7 0.15 200);
 
-  /* Semantic colors */
-  --color-bg: oklch(0.14 0.005 260);
-  --color-bg-secondary: oklch(0.18 0.005 260);
-  --color-bg-tertiary: oklch(0.22 0.008 260);
-  --color-surface: oklch(0.20 0.005 260);
-  --color-surface-hover: oklch(0.24 0.008 260);
-  --color-border: oklch(0.30 0.01 260);
-  --color-border-subtle: oklch(0.25 0.005 260);
+  /* Semantic colors — backgrounds/surfaces now translucent for glass */
+  --color-bg: transparent;
+  --color-bg-secondary: rgba(255, 255, 255, 0.04);
+  --color-bg-tertiary: rgba(255, 255, 255, 0.08);
+  --color-surface: rgba(255, 255, 255, 0.06);
+  --color-surface-hover: rgba(255, 255, 255, 0.10);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+
+  /* Text & accent — unchanged */
   --color-text: oklch(0.93 0.005 260);
   --color-text-secondary: oklch(0.72 0.01 260);
   --color-text-muted: oklch(0.58 0.01 260);
@@ -32,17 +34,52 @@
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 60px;
 
-  /* Spacing */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
+  /* Spacing — larger radii for glass aesthetic */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  /* Glass blur tiers */
+  --glass-blur-sm: 16px;
+  --glass-blur-md: 32px;
+  --glass-blur-lg: 48px;
+
+  /* Glass background alphas */
+  --glass-bg-subtle: rgba(255, 255, 255, 0.02);
+  --glass-bg-light: rgba(255, 255, 255, 0.03);
+  --glass-bg-medium: rgba(255, 255, 255, 0.06);
+  --glass-bg-dense: rgba(255, 255, 255, 0.10);
+
+  /* Glass borders */
+  --glass-border-subtle: rgba(255, 255, 255, 0.10);
+  --glass-border-light: rgba(255, 255, 255, 0.15);
+  --glass-border-medium: rgba(255, 255, 255, 0.22);
+  --glass-border-bright: rgba(255, 255, 255, 0.30);
+
+  /* Specular highlight */
+  --glass-specular-start: rgba(255, 255, 255, 0.12);
+  --glass-specular-end: transparent;
+
+  /* Glow & shadows */
+  --glass-glow-color: rgba(100, 140, 255, 0.12);
+  --glass-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --glass-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --glass-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* Background gradient stops */
+  --gradient-base-start: oklch(0.15 0.04 260);
+  --gradient-base-mid1: oklch(0.11 0.035 275);
+  --gradient-base-mid2: oklch(0.13 0.04 245);
+  --gradient-base-end: oklch(0.09 0.025 295);
 }
+
+/* ---------- Base styles ---------- */
 
 body {
   margin: 0;
-  background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -53,7 +90,136 @@ body {
   display: flex;
 }
 
-/* Scrollbar styling */
+/* ---------- Glass utility classes ---------- */
+
+@layer utilities {
+  /* Tier 1: Toolbar / StatusBar */
+  .glass-toolbar {
+    background: var(--glass-bg-subtle);
+    -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+    backdrop-filter: blur(var(--glass-blur-sm));
+  }
+
+  /* Tier 2: Sidebar / Cards / Panels */
+  .glass-surface {
+    background: var(--glass-bg-light);
+    -webkit-backdrop-filter: blur(var(--glass-blur-md));
+    backdrop-filter: blur(var(--glass-blur-md));
+    box-shadow: var(--glass-shadow-sm);
+  }
+
+  /* Tier 3: Dialogs / Menus / Toasts */
+  .glass-elevated {
+    background: var(--glass-bg-medium);
+    -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+    backdrop-filter: blur(var(--glass-blur-lg));
+    box-shadow: var(--glass-shadow-md);
+  }
+
+  /* Tier 4: Dense emphasis */
+  .glass-dense {
+    background: var(--glass-bg-dense);
+    -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+    backdrop-filter: blur(var(--glass-blur-lg));
+    box-shadow: var(--glass-shadow-lg);
+  }
+
+  /* Specular highlight — use as ::after pseudo overlay */
+  .glass-specular {
+    overflow: hidden;
+  }
+  .glass-specular::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      135deg,
+      var(--glass-specular-start) 0%,
+      var(--glass-specular-end) 60%
+    );
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Focus / active glow */
+  .glass-glow {
+    box-shadow: 0 0 16px var(--glass-glow-color),
+                var(--glass-shadow-sm);
+  }
+
+  /* Inset input style */
+  .glass-inset {
+    background: rgba(0, 0, 0, 0.15);
+    -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+    backdrop-filter: blur(var(--glass-blur-sm));
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Active sidebar item — project color accent */
+  .sidebar-item-active {
+    background: color-mix(in oklch, var(--item-color) 10%, transparent);
+    border-left: 2px solid var(--item-color);
+    box-shadow:
+      inset 3px 0 12px -4px color-mix(in oklch, var(--item-color) 25%, transparent),
+      0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Hover lift */
+  .glass-hover-lift {
+    transition: transform 200ms ease, box-shadow 200ms ease;
+  }
+  .glass-hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--glass-shadow-md);
+  }
+
+  /* Background gradient for the app shell */
+  .glass-gradient-bg {
+    background: linear-gradient(
+      135deg,
+      var(--gradient-base-start) 0%,
+      var(--gradient-base-mid1) 35%,
+      var(--gradient-base-mid2) 65%,
+      var(--gradient-base-end) 100%
+    );
+  }
+  /* Ambient glow pulse for empty state hero */
+  .glass-hero-glow {
+    animation: hero-glow-pulse 4s ease-in-out infinite;
+  }
+  @keyframes hero-glow-pulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+  }
+
+  /* Window drag region for custom titlebar */
+  *[data-tauri-drag-region] {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  /* Exclude interactive elements inside drag region */
+  *[data-tauri-drag-region] button,
+  *[data-tauri-drag-region] a,
+  *[data-tauri-drag-region] input {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  .glass-gradient-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 80%, rgba(60, 80, 180, 0.08) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 50% at 80% 20%, rgba(120, 60, 180, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+}
+
+/* ---------- Scrollbar ---------- */
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -63,15 +229,17 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.25);
 }
 
-/* xterm.js: force terminal to fill its container */
+/* ---------- xterm.js ---------- */
+
+/* Force terminal to fill its container */
 .xterm {
   width: 100%;
   height: 100%;

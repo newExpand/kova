@@ -27,7 +27,7 @@ interface SessionCardProps {
 
 function SessionCard({ session, projectName, onKill }: SessionCardProps) {
   return (
-    <div className="flex items-start justify-between rounded-lg border border-border bg-bg-secondary p-4 transition-colors hover:bg-surface-hover">
+    <div className="flex items-start justify-between rounded-xl border border-white/[0.10] glass-surface glass-hover-lift p-4">
       <div className="flex items-start gap-3 min-w-0">
         <span
           className={cn(
@@ -112,7 +112,7 @@ function EmptyState() {
       <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
         <div className="relative flex items-center justify-center">
           <div className="absolute h-24 w-24 rounded-2xl bg-primary/[0.06]" />
-          <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl border border-border-subtle">
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl glass-surface border border-white/[0.08]">
             <Monitor className="h-10 w-10 text-text-muted" strokeWidth={1.5} />
           </div>
         </div>
@@ -182,7 +182,7 @@ function SessionManagerPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+      <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
         <div>
           <h1 className="text-lg font-semibold text-text">Sessions</h1>
           <p className="text-xs text-text-muted">

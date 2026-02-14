@@ -57,7 +57,7 @@ function UndoToast({
     <div
       className={cn(
         "fixed bottom-4 left-1/2 z-50 -translate-x-1/2",
-        "flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-lg",
+        "flex items-center gap-3 rounded-xl border border-white/[0.15] glass-elevated glass-specular px-4 py-3",
         "animate-in slide-in-from-bottom-5 fade-in duration-300",
       )}
     >

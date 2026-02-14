@@ -26,10 +26,21 @@ function AppShell() {
   }, [fetchProjects, fetchSettings]);
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-bg text-text">
+    <div className="flex h-screen w-screen flex-col glass-gradient-bg text-text relative">
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <AppRoutes />
+        <div className="flex flex-1 min-w-0 flex-col">
+          {/* Custom glass titlebar */}
+          <header
+            data-tauri-drag-region
+            className="flex h-[38px] shrink-0 items-center border-b border-white/[0.06] glass-toolbar"
+          >
+            <span className="mx-auto text-xs font-medium tracking-wide text-text-muted select-none">
+              Flow Orche
+            </span>
+          </header>
+          <AppRoutes />
+        </div>
       </div>
       <StatusBar connected={true} tmuxAvailable={tmuxAvailable} />
       <CommandPalette

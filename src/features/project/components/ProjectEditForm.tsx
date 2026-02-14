@@ -54,8 +54,8 @@ function ProjectEditForm({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3">
             <Label htmlFor="edit-name">Name</Label>
             <Input
               id="edit-name"
@@ -65,25 +65,25 @@ function ProjectEditForm({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col gap-3">
             <Label>Path</Label>
             <p className="text-xs text-text-muted font-mono truncate">
               {project.path}
             </p>
           </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col gap-3">
             <Label>Color</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-2.5 py-1">
               {COLOR_PALETTE.map((color, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => setColorIndex(i)}
                   className={cn(
-                    "h-6 w-6 rounded-full transition-all",
+                    "h-7 w-7 rounded-full transition-all",
                     colorIndex === i
-                      ? "ring-2 ring-primary ring-offset-2 ring-offset-bg-secondary scale-110"
+                      ? "ring-2 ring-primary ring-offset-2 ring-offset-transparent shadow-[0_0_8px_rgba(100,140,255,0.3)] scale-110"
                       : "hover:scale-105",
                   )}
                   style={{ backgroundColor: color }}

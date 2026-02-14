@@ -7,7 +7,7 @@ interface StatusBarProps {
 
 function StatusBar({ connected, tmuxAvailable }: StatusBarProps) {
   return (
-    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-border bg-bg px-4 text-[10px] text-text-muted">
+    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-white/[0.08] glass-toolbar px-4 text-[10px] text-text-muted">
       <div className="flex items-center gap-3">
         {/* Event server status */}
         <span className="flex items-center gap-1">
