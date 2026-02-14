@@ -117,6 +117,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           cursorBlink: true,
           convertEol: false,
           allowProposedApi: true,
+          scrollback: 0,
         });
 
         // Load addons
