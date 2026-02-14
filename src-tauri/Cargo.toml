@@ -29,4 +29,4 @@ chrono = { version = "0.4", features = ["serde"] }
 tiny_http = "0.12"
 dirs = "5"
 url = "2"
-tauri-plugin-pty = "0.1"
+tauri-plugin-pty = { path = "plugins/tauri-plugin-pty" }
