@@ -6,12 +6,12 @@ use std::path::Path;
 use tracing::info;
 use url::form_urlencoded;
 
-/// Read .claude/settings.json from project directory
-pub fn read_settings_json(project_path: &Path) -> Result<Value, AppError> {
-    let settings_path = project_path.join(".claude/settings.json");
+/// Read .claude/settings.local.json from project directory (machine-specific, auto-gitignored)
+pub fn read_settings_local_json(project_path: &Path) -> Result<Value, AppError> {
+    let settings_path = project_path.join(".claude/settings.local.json");
 
     if !settings_path.exists() {
-        // Create default settings.json with empty hooks
+        // Create default settings.local.json with empty hooks
         let default_settings = json!({
             "hooks": {
                 "Notification": [],
@@ -24,7 +24,7 @@ pub fn read_settings_json(project_path: &Path) -> Result<Value, AppError> {
             &settings_path,
             serde_json::to_string_pretty(&default_settings)?,
         )?;
-        info!("Created default settings.json at {:?}", settings_path);
+        info!("Created default settings.local.json at {:?}", settings_path);
         return Ok(default_settings);
     }
 
@@ -95,7 +95,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
     let canonical_path = fs::canonicalize(project_path)?;
     let path_str = canonical_path.to_string_lossy().to_string();
 
-    let mut settings = read_settings_json(&canonical_path)?;
+    let mut settings = read_settings_local_json(&canonical_path)?;
 
     // Ensure hooks object exists
     if !settings.is_object() || settings.get("hooks").is_none() {
@@ -139,9 +139,9 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
         existing_array.push(hook_value);
     }
 
-    // Atomic write
-    let settings_path = canonical_path.join(".claude/settings.json");
-    let temp_path = settings_path.with_extension("json.tmp");
+    // Atomic write to settings.local.json (machine-specific, auto-gitignored)
+    let settings_path = canonical_path.join(".claude/settings.local.json");
+    let temp_path = settings_path.with_extension("local.json.tmp");
 
     fs::write(&temp_path, serde_json::to_string_pretty(&settings)?)?;
     fs::rename(&temp_path, &settings_path)?;
@@ -153,7 +153,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
 /// Remove flow-orche hooks from project settings.json
 pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
     let canonical_path = fs::canonicalize(project_path)?;
-    let mut settings = read_settings_json(&canonical_path)?;
+    let mut settings = read_settings_local_json(&canonical_path)?;
 
     let hooks_obj = settings["hooks"]
         .as_object_mut()
@@ -179,9 +179,9 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
         }
     }
 
-    // Atomic write
-    let settings_path = canonical_path.join(".claude/settings.json");
-    let temp_path = settings_path.with_extension("json.tmp");
+    // Atomic write to settings.local.json (machine-specific, auto-gitignored)
+    let settings_path = canonical_path.join(".claude/settings.local.json");
+    let temp_path = settings_path.with_extension("local.json.tmp");
 
     fs::write(&temp_path, serde_json::to_string_pretty(&settings)?)?;
     fs::rename(&temp_path, &settings_path)?;
@@ -203,14 +203,18 @@ mod tests {
     }
 
     #[test]
-    fn test_read_settings_json_creates_default() {
+    fn test_read_settings_local_json_creates_default() {
         let temp_path = temp_dir();
-        let settings = read_settings_json(&temp_path).unwrap();
+        let settings = read_settings_local_json(&temp_path).unwrap();
 
         assert!(settings["hooks"].is_object());
         assert!(settings["hooks"]["Notification"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
         assert!(settings["hooks"]["PermissionRequest"].is_array());
+
+        // Verify it wrote to settings.local.json, not settings.json
+        assert!(temp_path.join(".claude/settings.local.json").exists());
+        assert!(!temp_path.join(".claude/settings.json").exists());
 
         // Cleanup
         fs::remove_dir_all(&temp_path).ok();
@@ -243,19 +247,30 @@ mod tests {
         // Inject hooks
         inject_hooks(&temp_path, 8080).unwrap();
 
-        let settings_path = temp_path.join(".claude/settings.json");
+        let settings_path = temp_path.join(".claude/settings.local.json");
         assert!(settings_path.exists());
+        // settings.json should NOT be created
+        assert!(!temp_path.join(".claude/settings.json").exists());
 
         let content = fs::read_to_string(&settings_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();
 
         // Verify hooks injected
         let notification_hooks = settings["hooks"]["Notification"].as_array().unwrap();
-        assert!(notification_hooks.len() > 0);
+        assert!(!notification_hooks.is_empty());
 
         let first_hook = &notification_hooks[0];
         let command = first_hook["hooks"][0]["command"].as_str().unwrap();
         assert!(command.contains("127.0.0.1:8080"));
+
+        // Re-inject with new port (idempotency test)
+        inject_hooks(&temp_path, 9090).unwrap();
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: Value = serde_json::from_str(&content).unwrap();
+        let notification_hooks = settings["hooks"]["Notification"].as_array().unwrap();
+        assert_eq!(notification_hooks.len(), 1, "Should replace, not duplicate");
+        let command = notification_hooks[0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(command.contains("127.0.0.1:9090"), "Port should be updated");
 
         // Remove hooks
         remove_hooks(&temp_path).unwrap();

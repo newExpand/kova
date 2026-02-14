@@ -80,6 +80,30 @@ pub fn list(conn: &Connection) -> Result<Vec<Project>, AppError> {
     Ok(projects)
 }
 
+/// Get a single active project by its canonical path
+pub fn get_by_path(conn: &Connection, path: &str) -> Result<Option<Project>, AppError> {
+    match conn.query_row(
+        "SELECT id, name, path, color_index, is_active, created_at, updated_at
+         FROM projects WHERE path = ?1 AND is_active = 1",
+        [path],
+        |row| {
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                color_index: row.get(3)?,
+                is_active: row.get::<_, i32>(4)? == 1,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        },
+    ) {
+        Ok(project) => Ok(Some(project)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(AppError::Database(e)),
+    }
+}
+
 /// Get a single project by ID
 pub fn get(conn: &Connection, id: &str) -> Result<Project, AppError> {
     conn.query_row(

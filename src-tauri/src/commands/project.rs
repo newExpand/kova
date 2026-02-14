@@ -1,9 +1,10 @@
 use crate::db::DbConnection;
 use crate::errors::AppError;
 use crate::models::project::{Project, UpdateProjectInput};
-use crate::services::project;
+use crate::services::{hooks, project};
 use std::sync::Mutex;
 use tauri::State;
+use tracing::warn;
 
 #[tauri::command]
 pub fn create_project(
@@ -15,7 +16,21 @@ pub fn create_project(
     let conn = state
         .lock()
         .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    project::create(&conn.conn, &name, &path, color_index.unwrap_or(0))
+    let project = project::create(&conn.conn, &name, &path, color_index.unwrap_or(0))?;
+
+    // Hook 자동 주입 (best-effort — 실패해도 프로젝트 생성은 유지)
+    match super::hooks::read_event_server_port() {
+        Ok(port) => {
+            if let Err(e) = hooks::inject_hooks(std::path::Path::new(&project.path), port) {
+                warn!("Hook injection failed for {}: {}", project.path, e);
+            }
+        }
+        Err(e) => {
+            warn!("Cannot inject hooks (event server port unavailable): {}", e);
+        }
+    }
+
+    Ok(project)
 }
 
 #[tauri::command]
@@ -79,5 +94,18 @@ pub fn purge_project(
     let conn = state
         .lock()
         .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    project::purge(&conn.conn, &id)
+
+    // 삭제 전에 project path 조회 (삭제 후에는 조회 불가)
+    let project_path = project::get(&conn.conn, &id).ok().map(|p| p.path);
+
+    project::purge(&conn.conn, &id)?;
+
+    // Hook 제거 (best-effort)
+    if let Some(path) = project_path {
+        if let Err(e) = hooks::remove_hooks(std::path::Path::new(&path)) {
+            warn!("Hook removal failed for {}: {}", path, e);
+        }
+    }
+
+    Ok(())
 }

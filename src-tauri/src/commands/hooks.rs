@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 /// Read event server port from ~/.flow-orche/event-server.port
-fn read_event_server_port() -> Result<u16, AppError> {
+pub(crate) fn read_event_server_port() -> Result<u16, AppError> {
     let home_dir = dirs::home_dir().ok_or_else(|| AppError::Internal("Home directory not found".into()))?;
     let port_file = home_dir.join(".flow-orche/event-server.port");
 

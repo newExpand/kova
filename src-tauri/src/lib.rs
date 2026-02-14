@@ -34,8 +34,39 @@ pub fn run() {
             // Start event server
             let event_server = EventServer::start(app.handle().clone())
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            tracing::info!("Event server running on port {}", event_server.port());
+            let port = event_server.port();
+            tracing::info!("Event server running on port {}", port);
             app.manage(Mutex::new(event_server));
+
+            // Re-inject hooks for all active projects with the new port
+            {
+                let db_state = app.state::<Mutex<DbConnection>>();
+                let db_guard = db_state.lock();
+                if let Ok(db) = db_guard {
+                    match services::project::list(&db.conn) {
+                        Ok(projects) => {
+                            for project in &projects {
+                                if let Err(e) = services::hooks::inject_hooks(
+                                    std::path::Path::new(&project.path),
+                                    port,
+                                ) {
+                                    tracing::warn!(
+                                        "Hook injection failed for '{}': {}",
+                                        project.name, e
+                                    );
+                                }
+                            }
+                            tracing::info!(
+                                "Injected hooks for {} active project(s)",
+                                projects.len()
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to list projects for hook injection: {}", e);
+                        }
+                    }
+                }
+            }
 
             Ok(())
         })
