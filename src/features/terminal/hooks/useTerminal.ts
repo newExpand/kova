@@ -42,6 +42,9 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   // Monotonic counter — each connect() call gets a unique ID.
   // Stale async continuations check this to bail out.
   const connectIdRef = useRef(0);
+  // setTimeout refs for cleanup
+  const initialCmdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setStatus = useTerminalStore((s) => s.setStatus);
   const setError = useTerminalStore((s) => s.setError);
@@ -52,6 +55,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     aliveRef.current = false;
     // Bump connect ID so any in-flight connect() bails out
     connectIdRef.current += 1;
+
+    // Clear pending timeouts
+    if (initialCmdTimeoutRef.current) {
+      clearTimeout(initialCmdTimeoutRef.current);
+      initialCmdTimeoutRef.current = null;
+    }
+    if (refitTimeoutRef.current) {
+      clearTimeout(refitTimeoutRef.current);
+      refitTimeoutRef.current = null;
+    }
 
     // Unregister Tauri drag-drop listener
     if (unlistenRef.current) {
@@ -245,7 +258,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         let imePreviewCols = 0;
 
         // ── DEBUG LOGGING ──
-        const IME_DEBUG = true;
+        const IME_DEBUG = false;
         const imeLog = (...args: unknown[]) => {
           if (IME_DEBUG) console.log("[IME]", ...args);
         };
@@ -554,7 +567,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
         // Send initial command to the shell after it has started
         if (config.initialCommand) {
-          setTimeout(() => {
+          initialCmdTimeoutRef.current = setTimeout(() => {
+            initialCmdTimeoutRef.current = null;
             if (aliveRef.current && ptyRef.current) {
               ptyRef.current.write(config.initialCommand + "\n");
             }
@@ -591,7 +605,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         });
 
         // Re-fit after 200ms to catch font loading & final layout shifts
-        setTimeout(() => {
+        refitTimeoutRef.current = setTimeout(() => {
+          refitTimeoutRef.current = null;
           if (aliveRef.current && fitAddonRef.current && termRef.current && ptyRef.current) {
             fitAddonRef.current.fit();
             try {

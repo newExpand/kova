@@ -135,6 +135,9 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
         .await
         .read(&mut buf)
         .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err("EOF".to_string());
+    }
     Ok(buf[..n].to_vec())
 }
 
@@ -171,11 +174,10 @@ async fn resize(
 async fn kill(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<(), String> {
     let session = state
         .sessions
-        .read()
+        .write()
         .await
-        .get(&pid)
-        .ok_or("Unavailable pid")?
-        .clone();
+        .remove(&pid)
+        .ok_or("Unavailable pid")?;
     session
         .child_killer
         .lock()
