@@ -2,28 +2,73 @@ use crate::errors::AppError;
 use crate::models::tmux::{ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession, TmuxWindow};
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::process::Command;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+/// Well-known paths where tmux may be installed on macOS.
+/// Checked in order: Apple Silicon Homebrew, Intel Homebrew, MacPorts, Nix, system.
+const TMUX_SEARCH_PATHS: &[&str] = &[
+    "/opt/homebrew/bin/tmux",
+    "/usr/local/bin/tmux",
+    "/opt/local/bin/tmux",
+    "/nix/var/nix/profiles/default/bin/tmux",
+    "/usr/bin/tmux",
+];
+
+/// Cached absolute path to the tmux binary.
+static TMUX_PATH: OnceLock<Option<String>> = OnceLock::new();
+
+/// Resolve the absolute path to the tmux binary.
+/// First checks well-known paths, then falls back to `which tmux`.
+/// The result is cached for the lifetime of the process.
+fn resolve_tmux_path() -> Option<&'static str> {
+    TMUX_PATH
+        .get_or_init(|| {
+            // 1. Check well-known paths (works even when PATH is minimal in .app bundles)
+            for candidate in TMUX_SEARCH_PATHS {
+                if Path::new(candidate).is_file() {
+                    info!("tmux binary found at: {}", candidate);
+                    return Some(candidate.to_string());
+                }
+            }
+
+            // 2. Fallback: try `which tmux` in case PATH includes a custom location
+            if let Ok(output) = Command::new("which").arg("tmux").output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() && Path::new(&path).is_file() {
+                        info!("tmux binary found via which: {}", path);
+                        return Some(path);
+                    }
+                }
+            }
+
+            warn!("tmux binary not found in any known location");
+            None
+        })
+        .as_deref()
+}
+
+/// Create a `Command` pre-configured with the resolved tmux absolute path.
+/// Falls back to bare "tmux" (relying on PATH) if no known location is found.
+fn tmux_cmd() -> Command {
+    Command::new(resolve_tmux_path().unwrap_or("tmux"))
+}
+
 /// Check if tmux binary is available on the system.
 /// Retries up to 3 times with 1-second intervals.
 pub fn is_tmux_available() -> bool {
     for attempt in 1..=3 {
-        match Command::new("which").arg("tmux").output() {
-            Ok(output) if output.status.success() => {
-                info!("tmux binary found");
-                return true;
-            }
-            Ok(_) => {
-                warn!("tmux not found (attempt {}/3)", attempt);
-            }
-            Err(e) => {
-                warn!("Failed to check tmux availability (attempt {}/3): {}", attempt, e);
-            }
+        if resolve_tmux_path().is_some() {
+            info!("tmux binary found");
+            return true;
         }
+        warn!("tmux not found (attempt {}/3)", attempt);
         if attempt < 3 {
             thread::sleep(Duration::from_secs(1));
         }
@@ -35,7 +80,7 @@ pub fn is_tmux_available() -> bool {
 /// List all active tmux sessions.
 /// Returns an empty Vec if tmux is not running (not an error).
 pub fn list_sessions() -> Result<Vec<TmuxSession>, AppError> {
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args([
             "list-sessions",
             "-F",
@@ -89,7 +134,7 @@ pub fn list_sessions() -> Result<Vec<TmuxSession>, AppError> {
 pub fn list_panes(session_name: &str) -> Result<Vec<TmuxPane>, AppError> {
     validate_session_name(session_name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args([
             "list-panes",
             "-t",
@@ -144,7 +189,7 @@ pub fn list_panes(session_name: &str) -> Result<Vec<TmuxPane>, AppError> {
 pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> {
     validate_session_name(name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args([
             "new-session",
             "-d",
@@ -176,7 +221,7 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
 pub fn kill_session(name: &str) -> Result<(), AppError> {
     validate_session_name(name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["kill-session", "-t", name])
         .output()
         .map_err(|e| {
@@ -207,7 +252,7 @@ pub fn kill_session(name: &str) -> Result<(), AppError> {
 /// Uses tmux `split-window -v` (vertical split line = horizontal layout).
 pub fn split_pane_horizontal(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["split-window", "-v", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -228,7 +273,7 @@ pub fn split_pane_horizontal(session_name: &str) -> Result<(), AppError> {
 /// Uses tmux `split-window -h` (horizontal split line = vertical layout).
 pub fn split_pane_vertical(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["split-window", "-h", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -258,7 +303,7 @@ pub fn close_pane(session_name: &str) -> Result<(), AppError> {
         );
         return Ok(());
     }
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["kill-pane", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -289,7 +334,7 @@ pub fn send_keys(session_name: &str, keys: &str) -> Result<(), AppError> {
     if keys.is_empty() {
         return Err(AppError::InvalidInput("Keys cannot be empty".into()));
     }
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["send-keys", "-t", session_name, keys, "Enter"])
         .output()
         .map_err(|e| AppError::TmuxCommand(format!("Failed to execute tmux send-keys: {}", e)))?;
@@ -312,7 +357,7 @@ pub fn send_keys(session_name: &str, keys: &str) -> Result<(), AppError> {
 pub fn list_windows(session_name: &str) -> Result<Vec<TmuxWindow>, AppError> {
     validate_session_name(session_name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args([
             "list-windows",
             "-t",
@@ -368,7 +413,7 @@ pub fn list_windows(session_name: &str) -> Result<Vec<TmuxWindow>, AppError> {
 pub fn create_window(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["new-window", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -402,7 +447,7 @@ pub fn close_window(session_name: &str) -> Result<(), AppError> {
         return Ok(());
     }
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["kill-window", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -428,7 +473,7 @@ pub fn close_window(session_name: &str) -> Result<(), AppError> {
 pub fn next_window(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["next-window", "-t", session_name])
         .output()
         .map_err(|e| {
@@ -450,7 +495,7 @@ pub fn next_window(session_name: &str) -> Result<(), AppError> {
 pub fn previous_window(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
 
-    let output = Command::new("tmux")
+    let output = tmux_cmd()
         .args(["previous-window", "-t", session_name])
         .output()
         .map_err(|e| {

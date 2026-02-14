@@ -10,6 +10,101 @@ use std::sync::Mutex;
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
+/// Enrich the process environment for macOS `.app` bundle compatibility.
+///
+/// macOS `.app` bundles launched via LaunchServices inherit a minimal
+/// environment (e.g. PATH = `/usr/bin:/bin:/usr/sbin:/sbin`), missing
+/// Homebrew, MacPorts, Nix, and user-local directories. This also means
+/// `TERMINFO_DIRS` is unset, so Homebrew-compiled tmux cannot find terminfo
+/// entries like `xterm-256color`.
+///
+/// This function must be called once at startup, before any threads are
+/// spawned or child processes created.
+fn enrich_env() {
+    // ── PATH ──
+    const EXTRA_PATHS: &[&str] = &[
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/opt/local/bin",
+        "/nix/var/nix/profiles/default/bin",
+    ];
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let current_entries: std::collections::HashSet<&str> = current_path.split(':').collect();
+
+    let mut enriched: Vec<String> = Vec::new();
+    for extra in EXTRA_PATHS {
+        if !current_entries.contains(extra) && std::path::Path::new(extra).is_dir() {
+            enriched.push(extra.to_string());
+        }
+    }
+
+    // Also add ~/bin and ~/.local/bin
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !home.is_empty() {
+        for suffix in &["bin", ".local/bin"] {
+            let dir = format!("{}/{}", home, suffix);
+            if !current_entries.contains(dir.as_str()) && std::path::Path::new(&dir).is_dir() {
+                enriched.push(dir);
+            }
+        }
+    }
+
+    if !enriched.is_empty() {
+        let new_path = format!("{}:{}", enriched.join(":"), current_path);
+        // SAFETY: called once at startup before any threads are spawned
+        unsafe { std::env::set_var("PATH", &new_path) };
+        tracing::info!("Enriched PATH with: {}", enriched.join(", "));
+    }
+
+    // ── TERMINFO_DIRS ──
+    // Homebrew tmux links against Homebrew ncurses, which looks for terminfo
+    // in its own prefix. Without TERMINFO_DIRS, `xterm-256color` is not found
+    // and tmux fails with "terminal does not support clear".
+    const TERMINFO_CANDIDATES: &[&str] = &[
+        "/opt/homebrew/opt/ncurses/share/terminfo",
+        "/opt/homebrew/share/terminfo",
+        "/usr/local/opt/ncurses/share/terminfo",
+        "/usr/local/share/terminfo",
+        "/opt/local/share/terminfo",
+        "/usr/share/terminfo",
+    ];
+
+    let current_terminfo = std::env::var("TERMINFO_DIRS").unwrap_or_default();
+    let existing: std::collections::HashSet<&str> = current_terminfo
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut terminfo_dirs: Vec<String> = Vec::new();
+    for candidate in TERMINFO_CANDIDATES {
+        if !existing.contains(candidate) && std::path::Path::new(candidate).is_dir() {
+            terminfo_dirs.push(candidate.to_string());
+        }
+    }
+
+    if !terminfo_dirs.is_empty() {
+        let new_val = if current_terminfo.is_empty() {
+            terminfo_dirs.join(":")
+        } else {
+            format!("{}:{}", terminfo_dirs.join(":"), current_terminfo)
+        };
+        unsafe { std::env::set_var("TERMINFO_DIRS", &new_val) };
+        tracing::info!("Set TERMINFO_DIRS: {}", new_val);
+    }
+
+    // ── LANG / LC_ALL ──
+    // .app bundles have no locale set → shell defaults to C/POSIX.
+    // Unicode block characters (used by Claude Code ASCII art, prompt
+    // symbols like ❯ ▸ └) are only rendered when the locale is UTF-8.
+    if std::env::var("LANG").unwrap_or_default().is_empty() {
+        unsafe { std::env::set_var("LANG", "en_US.UTF-8") };
+        tracing::info!("Set LANG=en_US.UTF-8");
+    }
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -19,6 +114,9 @@ pub fn run() {
         .init();
 
     tracing::info!("Starting Clew");
+
+    // Enrich PATH + TERMINFO_DIRS before any child process is spawned
+    enrich_env();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

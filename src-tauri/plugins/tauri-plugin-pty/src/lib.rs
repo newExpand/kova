@@ -52,7 +52,6 @@ async fn spawn<R: Runtime>(
     state: tauri::State<'_, PluginState>,
     _app_handle: AppHandle<R>,
 ) -> Result<PtyHandler, String> {
-    let _ = term_name;
     let _ = encoding;
     let _ = handle_flow_control;
     let _ = flow_control_pause;
@@ -72,6 +71,9 @@ async fn spawn<R: Runtime>(
 
     let mut cmd = CommandBuilder::new(file);
     cmd.args(args);
+    if let Some(ref name) = term_name {
+        cmd.env(OsString::from("TERM"), OsString::from(name));
+    }
     if let Some(cwd) = cwd {
         cmd.cwd(OsString::from(cwd));
     }
