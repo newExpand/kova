@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 interface GlobalShortcutsReturn {
   isCommandPaletteOpen: boolean;
@@ -7,6 +7,19 @@ interface GlobalShortcutsReturn {
 
 export function useGlobalShortcuts(): GlobalShortcutsReturn {
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (prevOpenRef.current && !isCommandPaletteOpen) {
+      requestAnimationFrame(() => {
+        const textarea = document.querySelector(
+          ".xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null;
+        textarea?.focus();
+      });
+    }
+    prevOpenRef.current = isCommandPaletteOpen;
+  }, [isCommandPaletteOpen]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Cmd+K — Command palette
