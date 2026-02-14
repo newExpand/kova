@@ -432,6 +432,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             }
             // Non-IME key while composing → flush remaining text and end IME
             if (imeActive) {
+              // Modifier keys must not break composition (Shift is needed for ㅆㄲㅃㄸㅉㅒㅖ)
+              const k = event.key;
+              if (k === "Shift" || k === "Control" || k === "Alt" || k === "Meta") {
+                return false;
+              }
               imeLog("keydown: non-IME key ends composition");
               imeFlush();
               imeReset();
