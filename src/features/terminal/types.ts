@@ -13,4 +13,6 @@ export interface TerminalConfig {
   mode: SessionMode;
   cols: number;
   rows: number;
+  cwd?: string;
+  initialCommand?: string;
 }

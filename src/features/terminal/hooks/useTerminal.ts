@@ -107,6 +107,19 @@ export function useTerminal(): UseTerminalResult {
         termRef.current = term;
         fitAddonRef.current = fitAddon;
 
+        // Grab textarea reference immediately after open() — used throughout
+        // initialisation for IME warm-up and jamo detection
+        const xtermTextarea = container.querySelector(
+          ".xterm-helper-textarea",
+        ) as HTMLTextAreaElement | null;
+
+        // macOS IME pre-warm: focus textarea early so macOS starts IME context
+        // initialisation now. The await below (~100ms+ for fonts + rAF) gives
+        // the OS enough time to complete initialisation before user interaction.
+        if (xtermTextarea) {
+          xtermTextarea.focus();
+        }
+
         // Wait for fonts + layout to settle before fitting
         await Promise.all([
           document.fonts.ready,
@@ -140,32 +153,206 @@ export function useTerminal(): UseTerminalResult {
           name: "xterm-256color",
           cols,
           rows,
+          ...(config.cwd ? { cwd: config.cwd } : {}),
         });
         ptyRef.current = pty;
         aliveRef.current = true;
 
         // PTY → Terminal
-        // tauri-pty sends UTF-8 decoded JavaScript strings.
-        // TextEncoder converts them back to UTF-8 bytes so xterm.js's
-        // byte parser correctly handles escape sequences, Korean/CJK,
-        // and box-drawing characters.
-        const utf8Encoder = new TextEncoder();
-        pty.onData((data: Uint8Array | string) => {
+        // Our patched tauri-plugin-pty returns raw Vec<u8> from read(),
+        // which arrives as number[] via Tauri IPC. We convert to Uint8Array
+        // and pass directly to xterm.js's byte parser, which correctly
+        // handles partial multi-byte UTF-8 sequences (Korean/CJK/emoji)
+        // split across read boundaries.
+        pty.onData((data: Uint8Array | string | number[]) => {
           if (!aliveRef.current || !termRef.current) return;
-          if (typeof data === "string") {
-            termRef.current.write(utf8Encoder.encode(data));
+          if (data instanceof Uint8Array) {
+            termRef.current.write(data);
+          } else if (Array.isArray(data)) {
+            termRef.current.write(new Uint8Array(data));
           } else {
-            termRef.current.write(
-              data instanceof Uint8Array ? data : new Uint8Array(data),
-            );
+            // Fallback for string data (shouldn't happen with patched plugin)
+            termRef.current.write(data);
           }
         });
 
-        // Terminal → PTY: user keystrokes
+        // ── WKWebView Korean IME handling ──
+        // macOS WKWebView does NOT fire compositionstart/end for Korean.
+        // Instead it uses insertText + insertReplacementText.
+        // Critical: event order is beforeinput → onData → input → keydown
+        // (keydown fires LAST, not first like standard browsers).
+        //
+        // Strategy:
+        //  1. Set imeActive in beforeinput (fires before onData)
+        //  2. Suppress onData during IME to prevent raw jamo reaching PTY
+        //  3. Track textarea content — flush finalized syllables at boundaries
+        //  4. On non-229 keydown (Enter, Space, etc.), flush remaining text
+
+        let imeActive = false;
+        // How many characters from textarea start were already sent to PTY
+        let imeFlushedLen = 0;
+        // Width (in terminal columns) of current inline preview
+        let imePreviewCols = 0;
+
+        const isKorean = (ch: string): boolean => {
+          const c = ch.charCodeAt(0);
+          // Hangul Compatibility Jamo OR Hangul Syllables
+          return (c >= 0x3131 && c <= 0x3163) || (c >= 0xAC00 && c <= 0xD7A3);
+        };
+
+        // Erase inline preview: move cursor back and clear to end of line
+        const imeClearPreview = () => {
+          if (imePreviewCols > 0 && termRef.current) {
+            // CUB (cursor back) + EL (erase to end of line)
+            termRef.current.write(`\x1b[${imePreviewCols}D\x1b[K`);
+            imePreviewCols = 0;
+          }
+        };
+
+        // Show composing character inline at cursor position (atomic single write)
+        const imeShowPreview = (ch: string) => {
+          if (!termRef.current || !ch) return;
+          const c = ch.charCodeAt(0);
+          // Hangul Compatibility Jamo (ㄱ-ㅎ,ㅏ-ㅣ) AND Syllables (가-힣) are all 2-col wide in xterm Unicode11
+          const newCols = ((c >= 0x3131 && c <= 0x3163) || (c >= 0xAC00 && c <= 0xD7A3)) ? 2 : 1;
+          // Single escape sequence: CUB(cursor back) + SGR4(underline) + char + SGR24 + EL(erase trailing)
+          let seq = "";
+          if (imePreviewCols > 0) {
+            seq += `\x1b[${imePreviewCols}D`;
+          }
+          seq += `\x1b[4m${ch}\x1b[24m`;
+          seq += `\x1b[K`;
+          imePreviewCols = newCols;
+          termRef.current.write(seq);
+        };
+
+        // Send un-flushed finalized text from textarea to PTY
+        const imeFlush = () => {
+          if (!xtermTextarea || !aliveRef.current || !ptyRef.current) return;
+          const val = xtermTextarea.value;
+          if (val.length > imeFlushedLen) {
+            imeClearPreview();
+            ptyRef.current.write(val.substring(imeFlushedLen));
+            imeFlushedLen = val.length;
+          }
+        };
+
+        const imeReset = () => {
+          imeClearPreview();
+          imeActive = false;
+          imeFlushedLen = 0;
+          if (xtermTextarea) xtermTextarea.value = "";
+        };
+
+        // Terminal → PTY: user keystrokes (with IME guard)
         term.onData((data: string) => {
+          if (imeActive) return;
           if (aliveRef.current && ptyRef.current) {
             ptyRef.current.write(data);
           }
+        });
+
+        if (xtermTextarea) {
+          xtermTextarea.setAttribute("inputmode", "text");
+          xtermTextarea.setAttribute("autocapitalize", "off");
+          xtermTextarea.setAttribute("autocomplete", "off");
+          xtermTextarea.setAttribute("spellcheck", "false");
+
+          // beforeinput fires BEFORE onData in WKWebView — this is where
+          // we must set imeActive to suppress the subsequent onData call.
+          xtermTextarea.addEventListener("beforeinput", (e: Event) => {
+            const ie = e as InputEvent;
+
+            // IME updating the composing syllable (e.g. ㅎ→하→한)
+            if (ie.inputType === "insertReplacementText") {
+              imeActive = true;
+              return;
+            }
+
+            // Standard composition events (non-WKWebView systems)
+            if (
+              ie.inputType === "insertCompositionText" ||
+              ie.inputType === "insertFromComposition"
+            ) {
+              imeActive = true;
+              return;
+            }
+
+            if (ie.inputType === "insertText" && ie.data) {
+              if (isKorean(ie.data)) {
+                if (imeActive) {
+                  // Syllable boundary: insertText(jamo) after insertReplacementText
+                  // means the previous syllable is finalized in the textarea.
+                  // Flush it before the new jamo is appended.
+                  imeFlush();
+                }
+                // Set imeActive BEFORE onData fires for this character
+                imeActive = true;
+                return;
+              }
+
+              // Non-Korean insertText while IME was active → IME ending
+              if (imeActive) {
+                imeFlush();
+                imeReset();
+                // Let the non-Korean char proceed normally (onData will handle it)
+              }
+            }
+          });
+
+          // Composition events (for systems that DO fire them)
+          xtermTextarea.addEventListener("compositionstart", () => {
+            imeActive = true;
+          });
+
+          xtermTextarea.addEventListener("compositionend", (_e: CompositionEvent) => {
+            imeClearPreview();
+            // Send any unflushed composed text
+            if (xtermTextarea && aliveRef.current && ptyRef.current) {
+              const val = xtermTextarea.value;
+              if (val.length > imeFlushedLen) {
+                ptyRef.current.write(val.substring(imeFlushedLen));
+              }
+            }
+            imeActive = false;
+            imeFlushedLen = 0;
+            if (xtermTextarea) xtermTextarea.value = "";
+          });
+
+          // Update inline preview and clamp flush tracking
+          xtermTextarea.addEventListener("input", () => {
+            if (!imeActive || !xtermTextarea) return;
+            const val = xtermTextarea.value;
+            // Clamp flush tracking when textarea shrinks (e.g. Backspace)
+            if (imeFlushedLen > val.length) {
+              imeFlushedLen = val.length;
+            }
+            // Show the current composing character (last char after flushed portion)
+            const composing = val.substring(imeFlushedLen);
+            if (composing.length > 0) {
+              imeShowPreview(composing.charAt(composing.length - 1));
+            } else {
+              imeClearPreview();
+            }
+          });
+        }
+
+        // keydown fires AFTER beforeinput/onData in WKWebView.
+        // For Korean keys (keyCode=229), imeActive is already set by beforeinput.
+        // For non-Korean keys, this is where we detect IME ending.
+        term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+          if (event.type === "keydown") {
+            if (event.isComposing || event.keyCode === 229) {
+              imeActive = true;
+              return false;
+            }
+            // Non-IME key while composing → flush remaining text and end IME
+            if (imeActive) {
+              imeFlush();
+              imeReset();
+            }
+          }
+          return true;
         });
 
         // Handle PTY exit
@@ -190,6 +377,15 @@ export function useTerminal(): UseTerminalResult {
 
         setStatus("connected");
 
+        // Send initial command to the shell after it has started
+        if (config.initialCommand) {
+          setTimeout(() => {
+            if (aliveRef.current && ptyRef.current) {
+              ptyRef.current.write(config.initialCommand + "\n");
+            }
+          }, 300);
+        }
+
         // Register session in DB for project ownership tracking
         if (config.projectId && config.mode === "new") {
           useTmuxStore
@@ -205,6 +401,18 @@ export function useTerminal(): UseTerminalResult {
           if (!isStale() && termRef.current) {
             termRef.current.focus();
           }
+          // macOS IME warm-up: blur + refocus cycle to ensure a clean IME
+          // context. Apple FB17460926 — rAF gaps let the OS process each step.
+          requestAnimationFrame(() => {
+            if (xtermTextarea && !isStale() && aliveRef.current) {
+              xtermTextarea.blur();
+              requestAnimationFrame(() => {
+                if (termRef.current && !isStale()) {
+                  termRef.current.focus();
+                }
+              });
+            }
+          });
         });
 
         // Re-fit after 200ms to catch font loading & final layout shifts
