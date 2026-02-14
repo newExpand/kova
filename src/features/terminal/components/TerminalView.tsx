@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminal } from "../hooks/useTerminal";
 import { useTerminalStore } from "../stores/terminalStore";
@@ -9,7 +9,10 @@ interface TerminalViewProps {
 }
 
 function TerminalView({ config }: TerminalViewProps) {
-  const { containerRef, connect, disconnect } = useTerminal();
+  const [isDragOver, setIsDragOver] = useState(false);
+  const { containerRef, connect, disconnect } = useTerminal({
+    onDragState: setIsDragOver,
+  });
   const status = useTerminalStore((s) => s.status);
   const error = useTerminalStore((s) => s.error);
 
@@ -58,6 +61,19 @@ function TerminalView({ config }: TerminalViewProps) {
               <p className="mt-1 max-w-md text-xs text-text-muted">{error}</p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Drag-drop overlay */}
+      {isDragOver && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-text-muted/40"
+          style={{
+            backgroundColor: "rgba(26, 27, 38, 0.7)",
+            pointerEvents: "none",
+          }}
+        >
+          <p className="text-sm text-text-muted">Drop files to paste path</p>
         </div>
       )}
 

@@ -5,18 +5,34 @@ import type { TerminalConfig } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
 
+// macOS Terminal.app / iTerm2 동작 재현: 쉘 특수문자 이스케이프
+function escapeShellPath(path: string): string {
+  if (/[ '"\\$`!#&|;(){}]/.test(path)) {
+    return "'" + path.replace(/'/g, "'\\''") + "'";
+  }
+  return path;
+}
+
+interface UseTerminalOptions {
+  onDragState?: (isDragging: boolean) => void;
+}
+
 interface UseTerminalResult {
   containerRef: React.RefObject<HTMLDivElement | null>;
   connect: (config: TerminalConfig) => Promise<void>;
   disconnect: () => void;
 }
 
-export function useTerminal(): UseTerminalResult {
+export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const ptyRef = useRef<IPty | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
+  const unlistenRef = useRef<(() => void) | null>(null);
+  // Keep latest callback ref so drag-drop listener always uses current handler
+  const onDragStateRef = useRef(options?.onDragState);
+  onDragStateRef.current = options?.onDragState;
   // Guard flag — prevents writes/kills after PTY has exited
   const aliveRef = useRef(false);
   // Monotonic counter — each connect() call gets a unique ID.
@@ -32,6 +48,12 @@ export function useTerminal(): UseTerminalResult {
     aliveRef.current = false;
     // Bump connect ID so any in-flight connect() bails out
     connectIdRef.current += 1;
+
+    // Unregister Tauri drag-drop listener
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
 
     if (observerRef.current) {
       observerRef.current.disconnect();
@@ -439,6 +461,33 @@ export function useTerminal(): UseTerminalResult {
         observerRef.current = observer;
 
         setStatus("connected");
+
+        // ── Tauri drag-drop → PTY path injection (like native terminal) ──
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        if (isStale()) return;
+
+        const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+          if (event.payload.type === "enter") {
+            onDragStateRef.current?.(true);
+          } else if (event.payload.type === "leave") {
+            onDragStateRef.current?.(false);
+          } else if (event.payload.type === "drop") {
+            onDragStateRef.current?.(false);
+            if (aliveRef.current && ptyRef.current) {
+              const paths = event.payload.paths;
+              if (paths.length > 0) {
+                const escaped = paths.map((p) => escapeShellPath(p)).join(" ");
+                ptyRef.current.write(escaped);
+              }
+            }
+          }
+        });
+
+        if (isStale()) {
+          unlisten();
+          return;
+        }
+        unlistenRef.current = unlisten;
 
         // Send initial command to the shell after it has started
         if (config.initialCommand) {
