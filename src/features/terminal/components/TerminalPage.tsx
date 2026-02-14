@@ -5,6 +5,7 @@ import { useTerminalStore } from "../stores/terminalStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { SessionSelector } from "./SessionSelector";
 import { TerminalView } from "./TerminalView";
+import { PaneToolbar } from "./PaneToolbar";
 import type { TerminalConfig } from "../types";
 
 function TerminalPage() {
@@ -110,8 +111,14 @@ function TerminalPage() {
           />
         </div>
       ) : (
-        <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-          <TerminalView config={activeConfig} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <PaneToolbar
+            sessionName={activeConfig.sessionName}
+            disabled={status !== "connected"}
+          />
+          <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+            <TerminalView config={activeConfig} />
+          </div>
         </div>
       )}
     </div>

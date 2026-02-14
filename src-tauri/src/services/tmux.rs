@@ -203,6 +203,81 @@ pub fn kill_session(name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Split the active pane horizontally (top/bottom) in the given session.
+/// Uses tmux `split-window -v` (vertical split line = horizontal layout).
+pub fn split_pane_horizontal(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    let output = Command::new("tmux")
+        .args(["split-window", "-v", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux split-window: {}", e))
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux split-window -v failed: {}",
+            stderr.trim()
+        )));
+    }
+    info!("Split pane horizontally in session '{}'", session_name);
+    Ok(())
+}
+
+/// Split the active pane vertically (left/right) in the given session.
+/// Uses tmux `split-window -h` (horizontal split line = vertical layout).
+pub fn split_pane_vertical(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    let output = Command::new("tmux")
+        .args(["split-window", "-h", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux split-window: {}", e))
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux split-window -h failed: {}",
+            stderr.trim()
+        )));
+    }
+    info!("Split pane vertically in session '{}'", session_name);
+    Ok(())
+}
+
+/// Close the active pane in the given session.
+/// Safety: refuses to close the last remaining pane (returns Ok silently).
+pub fn close_pane(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    let panes = list_panes(session_name)?;
+    if panes.len() <= 1 {
+        info!(
+            "Only {} pane(s) in '{}', skipping close",
+            panes.len(),
+            session_name
+        );
+        return Ok(());
+    }
+    let output = Command::new("tmux")
+        .args(["kill-pane", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux kill-pane: {}", e))
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find pane") || stderr.contains("no server running") {
+            return Ok(());
+        }
+        return Err(AppError::TmuxCommand(format!(
+            "tmux kill-pane failed: {}",
+            stderr.trim()
+        )));
+    }
+    info!("Closed active pane in session '{}'", session_name);
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // DB-backed session ownership
 // ---------------------------------------------------------------------------
@@ -489,6 +564,60 @@ mod tests {
         // This will either be Ok (tmux handles gracefully) or Err (tmux not running)
         // We just verify it doesn't panic
         let _ = result;
+    }
+
+    // ── split_pane_horizontal tests ───────────────────────────────────
+
+    #[test]
+    fn test_split_pane_horizontal_rejects_invalid_name() {
+        let result = split_pane_horizontal("bad;name");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_split_pane_horizontal_rejects_empty_name() {
+        let result = split_pane_horizontal("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── split_pane_vertical tests ────────────────────────────────────
+
+    #[test]
+    fn test_split_pane_vertical_rejects_invalid_name() {
+        let result = split_pane_vertical("inject$(cmd)");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_split_pane_vertical_rejects_empty_name() {
+        let result = split_pane_vertical("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── close_pane tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_close_pane_rejects_invalid_name() {
+        let result = close_pane("path/../../etc");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_close_pane_rejects_empty_name() {
+        let result = close_pane("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
     }
 
     // ── DB-backed session ownership tests ────────────────────────────

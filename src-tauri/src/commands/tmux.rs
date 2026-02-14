@@ -31,6 +31,21 @@ pub fn kill_tmux_session(name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+pub fn split_tmux_pane_horizontal(session_name: String) -> Result<(), AppError> {
+    services::tmux::split_pane_horizontal(&session_name)
+}
+
+#[tauri::command]
+pub fn split_tmux_pane_vertical(session_name: String) -> Result<(), AppError> {
+    services::tmux::split_pane_vertical(&session_name)
+}
+
+#[tauri::command]
+pub fn close_tmux_pane(session_name: String) -> Result<(), AppError> {
+    services::tmux::close_pane(&session_name)
+}
+
+#[tauri::command]
 pub fn register_tmux_session(
     project_id: String,
     session_name: String,

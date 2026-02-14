@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useTmuxStore } from "../../tmux/stores/tmuxStore";
+import * as commands from "../../../lib/tauri/commands";
 import type { TerminalConfig } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
@@ -425,6 +426,34 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // For non-Korean keys, this is where we detect IME ending.
         term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
           if (event.type === "keydown") {
+            // ── Pane shortcuts (Meta key) ──
+            if (event.metaKey && !event.altKey && !event.ctrlKey) {
+              const sName = useTerminalStore.getState().sessionName;
+              if (sName) {
+                if (event.key.toLowerCase() === "d" && event.shiftKey) {
+                  event.preventDefault();
+                  commands.splitTmuxPaneHorizontal(sName).catch((e) =>
+                    console.error("Split horizontal failed:", e),
+                  );
+                  return false;
+                }
+                if (event.key.toLowerCase() === "d" && !event.shiftKey) {
+                  event.preventDefault();
+                  commands.splitTmuxPaneVertical(sName).catch((e) =>
+                    console.error("Split vertical failed:", e),
+                  );
+                  return false;
+                }
+                if (event.key.toLowerCase() === "w" && !event.shiftKey) {
+                  event.preventDefault();
+                  commands.closeTmuxPane(sName).catch((e) =>
+                    console.error("Close pane failed:", e),
+                  );
+                  return false;
+                }
+              }
+            }
+            // ── IME handling ──
             imeLog("keydown key=", event.key, "code=", event.keyCode, "isComposing=", event.isComposing, "imeActive=", imeActive);
             if (event.isComposing || event.keyCode === 229) {
               imeActive = true;

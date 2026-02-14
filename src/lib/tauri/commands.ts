@@ -156,6 +156,22 @@ export async function killTmuxSession(name: string): Promise<void> {
   return invoke<void>("kill_tmux_session", { name });
 }
 
+export async function splitTmuxPaneHorizontal(
+  sessionName: string,
+): Promise<void> {
+  return invoke<void>("split_tmux_pane_horizontal", { sessionName });
+}
+
+export async function splitTmuxPaneVertical(
+  sessionName: string,
+): Promise<void> {
+  return invoke<void>("split_tmux_pane_vertical", { sessionName });
+}
+
+export async function closeTmuxPane(sessionName: string): Promise<void> {
+  return invoke<void>("close_tmux_pane", { sessionName });
+}
+
 export async function registerTmuxSession(
   projectId: string,
   sessionName: string,

@@ -8,6 +8,7 @@ export { useTerminalStore } from "./stores/terminalStore";
 export { SessionSelector } from "./components/SessionSelector";
 export { TerminalView } from "./components/TerminalView";
 export { TerminalPage } from "./components/TerminalPage";
+export { PaneToolbar } from "./components/PaneToolbar";
 
 // Hooks
 export { useTerminal } from "./hooks/useTerminal";
