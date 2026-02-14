@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTerminalStore } from "../stores/terminalStore";
+// Direct import to avoid circular chunk dependency (terminal ↔ settings)
+import { useSettingsStore } from "../../settings/stores/settingsStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { TerminalView } from "./TerminalView";
 import { PaneToolbar } from "./PaneToolbar";
@@ -25,6 +27,7 @@ function TerminalPage() {
   );
 
   const status = useTerminalStore((s) => s.status);
+  const glassMode = useSettingsStore((s) => s.terminalGlassMode);
 
   const { sessions, projectSessions, isAvailable, isLoading, hasFetchedSessions } =
     useTmuxSessions(projectId);
@@ -227,7 +230,9 @@ function TerminalPage() {
           />
           <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
             <TerminalView
+              key={`${activeConfig.sessionName}-${glassMode}`}
               config={activeConfig}
+              glassClassName={glassMode !== "opaque" ? "terminal-glass" : undefined}
               onRequestPaneAction={handleRequestAction}
             />
             <ThemePickerPanel

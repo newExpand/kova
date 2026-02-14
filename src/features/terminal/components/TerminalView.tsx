@@ -6,10 +6,11 @@ import type { TerminalConfig, PaneAction } from "../types";
 
 interface TerminalViewProps {
   config: TerminalConfig;
+  glassClassName?: string;
   onRequestPaneAction?: (action: PaneAction) => void;
 }
 
-function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
+function TerminalView({ config, glassClassName, onRequestPaneAction }: TerminalViewProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const { containerRef, connect, disconnect } = useTerminal({
     onDragState: setIsDragOver,
@@ -41,6 +42,7 @@ function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
 
   return (
     <div
+      className={glassClassName}
       style={{
         position: "relative",
         width: "100%",

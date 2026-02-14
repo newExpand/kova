@@ -24,4 +24,7 @@ export {
   THEME_GROUPS,
   applyThemeCSS,
   getSwatchColors,
+  hexToRgba,
+  applyOpacityToTheme,
+  updateGlassBgOverrides,
 } from "./themes";

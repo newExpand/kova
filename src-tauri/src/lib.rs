@@ -38,6 +38,34 @@ pub fn run() {
             tracing::info!("Event server running on port {}", port);
             app.manage(Mutex::new(event_server));
 
+            // Apply native vibrancy if previously enabled
+            {
+                let db_state = app.state::<Mutex<DbConnection>>();
+                let db_guard = db_state.lock();
+                if let Ok(db) = db_guard {
+                    let enabled = crate::services::settings::get_with_default(
+                        &db.conn,
+                        "native_vibrancy_enabled",
+                        "false",
+                    );
+                    if enabled == "true" {
+                        if let Some(window) = app.get_webview_window("main") {
+                            use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                            if let Err(e) = apply_vibrancy(
+                                &window,
+                                NSVisualEffectMaterial::HudWindow,
+                                None,
+                                None,
+                            ) {
+                                tracing::warn!("Failed to restore vibrancy on startup: {}", e);
+                            } else {
+                                tracing::info!("Restored native vibrancy on startup");
+                            }
+                        }
+                    }
+                }
+            }
+
             // Re-inject hooks for all active projects with the new port
             {
                 let db_state = app.state::<Mutex<DbConnection>>();
@@ -106,6 +134,7 @@ pub fn run() {
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::settings::list_settings,
+            commands::settings::set_native_vibrancy,
             // Environment commands
             commands::environment::check_environment,
         ])

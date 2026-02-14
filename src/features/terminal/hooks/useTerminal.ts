@@ -5,7 +5,7 @@ import * as commands from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
-import { getThemeById } from "../themes";
+import { getThemeById, applyOpacityToTheme } from "../themes";
 // Direct import to avoid circular chunk dependency (terminal ↔ settings)
 import { useSettingsStore } from "../../settings/stores/settingsStore";
 
@@ -34,6 +34,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const ptyRef = useRef<IPty | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
+
   const unlistenRef = useRef<(() => void) | null>(null);
   const themeUnsubRef = useRef<(() => void) | null>(null);
   // Keep latest callback ref so drag-drop listener always uses current handler
@@ -134,13 +135,20 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         const currentTheme = getThemeById(
           useSettingsStore.getState().terminalTheme,
         );
+        const { terminalGlassMode, terminalOpacity } = useSettingsStore.getState();
+        const needsTransparency = terminalGlassMode !== "opaque";
+        const effectiveOpacity = needsTransparency ? terminalOpacity : 1.0;
+
         const term = new Terminal({
           fontSize: 14,
           fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-          theme: currentTheme.xterm,
+          theme: needsTransparency
+            ? applyOpacityToTheme(currentTheme.xterm, effectiveOpacity)
+            : currentTheme.xterm,
           cursorBlink: true,
           convertEol: false,
           allowProposedApi: true,
+          allowTransparency: needsTransparency,
           scrollback: 0,
         });
 
@@ -546,20 +554,32 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
         setStatus("connected");
 
-        // Subscribe to runtime theme changes from settings store
+        // Subscribe to runtime theme/opacity changes from settings store.
+        // Glass mode changes are handled by TerminalPage via React key remount.
         let prevThemeId = useSettingsStore.getState().terminalTheme;
+        let prevOpacity = useSettingsStore.getState().terminalOpacity;
         themeUnsubRef.current = useSettingsStore.subscribe((state) => {
-          if (state.terminalTheme !== prevThemeId) {
+          const opacityChanged = state.terminalOpacity !== prevOpacity;
+          const themeChanged = state.terminalTheme !== prevThemeId;
+
+          if (themeChanged || opacityChanged) {
             prevThemeId = state.terminalTheme;
+            prevOpacity = state.terminalOpacity;
             try {
               if (termRef.current) {
                 const newTheme = getThemeById(state.terminalTheme);
-                termRef.current.options.theme = newTheme.xterm;
+                const isTransparent = state.terminalGlassMode !== "opaque";
+                const opacity = isTransparent ? state.terminalOpacity : 1.0;
+                termRef.current.options.theme = isTransparent
+                  ? applyOpacityToTheme(newTheme.xterm, opacity)
+                  : newTheme.xterm;
                 termRef.current.refresh(0, termRef.current.rows - 1);
                 // Update IME overlay colors
                 imeOverlay.style.color = newTheme.ui.compositionForeground;
-                imeOverlay.style.background =
-                  newTheme.xterm.background ?? "#1a1b26";
+                const bgColor = isTransparent
+                  ? applyOpacityToTheme(newTheme.xterm, opacity).background ?? "#1a1b26"
+                  : newTheme.xterm.background ?? "#1a1b26";
+                imeOverlay.style.background = bgColor;
               }
             } catch (err) {
               console.error(
