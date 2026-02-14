@@ -15,6 +15,14 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@fontsource/cascadia-code": "^5.2.3",
+    "@fontsource/fira-code": "^5.2.7",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/iosevka": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/monaspace-neon": "^5.2.5",
+    "@fontsource/source-code-pro": "^5.2.7",
+    "@fontsource/ubuntu-mono": "^5.2.8",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@tauri-apps/api": "^2.10.1",
@@ -24,6 +32,7 @@
     "@tauri-apps/plugin-shell": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-fonts": "^0.1.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

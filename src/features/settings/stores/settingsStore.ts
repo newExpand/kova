@@ -5,6 +5,10 @@ import {
   getThemeById,
   applyThemeCSS,
   updateGlassBgOverrides,
+  DEFAULT_FONT_ID,
+  DEFAULT_FONT_SIZE,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
 } from "../../terminal";
 import type { NotificationStyle, GlassMode } from "../types";
 
@@ -13,6 +17,8 @@ interface SettingsState {
   terminalTheme: string;
   terminalGlassMode: GlassMode;
   terminalOpacity: number;
+  terminalFontFamily: string;
+  terminalFontSize: number;
   isLoading: boolean;
   error: string | null;
 }
@@ -23,6 +29,8 @@ interface SettingsActions {
   setTerminalTheme: (themeId: string) => Promise<void>;
   setTerminalGlassMode: (mode: GlassMode) => Promise<void>;
   setTerminalOpacity: (opacity: number) => Promise<void>;
+  setTerminalFontFamily: (fontId: string) => Promise<void>;
+  setTerminalFontSize: (size: number) => Promise<void>;
   reset: () => void;
 }
 
@@ -33,6 +41,8 @@ const initialState: SettingsState = {
   terminalTheme: DEFAULT_THEME_ID,
   terminalGlassMode: "opaque",
   terminalOpacity: 0.85,
+  terminalFontFamily: DEFAULT_FONT_ID,
+  terminalFontSize: DEFAULT_FONT_SIZE,
   isLoading: false,
   error: null,
 };
@@ -48,11 +58,13 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     fetchSettings: async () => {
       set({ isLoading: true, error: null });
       try {
-        const [style, themeId, glassMode, opacityStr] = await Promise.all([
+        const [style, themeId, glassMode, opacityStr, fontFamily, fontSizeStr] = await Promise.all([
           getSetting("notification_style", "alert"),
           getSetting("terminal_theme", DEFAULT_THEME_ID),
           getSetting("terminal_glass_mode", "opaque"),
           getSetting("terminal_opacity", "0.85"),
+          getSetting("terminal_font_family", DEFAULT_FONT_ID),
+          getSetting("terminal_font_size", String(DEFAULT_FONT_SIZE)),
         ]);
         const theme = getThemeById(themeId);
         applyThemeCSS(theme);
@@ -60,12 +72,15 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           ? (glassMode as GlassMode)
           : "opaque";
         const parsedOpacity = Math.min(1.0, Math.max(0.5, parseFloat(opacityStr) || 0.85));
+        const parsedFontSize = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, parseInt(fontSizeStr, 10) || DEFAULT_FONT_SIZE));
         updateGlassBgOverrides(theme.xterm, validGlass, parsedOpacity);
         set({
           notificationStyle: style as NotificationStyle,
           terminalTheme: theme.id,
           terminalGlassMode: validGlass,
           terminalOpacity: parsedOpacity,
+          terminalFontFamily: fontFamily,
+          terminalFontSize: parsedFontSize,
           isLoading: false,
         });
       } catch (e) {
@@ -137,6 +152,39 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         console.error("[settingsStore] Failed to save opacity:", e);
         set({
           terminalOpacity: prev,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    setTerminalFontFamily: async (fontId) => {
+      const prev = get().terminalFontFamily;
+      set({ terminalFontFamily: fontId, error: null, isLoading: true });
+      try {
+        await setSetting("terminal_font_family", fontId);
+        set({ isLoading: false });
+      } catch (e) {
+        console.error("[settingsStore] Failed to save font family:", e);
+        set({
+          terminalFontFamily: prev,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    setTerminalFontSize: async (size) => {
+      const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size));
+      const prev = get().terminalFontSize;
+      set({ terminalFontSize: clamped, error: null, isLoading: true });
+      try {
+        await setSetting("terminal_font_size", String(clamped));
+        set({ isLoading: false });
+      } catch (e) {
+        console.error("[settingsStore] Failed to save font size:", e);
+        set({
+          terminalFontSize: prev,
           error: extractErrorMessage(e),
           isLoading: false,
         });

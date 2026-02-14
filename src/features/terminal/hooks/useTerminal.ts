@@ -6,6 +6,7 @@ import type { TerminalConfig, PaneAction } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
 import { getThemeById, applyOpacityToTheme } from "../themes";
+import { getFontById, loadFontCss } from "../fonts";
 // Direct import to avoid circular chunk dependency (terminal ↔ settings)
 import { useSettingsStore } from "../../settings/stores/settingsStore";
 
@@ -117,11 +118,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
       try {
         // Dynamic imports to keep xterm.js in separate chunk
-        const [{ Terminal }, { FitAddon }, { Unicode11Addon }] =
+        const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebFontsAddon, loadFonts: xtermLoadFonts }] =
           await Promise.all([
             import("@xterm/xterm"),
             import("@xterm/addon-fit"),
             import("@xterm/addon-unicode11"),
+            import("@xterm/addon-web-fonts"),
           ]);
         if (isStale()) return;
 
@@ -135,11 +137,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         const currentTheme = getThemeById(
           useSettingsStore.getState().terminalTheme,
         );
-        const { terminalOpacity } = useSettingsStore.getState();
+        const { terminalOpacity, terminalFontFamily, terminalFontSize } = useSettingsStore.getState();
+        const fontPreset = getFontById(terminalFontFamily);
+
+        // Step 1: Load @font-face CSS for web fonts (registers in document.fonts)
+        await loadFontCss(fontPreset);
+        if (isStale()) return;
 
         const term = new Terminal({
-          fontSize: 14,
-          fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontSize: terminalFontSize,
+          fontFamily: fontPreset.fontFamily,
           theme: applyOpacityToTheme(currentTheme.xterm, terminalOpacity),
           cursorBlink: true,
           convertEol: false,
@@ -154,6 +161,23 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // Unicode11 — correct double-width for Korean/CJK/emoji
         term.loadAddon(new Unicode11Addon());
         term.unicode.activeVersion = "11";
+        // WebFontsAddon — ensures xterm canvas renderer picks up web fonts
+        const webFontsAddon = new WebFontsAddon();
+        term.loadAddon(webFontsAddon);
+
+        // Step 2: Wait for xterm to load the actual font glyphs BEFORE open()
+        // System fonts won't be in document.fonts, so we catch the rejection.
+        if (fontPreset.category === "popular") {
+          try {
+            await webFontsAddon.loadFonts([fontPreset.name]);
+          } catch {
+            // Font not found in document.fonts — fallback to monospace
+          }
+        }
+        if (isStale()) {
+          term.dispose();
+          return;
+        }
 
         term.open(container);
         termRef.current = term;
@@ -550,13 +574,17 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
         setStatus("connected");
 
-        // Subscribe to runtime theme/opacity changes from settings store.
+        // Subscribe to runtime theme/opacity/font changes from settings store.
         // Glass mode changes are handled by TerminalPage via React key remount.
         let prevThemeId = useSettingsStore.getState().terminalTheme;
         let prevOpacity = useSettingsStore.getState().terminalOpacity;
+        let prevFontFamily = useSettingsStore.getState().terminalFontFamily;
+        let prevFontSize = useSettingsStore.getState().terminalFontSize;
         themeUnsubRef.current = useSettingsStore.subscribe((state) => {
           const opacityChanged = state.terminalOpacity !== prevOpacity;
           const themeChanged = state.terminalTheme !== prevThemeId;
+          const fontFamilyChanged = state.terminalFontFamily !== prevFontFamily;
+          const fontSizeChanged = state.terminalFontSize !== prevFontSize;
 
           if (themeChanged || opacityChanged) {
             prevThemeId = state.terminalTheme;
@@ -577,6 +605,55 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 "[useTerminal] Failed to apply runtime theme change:",
                 err,
               );
+            }
+          }
+
+          if (fontFamilyChanged || fontSizeChanged) {
+            prevFontFamily = state.terminalFontFamily;
+            prevFontSize = state.terminalFontSize;
+            const applyFont = () => {
+              try {
+                if (termRef.current) {
+                  const newFont = getFontById(state.terminalFontFamily);
+                  termRef.current.options.fontFamily = newFont.fontFamily;
+                  termRef.current.options.fontSize = state.terminalFontSize;
+                  // Update IME overlay to match new font
+                  imeOverlay.style.fontFamily = newFont.fontFamily;
+                  imeOverlay.style.fontSize = `${state.terminalFontSize}px`;
+                  // Re-fit to recalculate cell dimensions for new font metrics
+                  if (fitAddonRef.current) {
+                    fitAddonRef.current.fit();
+                    if (ptyRef.current && termRef.current) {
+                      try {
+                        ptyRef.current.resize(termRef.current.cols, termRef.current.rows);
+                      } catch {
+                        // PTY may have exited
+                      }
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error(
+                  "[useTerminal] Failed to apply runtime font change:",
+                  err,
+                );
+              }
+            };
+            if (fontFamilyChanged) {
+              const newFont = getFontById(state.terminalFontFamily);
+              // 1. Load @font-face CSS  2. xterm loadFonts()  3. apply
+              loadFontCss(newFont).then(async () => {
+                if (newFont.category === "popular") {
+                  try {
+                    await xtermLoadFonts([newFont.name]);
+                  } catch {
+                    // Font not in document.fonts — fallback
+                  }
+                }
+                applyFont();
+              });
+            } else {
+              applyFont();
             }
           }
         });
