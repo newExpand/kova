@@ -1,10 +1,15 @@
 use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
-use tauri::{AppHandle, Emitter};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{ListenAddr, Method, Response, Server, StatusCode};
 use tracing::{error, info, warn};
+
+use crate::db::DbConnection;
+use std::sync::Mutex as StdMutex;
 use url::Url;
 
 pub struct EventServer {
@@ -72,6 +77,9 @@ impl EventServer {
 
 /// Main request handling loop.
 fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: AppHandle) {
+    // 프로젝트 경로 → 마지막 Stop 수신 시각
+    let mut last_stop_times: HashMap<String, Instant> = HashMap::new();
+
     loop {
         // Check for shutdown signal
         if shutdown_rx.try_recv().is_ok() {
@@ -89,7 +97,7 @@ fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: 
             }
         };
 
-        if let Err(e) = process_request(request, &app_handle) {
+        if let Err(e) = process_request(request, &app_handle, &mut last_stop_times) {
             warn!("Error processing request: {}", e);
         }
     }
@@ -99,6 +107,7 @@ fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: 
 fn process_request(
     mut request: tiny_http::Request,
     app_handle: &AppHandle,
+    last_stop_times: &mut HashMap<String, Instant>,
 ) -> Result<(), AppError> {
     let url = request.url().to_string();
     let method = request.method().clone();
@@ -186,12 +195,89 @@ fn process_request(
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 
-    // Emit Tauri event to frontend
+    // Stop 이벤트면 쿨다운 시각 기록
+    if hook_event.event_type == "Stop" {
+        last_stop_times.insert(hook_event.project_path.clone(), Instant::now());
+    }
+
+    // idle_prompt이면 쿨다운 체크 (Stop 후 120초 이내 → 네이티브 알림 억제)
+    let suppress_native = if hook_event.event_type == "Notification" {
+        let is_idle = hook_event
+            .payload
+            .get("notification_type")
+            .and_then(|v| v.as_str())
+            == Some("idle_prompt");
+
+        if is_idle {
+            last_stop_times
+                .get(&hook_event.project_path)
+                .map(|t| t.elapsed() < std::time::Duration::from_secs(120))
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    // Emit Tauri event to frontend (항상 실행)
     app_handle
         .emit("notification:hook-received", &hook_event)
         .map_err(|e| AppError::EventServer(format!("Failed to emit event: {}", e)))?;
 
     info!("Hook event emitted: type={}", hook_event.event_type);
+
+    // DB persistence + Native notification (best-effort)
+    let db_state = app_handle.state::<StdMutex<DbConnection>>();
+    if let Ok(db) = db_state.lock() {
+        match crate::services::project::get_by_path(&db.conn, &hook_event.project_path) {
+            Ok(Some(project)) => {
+                let title = project.name.clone();
+                let body = hook_event
+                    .payload
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| hook_event.event_type.clone());
+
+                // DB 저장 (항상 실행)
+                if let Err(e) = crate::services::notification::store_notification(
+                    &db.conn,
+                    &project.id,
+                    &hook_event.event_type,
+                    &title,
+                    if body.is_empty() { None } else { Some(&body) },
+                    Some(&hook_event.payload.to_string()),
+                ) {
+                    warn!("Failed to store notification: {}", e);
+                }
+
+                // macOS 네이티브 알림 (쿨다운 시 억제)
+                if suppress_native {
+                    info!(
+                        "Suppressed idle_prompt notification (Stop cooldown) for: {}",
+                        hook_event.project_path
+                    );
+                } else {
+                    // Read notification style from settings
+                    let notification_style = crate::services::settings::get_with_default(
+                        &db.conn, "notification_style", "alert",
+                    );
+
+                    if let Err(e) = crate::services::notification::send_native_notification(
+                        app_handle, &title, &body, &notification_style,
+                    ) {
+                        warn!("Failed to send native notification: {}", e);
+                    }
+                }
+            }
+            Ok(None) => warn!("No active project for path: {}", hook_event.project_path),
+            Err(e) => warn!("Project lookup failed: {}", e),
+        }
+    } else {
+        warn!("Failed to acquire DB lock for notification");
+    }
 
     let _ = request.respond(
         Response::from_string(r#"{"status":"ok"}"#)

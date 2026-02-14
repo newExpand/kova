@@ -3,14 +3,28 @@ use crate::models::notification::NotificationRecord;
 use rusqlite::Connection;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
-use tracing::info;
+use tracing::{info, warn};
 
-/// Send a native macOS notification using tauri-plugin-notification.
+/// Send a native macOS notification.
+/// In dev mode (debug build) on macOS, falls back to osascript because
+/// tauri-plugin-notification requires a signed/bundled app to work.
+///
+/// `notification_style` controls the notification behavior:
+/// - "banner": temporary notification that auto-dismisses (osascript)
+/// - "alert" (default): persistent notification that stays until dismissed (alerter)
 pub fn send_native_notification(
     app: &AppHandle,
     title: &str,
     body: &str,
+    notification_style: &str,
 ) -> Result<(), AppError> {
+    if cfg!(debug_assertions) && cfg!(target_os = "macos") {
+        return match notification_style {
+            "banner" => send_via_osascript(title, body),
+            _ => send_via_alerter_or_osascript(title, body),
+        };
+    }
+
     app.notification()
         .builder()
         .title(title)
@@ -19,6 +33,73 @@ pub fn send_native_notification(
         .map_err(|e| AppError::Internal(format!("Failed to send notification: {}", e)))?;
 
     info!("Native notification sent: {}", title);
+    Ok(())
+}
+
+/// Escape a string for use inside an AppleScript double-quoted string.
+fn escape_applescript(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', " ")
+        .replace('\r', "")
+}
+
+/// Escape leading `[` for alerter CLI which treats it as special syntax.
+fn escape_alerter_arg(s: &str) -> String {
+    if s.starts_with('[') {
+        format!("\\{}", s)
+    } else {
+        s.to_string()
+    }
+}
+
+fn send_via_alerter_or_osascript(title: &str, body: &str) -> Result<(), AppError> {
+    // body가 비어있으면 title을 message로 사용 (방어적 폴백)
+    let alert_message = if body.is_empty() { title } else { body };
+
+    match std::process::Command::new("alerter")
+        .arg("-title")
+        .arg(escape_alerter_arg(title))
+        .arg("-message")
+        .arg(escape_alerter_arg(alert_message))
+        .arg("-sound")
+        .arg("default")
+        .spawn()
+    {
+        Ok(_child) => {
+            info!("Native notification sent (alerter): {}", title);
+            return Ok(());
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            warn!("alerter not found, falling back to osascript");
+        }
+        Err(e) => {
+            warn!("alerter failed: {}, falling back to osascript", e);
+        }
+    }
+    send_via_osascript(title, body)
+}
+
+fn send_via_osascript(title: &str, body: &str) -> Result<(), AppError> {
+    let escaped_title = escape_applescript(title);
+    let escaped_body = escape_applescript(body);
+    let script = format!(
+        r#"display notification "{}" with title "{}""#,
+        escaped_body, escaped_title
+    );
+
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| AppError::Internal(format!("osascript failed: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        warn!("osascript notification failed: {}", stderr);
+    }
+
+    info!("Native notification sent (osascript): {}", title);
     Ok(())
 }
 
@@ -192,5 +273,13 @@ mod tests {
             })
             .expect("Table should still exist");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_escape_applescript() {
+        assert_eq!(escape_applescript(r#"hello "world""#), r#"hello \"world\""#);
+        assert_eq!(escape_applescript("line1\nline2"), "line1 line2");
+        assert_eq!(escape_applescript("back\\slash"), "back\\\\slash");
+        assert_eq!(escape_applescript("cr\r\ntest"), "cr test");
     }
 }
