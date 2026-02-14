@@ -157,7 +157,7 @@ const STYLE_ELEMENT_ID = "xterm-glass-bg-overrides";
  */
 export function updateGlassBgOverrides(
   theme: ITheme,
-  glassMode: GlassMode,
+  _glassMode: GlassMode,
   opacity: number,
 ): void {
   if (typeof document === "undefined") return;
@@ -167,11 +167,6 @@ export function updateGlassBgOverrides(
     styleEl = document.createElement("style");
     styleEl.id = STYLE_ELEMENT_ID;
     document.head.appendChild(styleEl);
-  }
-
-  if (glassMode === "opaque") {
-    styleEl.textContent = "";
-    return;
   }
 
   // Luminance threshold: colors below this are "nearly black" and become

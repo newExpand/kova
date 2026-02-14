@@ -135,20 +135,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         const currentTheme = getThemeById(
           useSettingsStore.getState().terminalTheme,
         );
-        const { terminalGlassMode, terminalOpacity } = useSettingsStore.getState();
-        const needsTransparency = terminalGlassMode !== "opaque";
-        const effectiveOpacity = needsTransparency ? terminalOpacity : 1.0;
+        const { terminalOpacity } = useSettingsStore.getState();
 
         const term = new Terminal({
           fontSize: 14,
           fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-          theme: needsTransparency
-            ? applyOpacityToTheme(currentTheme.xterm, effectiveOpacity)
-            : currentTheme.xterm,
+          theme: applyOpacityToTheme(currentTheme.xterm, terminalOpacity),
           cursorBlink: true,
           convertEol: false,
           allowProposedApi: true,
-          allowTransparency: needsTransparency,
+          allowTransparency: true,
           scrollback: 0,
         });
 
@@ -568,17 +564,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             try {
               if (termRef.current) {
                 const newTheme = getThemeById(state.terminalTheme);
-                const isTransparent = state.terminalGlassMode !== "opaque";
-                const opacity = isTransparent ? state.terminalOpacity : 1.0;
-                termRef.current.options.theme = isTransparent
-                  ? applyOpacityToTheme(newTheme.xterm, opacity)
-                  : newTheme.xterm;
+                const opacity = state.terminalOpacity;
+                termRef.current.options.theme = applyOpacityToTheme(newTheme.xterm, opacity);
                 termRef.current.refresh(0, termRef.current.rows - 1);
                 // Update IME overlay colors
                 imeOverlay.style.color = newTheme.ui.compositionForeground;
-                const bgColor = isTransparent
-                  ? applyOpacityToTheme(newTheme.xterm, opacity).background ?? "#1a1b26"
-                  : newTheme.xterm.background ?? "#1a1b26";
+                const bgColor = applyOpacityToTheme(newTheme.xterm, opacity).background ?? "#1a1b26";
                 imeOverlay.style.background = bgColor;
               }
             } catch (err) {

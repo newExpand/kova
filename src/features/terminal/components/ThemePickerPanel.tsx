@@ -4,12 +4,6 @@ import { useSettingsStore } from "../../settings/stores/settingsStore";
 import { THEME_GROUPS, getSwatchColors } from "../themes";
 import { cn } from "../../../lib/utils";
 import type { TerminalTheme } from "../themes/types";
-import type { GlassMode } from "../../settings/types";
-
-const GLASS_OPTIONS: { value: GlassMode; label: string }[] = [
-  { value: "opaque", label: "Opaque" },
-  { value: "faux", label: "Glass" },
-];
 
 interface ThemePickerPanelProps {
   open: boolean;
@@ -23,8 +17,6 @@ export const ThemePickerPanel = memo(function ThemePickerPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const terminalTheme = useSettingsStore((s) => s.terminalTheme);
   const setTerminalTheme = useSettingsStore((s) => s.setTerminalTheme);
-  const glassMode = useSettingsStore((s) => s.terminalGlassMode);
-  const setGlassMode = useSettingsStore((s) => s.setTerminalGlassMode);
   const opacity = useSettingsStore((s) => s.terminalOpacity);
   const setOpacity = useSettingsStore((s) => s.setTerminalOpacity);
 
@@ -64,48 +56,24 @@ export const ThemePickerPanel = memo(function ThemePickerPanel({
       className="absolute right-2 top-2 z-20 w-56 rounded-xl border border-white/[0.15] glass-elevated glass-specular"
     >
       <div className="p-2">
-        {/* ── Glass Mode Selector ── */}
-        <p className="mb-1.5 px-1 text-xs font-semibold text-text-muted">
-          Background
-        </p>
-        <div className="mb-2 flex rounded-lg bg-white/[0.06] p-0.5">
-          {GLASS_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setGlassMode(opt.value)}
-              className={cn(
-                "flex-1 rounded-md px-1 py-1 text-[10px] font-medium transition-colors",
-                glassMode === opt.value
-                  ? "bg-white/[0.15] text-text shadow-sm"
-                  : "text-text-muted hover:text-text-secondary",
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Opacity Slider (visible when glass/vibrancy) ── */}
-        {glassMode !== "opaque" && (
-          <div className="mb-2 px-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-text-muted">Opacity</span>
-              <span className="text-[10px] tabular-nums text-text-secondary">
-                {Math.round(opacity * 100)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.0"
-              step="0.05"
-              value={opacity}
-              onChange={handleOpacityChange}
-              className="mt-1 h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.12] accent-primary [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
-            />
+        {/* ── Opacity Slider ── */}
+        <div className="mb-2 px-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-text-muted">Terminal Opacity</span>
+            <span className="text-[10px] tabular-nums text-text-secondary">
+              {Math.round(opacity * 100)}%
+            </span>
           </div>
-        )}
+          <input
+            type="range"
+            min="0.5"
+            max="1.0"
+            step="0.05"
+            value={opacity}
+            onChange={handleOpacityChange}
+            className="mt-1 h-1 w-full cursor-pointer appearance-none rounded-full bg-white/[0.12] accent-primary [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
+          />
+        </div>
 
         {/* ── Theme List ── */}
         <p className="mb-2 px-1 text-xs font-semibold text-text-muted">
