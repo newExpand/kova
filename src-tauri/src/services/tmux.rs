@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::tmux::{ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession};
+use crate::models::tmux::{ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession, TmuxWindow};
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
@@ -279,6 +279,170 @@ pub fn close_pane(session_name: &str) -> Result<(), AppError> {
 }
 
 // ---------------------------------------------------------------------------
+// Window management
+// ---------------------------------------------------------------------------
+
+/// List all windows in a given tmux session.
+pub fn list_windows(session_name: &str) -> Result<Vec<TmuxWindow>, AppError> {
+    validate_session_name(session_name)?;
+
+    let output = Command::new("tmux")
+        .args([
+            "list-windows",
+            "-t",
+            session_name,
+            "-F",
+            "#{session_name}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}",
+        ])
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                info!("tmux binary not found, returning empty window list");
+                return Ok(Vec::new());
+            }
+            return Err(AppError::TmuxCommand(format!(
+                "Failed to execute tmux list-windows: {}",
+                e
+            )));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find session")
+            || stderr.contains("no server running")
+            || stderr.contains("session not found")
+        {
+            info!(
+                "tmux session '{}' not found, returning empty window list",
+                session_name
+            );
+            return Ok(Vec::new());
+        }
+        return Err(AppError::TmuxCommand(format!(
+            "tmux list-windows failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let windows = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(parse_window_line)
+        .collect();
+
+    Ok(windows)
+}
+
+/// Create a new window in the given tmux session.
+pub fn create_window(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+
+    let output = Command::new("tmux")
+        .args(["new-window", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux new-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux new-window failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!("Created new window in session '{}'", session_name);
+    Ok(())
+}
+
+/// Close the active window in the given session.
+/// Safety: refuses to close the last remaining window (returns Ok silently).
+pub fn close_window(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+
+    let windows = list_windows(session_name)?;
+    if windows.len() <= 1 {
+        info!(
+            "Only {} window(s) in '{}', skipping close",
+            windows.len(),
+            session_name
+        );
+        return Ok(());
+    }
+
+    let output = Command::new("tmux")
+        .args(["kill-window", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux kill-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find window") || stderr.contains("no server running") {
+            return Ok(());
+        }
+        return Err(AppError::TmuxCommand(format!(
+            "tmux kill-window failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!("Closed active window in session '{}'", session_name);
+    Ok(())
+}
+
+/// Switch to the next window in the given session (wraps around).
+pub fn next_window(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+
+    let output = Command::new("tmux")
+        .args(["next-window", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux next-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux next-window failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Switch to the previous window in the given session (wraps around).
+pub fn previous_window(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+
+    let output = Command::new("tmux")
+        .args(["previous-window", "-t", session_name])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux previous-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux previous-window failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // DB-backed session ownership
 // ---------------------------------------------------------------------------
 
@@ -451,6 +615,27 @@ fn parse_pane_line(line: &str) -> Option<TmuxPane> {
     })
 }
 
+/// Parse a single line from `tmux list-windows -F` output.
+fn parse_window_line(line: &str) -> Option<TmuxWindow> {
+    let parts: Vec<&str> = line.splitn(5, '|').collect();
+    if parts.len() < 5 {
+        warn!("Failed to parse tmux window line: {}", line);
+        return None;
+    }
+
+    let window_index = parts[1].parse::<i32>().unwrap_or(0);
+    let window_active = parts[3].trim() == "1";
+    let window_panes = parts[4].trim().parse::<i32>().unwrap_or(0);
+
+    Some(TmuxWindow {
+        session_name: parts[0].to_string(),
+        window_index,
+        window_name: parts[2].to_string(),
+        window_active,
+        window_panes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,6 +803,115 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("cannot be empty"));
+    }
+
+    // ── parse_window_line tests ───────────────────────────────────────
+
+    #[test]
+    fn test_parse_window_line_valid() {
+        let line = "my-session|0|bash|1|2";
+        let window = parse_window_line(line).expect("Should parse valid line");
+        assert_eq!(window.session_name, "my-session");
+        assert_eq!(window.window_index, 0);
+        assert_eq!(window.window_name, "bash");
+        assert!(window.window_active);
+        assert_eq!(window.window_panes, 2);
+    }
+
+    #[test]
+    fn test_parse_window_line_inactive() {
+        let line = "session|1|vim|0|1";
+        let window = parse_window_line(line).expect("Should parse valid line");
+        assert!(!window.window_active);
+        assert_eq!(window.window_index, 1);
+    }
+
+    #[test]
+    fn test_parse_window_line_invalid() {
+        let line = "too|few|parts";
+        assert!(parse_window_line(line).is_none());
+    }
+
+    // ── create_window tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_create_window_rejects_invalid_name() {
+        let result = create_window("bad;name");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_create_window_rejects_empty_name() {
+        let result = create_window("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── close_window tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_close_window_rejects_invalid_name() {
+        let result = close_window("inject$(cmd)");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_close_window_rejects_empty_name() {
+        let result = close_window("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── next_window tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_next_window_rejects_invalid_name() {
+        let result = next_window("bad;name");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_next_window_rejects_empty_name() {
+        let result = next_window("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── previous_window tests ───────────────────────────────────────
+
+    #[test]
+    fn test_previous_window_rejects_invalid_name() {
+        let result = previous_window("path/../../etc");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_previous_window_rejects_empty_name() {
+        let result = previous_window("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
+    }
+
+    // ── list_windows tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_list_windows_rejects_invalid_name() {
+        let result = list_windows("inject$(cmd)");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
     }
 
     // ── DB-backed session ownership tests ────────────────────────────

@@ -43,6 +43,14 @@ export interface TmuxPane {
   paneActive: boolean;
 }
 
+export interface TmuxWindow {
+  sessionName: string;
+  windowIndex: number;
+  windowName: string;
+  windowActive: boolean;
+  windowPanes: number;
+}
+
 export interface ProjectTmuxSession {
   id: string;
   projectId: string;
@@ -170,6 +178,28 @@ export async function splitTmuxPaneVertical(
 
 export async function closeTmuxPane(sessionName: string): Promise<void> {
   return invoke<void>("close_tmux_pane", { sessionName });
+}
+
+export async function listTmuxWindows(
+  sessionName: string,
+): Promise<TmuxWindow[]> {
+  return invoke<TmuxWindow[]>("list_tmux_windows", { sessionName });
+}
+
+export async function createTmuxWindow(sessionName: string): Promise<void> {
+  return invoke<void>("create_tmux_window", { sessionName });
+}
+
+export async function closeTmuxWindow(sessionName: string): Promise<void> {
+  return invoke<void>("close_tmux_window", { sessionName });
+}
+
+export async function nextTmuxWindow(sessionName: string): Promise<void> {
+  return invoke<void>("next_tmux_window", { sessionName });
+}
+
+export async function previousTmuxWindow(sessionName: string): Promise<void> {
+  return invoke<void>("previous_tmux_window", { sessionName });
 }
 
 export async function registerTmuxSession(

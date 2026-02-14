@@ -6,6 +6,7 @@ import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { SessionSelector } from "./SessionSelector";
 import { TerminalView } from "./TerminalView";
 import { PaneToolbar } from "./PaneToolbar";
+import { WindowToolbar } from "./WindowToolbar";
 import type { TerminalConfig } from "../types";
 
 function TerminalPage() {
@@ -112,6 +113,10 @@ function TerminalPage() {
         </div>
       ) : (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <WindowToolbar
+            sessionName={activeConfig.sessionName}
+            disabled={status !== "connected"}
+          />
           <PaneToolbar
             sessionName={activeConfig.sessionName}
             disabled={status !== "connected"}

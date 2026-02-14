@@ -20,6 +20,16 @@ pub struct TmuxPane {
     pub pane_active: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TmuxWindow {
+    pub session_name: String,
+    pub window_index: i32,
+    pub window_name: String,
+    pub window_active: bool,
+    pub window_panes: i32,
+}
+
 /// DB record mapping a tmux session to a project
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

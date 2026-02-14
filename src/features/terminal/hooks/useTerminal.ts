@@ -430,6 +430,38 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             if (event.metaKey && !event.altKey && !event.ctrlKey) {
               const sName = useTerminalStore.getState().sessionName;
               if (sName) {
+                // ⌘T — New window
+                if (event.key.toLowerCase() === "t" && !event.shiftKey) {
+                  event.preventDefault();
+                  commands.createTmuxWindow(sName).catch((e) =>
+                    console.error("Create window failed:", e),
+                  );
+                  return false;
+                }
+                // ⌘⇧W — Close window (check before ⌘W pane close)
+                if (event.key.toLowerCase() === "w" && event.shiftKey) {
+                  event.preventDefault();
+                  commands.closeTmuxWindow(sName).catch((e) =>
+                    console.error("Close window failed:", e),
+                  );
+                  return false;
+                }
+                // ⌘⇧] — Next window (event.code for keyboard layout independence)
+                if (event.code === "BracketRight" && event.shiftKey) {
+                  event.preventDefault();
+                  commands.nextTmuxWindow(sName).catch((e) =>
+                    console.error("Next window failed:", e),
+                  );
+                  return false;
+                }
+                // ⌘⇧[ — Previous window
+                if (event.code === "BracketLeft" && event.shiftKey) {
+                  event.preventDefault();
+                  commands.previousTmuxWindow(sName).catch((e) =>
+                    console.error("Previous window failed:", e),
+                  );
+                  return false;
+                }
                 if (event.key.toLowerCase() === "d" && event.shiftKey) {
                   event.preventDefault();
                   commands.splitTmuxPaneHorizontal(sName).catch((e) =>

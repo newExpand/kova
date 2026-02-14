@@ -1,6 +1,6 @@
 use crate::db::DbConnection;
 use crate::errors::AppError;
-use crate::models::tmux::{SessionInfo, TmuxPane, TmuxSession};
+use crate::models::tmux::{SessionInfo, TmuxPane, TmuxSession, TmuxWindow};
 use crate::services;
 use std::sync::Mutex;
 use tauri::State;
@@ -43,6 +43,31 @@ pub fn split_tmux_pane_vertical(session_name: String) -> Result<(), AppError> {
 #[tauri::command]
 pub fn close_tmux_pane(session_name: String) -> Result<(), AppError> {
     services::tmux::close_pane(&session_name)
+}
+
+#[tauri::command]
+pub fn list_tmux_windows(session_name: String) -> Result<Vec<TmuxWindow>, AppError> {
+    services::tmux::list_windows(&session_name)
+}
+
+#[tauri::command]
+pub fn create_tmux_window(session_name: String) -> Result<(), AppError> {
+    services::tmux::create_window(&session_name)
+}
+
+#[tauri::command]
+pub fn close_tmux_window(session_name: String) -> Result<(), AppError> {
+    services::tmux::close_window(&session_name)
+}
+
+#[tauri::command]
+pub fn next_tmux_window(session_name: String) -> Result<(), AppError> {
+    services::tmux::next_window(&session_name)
+}
+
+#[tauri::command]
+pub fn previous_tmux_window(session_name: String) -> Result<(), AppError> {
+    services::tmux::previous_window(&session_name)
 }
 
 #[tauri::command]
