@@ -10,7 +10,7 @@ function StatusIndicator({ active, className }: StatusIndicatorProps) {
     <span
       className={cn(
         "inline-block h-2 w-2 shrink-0 rounded-full",
-        active ? "bg-success" : "bg-text-muted",
+        active ? "bg-success status-indicator-active" : "bg-text-muted",
         className,
       )}
       aria-label={active ? "Active" : "Inactive"}

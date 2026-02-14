@@ -190,14 +190,18 @@ function Sidebar() {
       {/* Header with tab toggle */}
       <div className="flex h-12 items-center justify-between border-b border-white/[0.08] px-3">
         {!collapsed ? (
-          <div className="flex items-center gap-0.5 rounded-lg p-0.5 glass-inset">
+          <div className="relative flex items-center gap-0.5 rounded-lg p-0.5 glass-inset">
+            <span
+              className="sidebar-tab-indicator"
+              data-active={sidebarMode}
+            />
             <button
               onClick={() => handleTabSwitch("projects")}
               className={cn(
-                "flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-all duration-150",
+                "relative z-[1] flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
                 sidebarMode === "projects"
-                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
-                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
+                  ? "text-text"
+                  : "text-text-muted hover:text-text-secondary",
               )}
             >
               Projects
@@ -205,10 +209,10 @@ function Sidebar() {
             <button
               onClick={() => handleTabSwitch("sessions")}
               className={cn(
-                "flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-all duration-150",
+                "relative z-[1] flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
                 sidebarMode === "sessions"
-                  ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
-                  : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
+                  ? "text-text"
+                  : "text-text-muted hover:text-text-secondary",
               )}
             >
               Sessions
@@ -268,52 +272,57 @@ function Sidebar() {
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {sidebarMode === "projects" ? (
           /* ───── Project list ───── */
-          projects.map((project) => {
-            const colorVar =
-              COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
-            const isActive =
-              selectedId === project.id ||
-              location.pathname.startsWith(`/projects/${project.id}`);
+          <div key="projects" className="sidebar-list-enter-projects space-y-0.5">
+            {projects.map((project, index) => {
+              const colorVar =
+                COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
+              const isActive =
+                selectedId === project.id ||
+                location.pathname.startsWith(`/projects/${project.id}`);
 
-            return (
-              <button
-                key={project.id}
-                onClick={() => handleSelectProject(project.id)}
-                onContextMenu={(e) => handleContextMenu(e, project)}
-                onMouseEnter={preloadTerminal}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-all duration-150",
-                  isActive
-                    ? "sidebar-item-active text-text"
-                    : "text-text-secondary hover:bg-white/[0.08] hover:text-text",
-                )}
-                style={{ '--item-color': colorVar } as React.CSSProperties}
-              >
-                <span
+              return (
+                <button
+                  key={project.id}
+                  onClick={() => handleSelectProject(project.id)}
+                  onContextMenu={(e) => handleContextMenu(e, project)}
+                  onMouseEnter={preloadTerminal}
                   className={cn(
-                    "shrink-0 rounded-sm transition-all duration-150",
-                    isActive ? "h-3.5 w-3.5" : "h-3 w-3",
+                    "sidebar-item-stagger flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm",
+                    isActive
+                      ? "sidebar-item-active text-text"
+                      : "sidebar-item-hover text-text-secondary hover:bg-white/[0.08] hover:text-text",
                   )}
                   style={{
-                    backgroundColor: colorVar,
-                    ...(isActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
-                  }}
-                />
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1">{project.name}</span>
-                    <StatusIndicator
-                      active={project.isActive}
-                      className="ml-auto"
-                    />
-                  </>
-                )}
-              </button>
-            );
-          })
+                    '--item-color': colorVar,
+                    '--stagger-index': Math.min(index, 6),
+                  } as React.CSSProperties}
+                >
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-sm transition-all duration-150",
+                      isActive ? "h-3.5 w-3.5" : "h-3 w-3",
+                    )}
+                    style={{
+                      backgroundColor: colorVar,
+                      ...(isActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
+                    }}
+                  />
+                  {!collapsed && (
+                    <>
+                      <span className="truncate flex-1">{project.name}</span>
+                      <StatusIndicator
+                        active={project.isActive}
+                        className="ml-auto"
+                      />
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         ) : (
           /* ───── Sessions list ───── */
-          <>
+          <div key="sessions" className="sidebar-list-enter-sessions space-y-0.5">
             {sessions.length === 0 && !isLoadingSessions && (
               <p className="px-2 py-4 text-center text-xs text-text-muted">
                 No tmux sessions
@@ -325,14 +334,15 @@ function Sidebar() {
                 App Sessions
               </p>
             )}
-            {appSessions.map((session) => {
+            {appSessions.map((session, index) => {
               const projName = session.projectId
                 ? getProjectById(session.projectId)?.name
                 : null;
               return (
                 <div
                   key={session.name}
-                  className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text transition-all duration-150"
+                  className="sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text"
+                  style={{ '--stagger-index': Math.min(index, 6) } as React.CSSProperties}
                 >
                   <span
                     className={cn(
@@ -366,10 +376,11 @@ function Sidebar() {
                 External Sessions
               </p>
             )}
-            {externalSessions.map((session) => (
+            {externalSessions.map((session, exIdx) => (
               <div
                 key={session.name}
-                className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text transition-all duration-150"
+                className="sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text"
+                style={{ '--stagger-index': Math.min(appSessions.length + exIdx, 6) } as React.CSSProperties}
               >
                 <span
                   className={cn(
@@ -396,7 +407,7 @@ function Sidebar() {
                 )}
               </div>
             ))}
-          </>
+          </div>
         )}
       </nav>
 
@@ -459,7 +470,7 @@ function Sidebar() {
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 min-w-[140px] rounded-xl border border-white/[0.15] glass-elevated p-1"
+          className="sidebar-context-menu fixed z-50 min-w-[140px] rounded-xl border border-white/[0.15] glass-elevated p-1"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           role="menu"
         >
