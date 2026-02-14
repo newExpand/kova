@@ -71,7 +71,7 @@ function TerminalView({ config, onRequestPaneAction }: TerminalViewProps) {
         <div
           className="absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-text-muted/40"
           style={{
-            backgroundColor: "rgba(26, 27, 38, 0.7)",
+            backgroundColor: "var(--terminal-drag-bg, rgba(26, 27, 38, 0.7))",
             pointerEvents: "none",
           }}
         >

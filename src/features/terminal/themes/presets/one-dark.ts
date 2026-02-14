@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const oneDark: TerminalTheme = {
+  id: "one-dark",
+  name: "One Dark",
+  group: "One Dark",
+  variant: "dark",
+  xterm: {
+    background: "#282c34",
+    foreground: "#abb2bf",
+    cursor: "#528bff",
+    cursorAccent: "#282c34",
+    selectionBackground: "#3e4451",
+    selectionForeground: "#abb2bf",
+    black: "#3f4451",
+    red: "#e06c75",
+    green: "#98c379",
+    yellow: "#e5c07b",
+    blue: "#61afef",
+    magenta: "#c678dd",
+    cyan: "#56b6c2",
+    white: "#abb2bf",
+    brightBlack: "#4f5666",
+    brightRed: "#be5046",
+    brightGreen: "#98c379",
+    brightYellow: "#d19a66",
+    brightBlue: "#61afef",
+    brightMagenta: "#c678dd",
+    brightCyan: "#56b6c2",
+    brightWhite: "#d7dae0",
+  },
+  ui: {
+    compositionBackground: "#21252b",
+    compositionForeground: "#abb2bf",
+    compositionBorder: "#3e4451",
+    dragOverlayBackground: "rgba(40, 44, 52, 0.7)",
+  },
+};

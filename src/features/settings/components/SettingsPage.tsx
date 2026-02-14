@@ -3,6 +3,11 @@ import { Settings } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { NotificationStyle } from "../types";
 import { cn } from "../../../lib/utils";
+import {
+  THEME_GROUPS,
+  getSwatchColors,
+  type TerminalTheme,
+} from "../../terminal";
 
 // ---------------------------------------------------------------------------
 // Radio Option
@@ -60,15 +65,70 @@ function RadioOption({
 }
 
 // ---------------------------------------------------------------------------
+// Theme Card
+// ---------------------------------------------------------------------------
+
+interface ThemeCardProps {
+  theme: TerminalTheme;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+function ThemeCard({ theme, isSelected, onClick }: ThemeCardProps) {
+  const swatchColors = getSwatchColors(theme);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col gap-2 rounded-lg border p-3 text-left transition-colors",
+        isSelected
+          ? "border-primary bg-primary/[0.06]"
+          : "border-border bg-bg-secondary hover:bg-surface-hover",
+      )}
+      aria-pressed={isSelected}
+    >
+      {/* Color swatch row */}
+      <div className="flex gap-1">
+        {swatchColors.map((color, i) => (
+          <span
+            key={i}
+            className="h-4 w-4 rounded-sm border border-border-subtle"
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+      {/* Theme name + variant badge */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-medium text-text">{theme.name}</span>
+        <span
+          className={cn(
+            "rounded px-1 py-px text-[10px]",
+            theme.variant === "light"
+              ? "bg-warning/20 text-warning"
+              : "bg-text-muted/15 text-text-muted",
+          )}
+        >
+          {theme.variant}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SettingsPage
 // ---------------------------------------------------------------------------
 
 function SettingsPage() {
   const notificationStyle = useSettingsStore((s) => s.notificationStyle);
+  const terminalTheme = useSettingsStore((s) => s.terminalTheme);
   const isLoading = useSettingsStore((s) => s.isLoading);
   const error = useSettingsStore((s) => s.error);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   const setNotificationStyle = useSettingsStore((s) => s.setNotificationStyle);
+  const setTerminalTheme = useSettingsStore((s) => s.setTerminalTheme);
 
   useEffect(() => {
     fetchSettings();
@@ -117,11 +177,41 @@ function SettingsPage() {
                 disabled={isLoading}
               />
             </div>
-
-            {error && (
-              <p className="mt-3 text-xs text-danger">{error}</p>
-            )}
           </section>
+
+          {/* Terminal Theme Section */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-text">
+              Terminal Theme
+            </h2>
+            <p className="mb-4 text-xs text-text-muted">
+              Choose a color scheme for the embedded terminal
+            </p>
+
+            <div className="space-y-4">
+              {THEME_GROUPS.map(({ group, themes }) => (
+                <div key={group}>
+                  <h3 className="mb-2 text-xs font-medium text-text-muted">
+                    {group}
+                  </h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {themes.map((theme) => (
+                      <ThemeCard
+                        key={theme.id}
+                        theme={theme}
+                        isSelected={terminalTheme === theme.id}
+                        onClick={() => setTerminalTheme(theme.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {error && (
+            <p className="text-xs text-danger">{error}</p>
+          )}
         </div>
       </div>
     </div>

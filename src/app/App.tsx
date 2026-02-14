@@ -8,19 +8,22 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { useEffect, useState } from "react";
 import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
+import { useSettingsStore } from "../features/settings/stores/settingsStore";
 
 function AppShell() {
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
+  const fetchSettings = useSettingsStore((s) => s.fetchSettings);
 
   useEffect(() => {
     // Load core data on app start (survives page reloads)
     fetchProjects();
+    fetchSettings();
     checkTmuxAvailable()
       .then(setTmuxAvailable)
       .catch(() => setTmuxAvailable(false));
-  }, [fetchProjects]);
+  }, [fetchProjects, fetchSettings]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-bg text-text">

@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const dracula: TerminalTheme = {
+  id: "dracula",
+  name: "Dracula",
+  group: "Dracula",
+  variant: "dark",
+  xterm: {
+    background: "#282a36",
+    foreground: "#f8f8f2",
+    cursor: "#f8f8f2",
+    cursorAccent: "#282a36",
+    selectionBackground: "#44475a",
+    selectionForeground: "#f8f8f2",
+    black: "#21222c",
+    red: "#ff5555",
+    green: "#50fa7b",
+    yellow: "#f1fa8c",
+    blue: "#bd93f9",
+    magenta: "#ff79c6",
+    cyan: "#8be9fd",
+    white: "#f8f8f2",
+    brightBlack: "#6272a4",
+    brightRed: "#ff6e6e",
+    brightGreen: "#69ff94",
+    brightYellow: "#ffffa5",
+    brightBlue: "#d6acff",
+    brightMagenta: "#ff92df",
+    brightCyan: "#a4ffff",
+    brightWhite: "#ffffff",
+  },
+  ui: {
+    compositionBackground: "#44475a",
+    compositionForeground: "#f8f8f2",
+    compositionBorder: "#6272a4",
+    dragOverlayBackground: "rgba(40, 42, 54, 0.7)",
+  },
+};

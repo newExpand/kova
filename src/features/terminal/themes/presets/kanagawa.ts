@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const kanagawa: TerminalTheme = {
+  id: "kanagawa",
+  name: "Wave",
+  group: "Kanagawa",
+  variant: "dark",
+  xterm: {
+    background: "#1f1f28",
+    foreground: "#dcd7ba",
+    cursor: "#c8c093",
+    cursorAccent: "#1f1f28",
+    selectionBackground: "#2d4f67",
+    selectionForeground: "#c8c093",
+    black: "#090618",
+    red: "#c34043",
+    green: "#76946a",
+    yellow: "#c0a36e",
+    blue: "#7e9cd8",
+    magenta: "#957fb8",
+    cyan: "#6a9589",
+    white: "#c8c093",
+    brightBlack: "#727169",
+    brightRed: "#e82424",
+    brightGreen: "#98bb6c",
+    brightYellow: "#e6c384",
+    brightBlue: "#7fb4ca",
+    brightMagenta: "#938aa9",
+    brightCyan: "#7aa89f",
+    brightWhite: "#dcd7ba",
+  },
+  ui: {
+    compositionBackground: "#2d4f67",
+    compositionForeground: "#dcd7ba",
+    compositionBorder: "#727169",
+    dragOverlayBackground: "rgba(31, 31, 40, 0.7)",
+  },
+};

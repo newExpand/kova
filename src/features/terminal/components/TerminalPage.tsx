@@ -8,6 +8,7 @@ import { TerminalView } from "./TerminalView";
 import { PaneToolbar } from "./PaneToolbar";
 import { WindowToolbar } from "./WindowToolbar";
 import { NewPaneDialog } from "./NewPaneDialog";
+import { ThemePickerPanel } from "./ThemePickerPanel";
 import { Button } from "../../../components/ui/button";
 import {
   splitTmuxPaneVertical,
@@ -32,6 +33,7 @@ function TerminalPage() {
   const autoConnectAttempted = useRef(false);
   const [autoConnectDone, setAutoConnectDone] = useState(false);
   const [pendingAction, setPendingAction] = useState<PaneAction | null>(null);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 
   const handleConnect = useCallback(
@@ -103,6 +105,14 @@ function TerminalPage() {
       ) as HTMLTextAreaElement | null;
       textarea?.focus();
     });
+  }, []);
+
+  const handleToggleThemePicker = useCallback(() => {
+    setThemePickerOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseThemePicker = useCallback(() => {
+    setThemePickerOpen(false);
   }, []);
 
   const handleRequestAction = useCallback((action: PaneAction) => {
@@ -213,11 +223,16 @@ function TerminalPage() {
             sessionName={activeConfig.sessionName}
             disabled={status !== "connected"}
             onRequestAction={handleRequestAction}
+            onToggleThemePicker={handleToggleThemePicker}
           />
           <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
             <TerminalView
               config={activeConfig}
               onRequestPaneAction={handleRequestAction}
+            />
+            <ThemePickerPanel
+              open={themePickerOpen}
+              onClose={handleCloseThemePicker}
             />
           </div>
         </div>

@@ -5,6 +5,9 @@ import * as commands from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
 import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
+import { getThemeById } from "../themes";
+// Direct import to avoid circular chunk dependency (terminal ↔ settings)
+import { useSettingsStore } from "../../settings/stores/settingsStore";
 
 // macOS Terminal.app / iTerm2 동작 재현: 쉘 특수문자 이스케이프
 function escapeShellPath(path: string): string {
@@ -32,6 +35,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const observerRef = useRef<ResizeObserver | null>(null);
   const fitAddonRef = useRef<{ fit: () => void } | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const themeUnsubRef = useRef<(() => void) | null>(null);
   // Keep latest callback ref so drag-drop listener always uses current handler
   const onDragStateRef = useRef(options?.onDragState);
   onDragStateRef.current = options?.onDragState;
@@ -64,6 +68,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (refitTimeoutRef.current) {
       clearTimeout(refitTimeoutRef.current);
       refitTimeoutRef.current = null;
+    }
+
+    // Unsubscribe from theme changes
+    if (themeUnsubRef.current) {
+      themeUnsubRef.current();
+      themeUnsubRef.current = null;
     }
 
     // Unregister Tauri drag-drop listener
@@ -121,15 +131,13 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // Create terminal instance
+        const currentTheme = getThemeById(
+          useSettingsStore.getState().terminalTheme,
+        );
         const term = new Terminal({
           fontSize: 14,
           fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-          theme: {
-            background: "#1a1b26",
-            foreground: "#a9b1d6",
-            cursor: "#c0caf5",
-            selectionBackground: "#33467c",
-          },
+          theme: currentTheme.xterm,
           cursorBlink: true,
           convertEol: false,
           allowProposedApi: true,
@@ -168,8 +176,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           `font-size:${term.options.fontSize ?? 14}px`,
           "line-height:1",
           "text-decoration:underline",
-          "color:#c0caf5",
-          "background:#1a1b26",
+          `color:${currentTheme.ui.compositionForeground}`,
+          `background:${currentTheme.xterm.background ?? "#1a1b26"}`,
           "white-space:pre",
         ].join(";");
         if (xtermScreen) {
@@ -537,6 +545,30 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         observerRef.current = observer;
 
         setStatus("connected");
+
+        // Subscribe to runtime theme changes from settings store
+        let prevThemeId = useSettingsStore.getState().terminalTheme;
+        themeUnsubRef.current = useSettingsStore.subscribe((state) => {
+          if (state.terminalTheme !== prevThemeId) {
+            prevThemeId = state.terminalTheme;
+            try {
+              if (termRef.current) {
+                const newTheme = getThemeById(state.terminalTheme);
+                termRef.current.options.theme = newTheme.xterm;
+                termRef.current.refresh(0, termRef.current.rows - 1);
+                // Update IME overlay colors
+                imeOverlay.style.color = newTheme.ui.compositionForeground;
+                imeOverlay.style.background =
+                  newTheme.xterm.background ?? "#1a1b26";
+              }
+            } catch (err) {
+              console.error(
+                "[useTerminal] Failed to apply runtime theme change:",
+                err,
+              );
+            }
+          }
+        });
 
         // ── Tauri drag-drop → PTY path injection (like native terminal) ──
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");

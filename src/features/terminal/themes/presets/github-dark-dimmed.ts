@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const githubDarkDimmed: TerminalTheme = {
+  id: "github-dark-dimmed",
+  name: "Dark Dimmed",
+  group: "GitHub",
+  variant: "dark",
+  xterm: {
+    background: "#22272e",
+    foreground: "#adbac7",
+    cursor: "#539bf5",
+    cursorAccent: "#22272e",
+    selectionBackground: "#3d444d",
+    selectionForeground: "#adbac7",
+    black: "#545d68",
+    red: "#f47067",
+    green: "#57ab5a",
+    yellow: "#c69026",
+    blue: "#539bf5",
+    magenta: "#b083f0",
+    cyan: "#39c5cf",
+    white: "#909dab",
+    brightBlack: "#636e7b",
+    brightRed: "#ff938a",
+    brightGreen: "#6bc46d",
+    brightYellow: "#daaa3f",
+    brightBlue: "#6cb6ff",
+    brightMagenta: "#dcbdfb",
+    brightCyan: "#56d4dd",
+    brightWhite: "#cdd9e5",
+  },
+  ui: {
+    compositionBackground: "#3d444d",
+    compositionForeground: "#adbac7",
+    compositionBorder: "#636e7b",
+    dragOverlayBackground: "rgba(34, 39, 46, 0.7)",
+  },
+};

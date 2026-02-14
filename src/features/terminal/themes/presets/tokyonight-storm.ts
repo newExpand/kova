@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const tokyonightStorm: TerminalTheme = {
+  id: "tokyonight-storm",
+  name: "Storm",
+  group: "TokyoNight",
+  variant: "dark",
+  xterm: {
+    background: "#24283b",
+    foreground: "#a9b1d6",
+    cursor: "#c0caf5",
+    cursorAccent: "#24283b",
+    selectionBackground: "#33467c",
+    selectionForeground: "#c0caf5",
+    black: "#1d202f",
+    red: "#f7768e",
+    green: "#9ece6a",
+    yellow: "#e0af68",
+    blue: "#7aa2f7",
+    magenta: "#bb9af7",
+    cyan: "#7dcfff",
+    white: "#a9b1d6",
+    brightBlack: "#414868",
+    brightRed: "#f7768e",
+    brightGreen: "#9ece6a",
+    brightYellow: "#e0af68",
+    brightBlue: "#7aa2f7",
+    brightMagenta: "#bb9af7",
+    brightCyan: "#7dcfff",
+    brightWhite: "#c0caf5",
+  },
+  ui: {
+    compositionBackground: "#1f2335",
+    compositionForeground: "#c0caf5",
+    compositionBorder: "#414868",
+    dragOverlayBackground: "rgba(36, 40, 59, 0.7)",
+  },
+};

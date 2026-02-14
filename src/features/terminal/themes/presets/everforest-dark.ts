@@ -1,0 +1,38 @@
+import type { TerminalTheme } from "../types";
+
+export const everforestDark: TerminalTheme = {
+  id: "everforest-dark",
+  name: "Dark",
+  group: "Everforest",
+  variant: "dark",
+  xterm: {
+    background: "#272e33",
+    foreground: "#d3c6aa",
+    cursor: "#d3c6aa",
+    cursorAccent: "#272e33",
+    selectionBackground: "#3d484d",
+    selectionForeground: "#d3c6aa",
+    black: "#414b50",
+    red: "#e67e80",
+    green: "#a7c080",
+    yellow: "#dbbc7f",
+    blue: "#7fbbb3",
+    magenta: "#d699b6",
+    cyan: "#83c092",
+    white: "#d3c6aa",
+    brightBlack: "#9da9a0",
+    brightRed: "#e67e80",
+    brightGreen: "#a7c080",
+    brightYellow: "#dbbc7f",
+    brightBlue: "#7fbbb3",
+    brightMagenta: "#d699b6",
+    brightCyan: "#83c092",
+    brightWhite: "#e4e1cd",
+  },
+  ui: {
+    compositionBackground: "#3d484d",
+    compositionForeground: "#d3c6aa",
+    compositionBorder: "#9da9a0",
+    dragOverlayBackground: "rgba(39, 46, 51, 0.7)",
+  },
+};
