@@ -32,7 +32,7 @@ interface ProjectActions {
 
   // Optimistic delete + undo
   deleteProject: (id: string) => void;
-  undoDelete: (id: string) => void;
+  undoDelete: (id: string) => Promise<void>;
   confirmDelete: (id: string) => Promise<void>;
 
   // Selection
@@ -173,8 +173,8 @@ export const useProjectStore = create<ProjectStore>()(
         });
       },
 
-      undoDelete: (id) => {
-        // Remove from deleting set and restore on backend
+      undoDelete: async (id) => {
+        // Optimistic: remove from deleting set immediately
         set(
           (state) => {
             const next = new Set(state.deletingIds);
@@ -182,13 +182,23 @@ export const useProjectStore = create<ProjectStore>()(
             return { deletingIds: next };
           },
           undefined,
-          "undoDelete",
+          "undoDelete/optimistic",
         );
 
-        commands.restoreProject(id).catch((err) => {
+        try {
+          await commands.restoreProject(id);
+        } catch (err) {
+          // Rollback: add back to deletingIds on failure
           const message = err instanceof Error ? err.message : String(err);
-          set({ error: message }, undefined, "undoDelete/error");
-        });
+          set(
+            (state) => ({
+              deletingIds: new Set([...state.deletingIds, id]),
+              error: message,
+            }),
+            undefined,
+            "undoDelete/rollback",
+          );
+        }
       },
 
       confirmDelete: async (id) => {
