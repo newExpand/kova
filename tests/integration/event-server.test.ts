@@ -15,22 +15,6 @@ import { describe, it, expect } from "vitest";
 describe("Event Server Protocol", () => {
   // ── Feature: Hook → Event Server 통신 프로토콜 ──────────────────────
   describe("Hook command format", () => {
-    it("should generate valid curl command for Notification hook", () => {
-      const port = 12345;
-      const projectPath = "/Users/test/my-project";
-      const encodedPath = encodeURIComponent(projectPath);
-
-      const command = `curl -s -X POST 'http://127.0.0.1:${port}/hook?project=${encodedPath}&type=Notification' -H 'Content-Type: application/json' --data-binary @-`;
-
-      expect(command).toContain("127.0.0.1");
-      expect(command).toContain(`${port}`);
-      expect(command).toContain("/hook");
-      expect(command).toContain("type=Notification");
-      expect(command).toContain(encodedPath);
-      expect(command).toContain("POST");
-      expect(command).toContain("application/json");
-    });
-
     it("should generate valid curl for Stop hook", () => {
       const port = 12345;
       const encodedPath = encodeURIComponent("/Users/test/project");
@@ -56,7 +40,7 @@ describe("Event Server Protocol", () => {
       // This is what the Rust server emits via app.emit()
       const hookEvent = {
         projectPath: "/Users/test/project",
-        eventType: "Notification",
+        eventType: "PermissionRequest",
         payload: { message: "test notification" },
         timestamp: "2024-01-01T00:00:00Z",
       };
@@ -71,7 +55,7 @@ describe("Event Server Protocol", () => {
     it("should handle empty payload", () => {
       const hookEvent = {
         projectPath: "/test",
-        eventType: "Stop",
+        eventType: "PermissionRequest",
         payload: {},
         timestamp: "2024-01-01T00:00:00Z",
       };
@@ -80,7 +64,7 @@ describe("Event Server Protocol", () => {
     });
 
     it("should handle all hook event types", () => {
-      const validTypes = ["Notification", "Stop", "PermissionRequest"];
+      const validTypes = ["Stop", "PermissionRequest"];
 
       for (const type of validTypes) {
         const event = {
@@ -124,7 +108,7 @@ describe("Event Server Protocol", () => {
     });
 
     it("hook command should use 127.0.0.1 (not 0.0.0.0 or localhost)", () => {
-      const command = `curl -s -X POST 'http://127.0.0.1:8080/hook?project=test&type=Notification'`;
+      const command = `curl -s -X POST 'http://127.0.0.1:8080/hook?project=test&type=PermissionRequest'`;
       expect(command).toContain("127.0.0.1");
       expect(command).not.toContain("0.0.0.0");
     });

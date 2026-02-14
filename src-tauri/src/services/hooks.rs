@@ -14,7 +14,6 @@ pub fn read_settings_local_json(project_path: &Path) -> Result<Value, AppError> 
         // Create default settings.local.json with empty hooks
         let default_settings = json!({
             "hooks": {
-                "Notification": [],
                 "Stop": [],
                 "PermissionRequest": []
             }
@@ -38,22 +37,6 @@ pub fn generate_hook_commands(project_path: &str, port: u16) -> HashMap<String, 
     let encoded_path: String = form_urlencoded::byte_serialize(project_path.as_bytes()).collect();
 
     let mut hooks = HashMap::new();
-
-    // Notification hook
-    hooks.insert(
-        "Notification".to_string(),
-        json!({
-            "matcher": "",
-            "hooks": [{
-                "type": "command",
-                "command": format!(
-                    "curl -s -X POST 'http://127.0.0.1:{}/hook?project={}&type=Notification' \
-                     -H 'Content-Type: application/json' --data-binary @-",
-                    port, encoded_path
-                )
-            }]
-        }),
-    );
 
     // Stop hook
     hooks.insert(
@@ -100,7 +83,6 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
     // Ensure hooks object exists
     if !settings.is_object() || settings.get("hooks").is_none() {
         settings["hooks"] = json!({
-            "Notification": [],
             "Stop": [],
             "PermissionRequest": []
         });
@@ -159,7 +141,7 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
         .as_object_mut()
         .ok_or_else(|| AppError::Hook("hooks is not an object".into()))?;
 
-    for hook_type in ["Notification", "Stop", "PermissionRequest"] {
+    for hook_type in ["Stop", "PermissionRequest"] {
         if let Some(existing) = hooks_obj.get_mut(hook_type) {
             if let Some(existing_array) = existing.as_array_mut() {
                 // Remove flow-orche hooks
@@ -208,7 +190,6 @@ mod tests {
         let settings = read_settings_local_json(&temp_path).unwrap();
 
         assert!(settings["hooks"].is_object());
-        assert!(settings["hooks"]["Notification"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
         assert!(settings["hooks"]["PermissionRequest"].is_array());
 
@@ -224,19 +205,20 @@ mod tests {
     fn test_generate_hook_commands() {
         let hooks = generate_hook_commands("/test/path", 8080);
 
-        assert!(hooks.contains_key("Notification"));
+        assert!(!hooks.contains_key("Notification"));
         assert!(hooks.contains_key("Stop"));
         assert!(hooks.contains_key("PermissionRequest"));
+        assert_eq!(hooks.len(), 2);
 
-        let notification_cmd = hooks["Notification"]["hooks"][0]["command"]
+        let permission_cmd = hooks["PermissionRequest"]["hooks"][0]["command"]
             .as_str()
             .unwrap();
-        assert!(notification_cmd.contains("127.0.0.1:8080"));
-        assert!(notification_cmd.contains("/hook"));
-        assert!(notification_cmd.contains("type=Notification"));
+        assert!(permission_cmd.contains("127.0.0.1:8080"));
+        assert!(permission_cmd.contains("/hook"));
+        assert!(permission_cmd.contains("type=PermissionRequest"));
 
         // Verify URL encoding
-        assert!(notification_cmd.contains("%2Ftest%2Fpath"));
+        assert!(permission_cmd.contains("%2Ftest%2Fpath"));
     }
 
     #[test]
@@ -256,10 +238,10 @@ mod tests {
         let settings: Value = serde_json::from_str(&content).unwrap();
 
         // Verify hooks injected
-        let notification_hooks = settings["hooks"]["Notification"].as_array().unwrap();
-        assert!(!notification_hooks.is_empty());
+        let permission_hooks = settings["hooks"]["PermissionRequest"].as_array().unwrap();
+        assert!(!permission_hooks.is_empty());
 
-        let first_hook = &notification_hooks[0];
+        let first_hook = &permission_hooks[0];
         let command = first_hook["hooks"][0]["command"].as_str().unwrap();
         assert!(command.contains("127.0.0.1:8080"));
 
@@ -267,9 +249,9 @@ mod tests {
         inject_hooks(&temp_path, 9090).unwrap();
         let content = fs::read_to_string(&settings_path).unwrap();
         let settings: Value = serde_json::from_str(&content).unwrap();
-        let notification_hooks = settings["hooks"]["Notification"].as_array().unwrap();
-        assert_eq!(notification_hooks.len(), 1, "Should replace, not duplicate");
-        let command = notification_hooks[0]["hooks"][0]["command"].as_str().unwrap();
+        let permission_hooks = settings["hooks"]["PermissionRequest"].as_array().unwrap();
+        assert_eq!(permission_hooks.len(), 1, "Should replace, not duplicate");
+        let command = permission_hooks[0]["hooks"][0]["command"].as_str().unwrap();
         assert!(command.contains("127.0.0.1:9090"), "Port should be updated");
 
         // Remove hooks
@@ -279,8 +261,8 @@ mod tests {
         let settings: Value = serde_json::from_str(&content).unwrap();
 
         // Verify hooks removed
-        let notification_hooks = settings["hooks"]["Notification"].as_array().unwrap();
-        assert_eq!(notification_hooks.len(), 0);
+        let permission_hooks = settings["hooks"]["PermissionRequest"].as_array().unwrap();
+        assert_eq!(permission_hooks.len(), 0);
 
         // Cleanup
         fs::remove_dir_all(&temp_path).ok();
