@@ -108,6 +108,13 @@ function Sidebar() {
     };
   }, [ctxMenu, closeCtxMenu]);
 
+  // Listen for "New Project" event from CommandPalette / Cmd+N
+  useEffect(() => {
+    const handleNewProject = () => setIsAddOpen(true);
+    window.addEventListener("flow-orche:new-project", handleNewProject);
+    return () => window.removeEventListener("flow-orche:new-project", handleNewProject);
+  }, []);
+
   // Cleanup delete timer on unmount
   useEffect(() => {
     return () => {

@@ -38,9 +38,9 @@ function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   );
 
   const handleNewProject = useCallback(() => {
-    navigate("/");
     onOpenChange(false);
-  }, [navigate, onOpenChange]);
+    window.dispatchEvent(new CustomEvent("flow-orche:new-project"));
+  }, [onOpenChange]);
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
