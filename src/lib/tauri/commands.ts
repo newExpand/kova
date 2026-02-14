@@ -101,7 +101,7 @@ export async function updateProject(
   id: string,
   input: UpdateProjectInput,
 ): Promise<Project> {
-  return invoke<Project>("update_project", { id, ...input });
+  return invoke<Project>("update_project", { id, input });
 }
 
 export async function deleteProject(id: string): Promise<void> {
