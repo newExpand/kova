@@ -7,6 +7,7 @@ import type { Terminal } from "@xterm/xterm";
 import type { IPty } from "tauri-pty";
 import { getThemeById, applyOpacityToTheme } from "../themes";
 import { getFontById, loadFontCss } from "../fonts";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 // Direct import to avoid circular chunk dependency (terminal ↔ settings)
 import { useSettingsStore } from "../../settings/stores/settingsStore";
 
@@ -183,6 +184,24 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         termRef.current = term;
         fitAddonRef.current = fitAddon;
 
+        // ── Block tmux mouse tracking to enable native xterm.js selection ──
+        // tmux enables mouse tracking via DECSET (CSI ? Pm h) escape sequences
+        // (modes 1000/1002/1003/1006). When active, xterm.js forwards mouse
+        // events to tmux instead of handling selection, making Cmd+C impossible.
+        // We intercept these sequences at the parser level so they never activate.
+        const mouseTrackingModes = new Set([1000, 1002, 1003, 1006]);
+        term.parser.registerCsiHandler(
+          { prefix: "?", final: "h" },
+          (params: (number | number[])[]) => {
+            for (const p of params) {
+              if (typeof p === "number" && mouseTrackingModes.has(p)) {
+                return true; // consume — don't enable mouse tracking
+              }
+            }
+            return false; // pass other DECSET modes through
+          },
+        );
+
         // Grab textarea reference immediately after open() — used throughout
         // initialisation for IME warm-up and jamo detection
         const xtermTextarea = container.querySelector(
@@ -292,6 +311,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         let imeFlushedLen = 0;
         // Width (in terminal columns) of current inline preview
         let imePreviewCols = 0;
+
+        // Clipboard selection cache — WKWebView returns empty string from
+        // getSelection() during keydown, so we cache on every selection change.
+        let cachedSelection = "";
 
         // ── DEBUG LOGGING ──
         const IME_DEBUG = false;
@@ -471,6 +494,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           });
         }
 
+        // Cache selection text on every change — belt-and-suspenders for
+        // any remaining edge cases where getSelection() returns "" during keydown.
+        term.onSelectionChange(() => {
+          cachedSelection = term.getSelection();
+        });
+
         // keydown fires AFTER beforeinput/onData in WKWebView.
         // For Korean keys (keyCode=229), imeActive is already set by beforeinput.
         // For non-Korean keys, this is where we detect IME ending.
@@ -478,6 +507,47 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           if (event.type === "keydown") {
             // ── Pane shortcuts (Meta key) ──
             if (event.metaKey && !event.altKey && !event.ctrlKey) {
+              // ── Clipboard shortcuts (before tmux shortcuts) ──
+
+              // ⌘C — Copy selected text to clipboard
+              // Use cached selection first (WKWebView returns "" from
+              // getSelection() during keydown), fall back to direct API.
+              if (event.key.toLowerCase() === "c" && !event.shiftKey) {
+                const sel = cachedSelection || term.getSelection();
+                if (sel) {
+                  event.preventDefault();
+                  writeText(sel)
+                    .then(() => term.clearSelection())
+                    .catch((err) =>
+                      console.error("[Clipboard] writeText failed:", err),
+                    );
+                }
+                return false;
+              }
+
+              // ⌘V — Paste from clipboard into terminal
+              if (event.key.toLowerCase() === "v" && !event.shiftKey) {
+                event.preventDefault();
+                readText()
+                  .then((text) => {
+                    if (text && termRef.current) {
+                      termRef.current.paste(text);
+                    }
+                  })
+                  .catch((err) =>
+                    console.error("Clipboard read failed:", err),
+                  );
+                return false;
+              }
+
+              // ⌘A — Select all terminal content
+              if (event.key.toLowerCase() === "a" && !event.shiftKey) {
+                event.preventDefault();
+                term.selectAll();
+                return false;
+              }
+
+              // ── Pane/window shortcuts ──
               const sName = useTerminalStore.getState().sessionName;
               if (sName) {
                 // ⌘T — New window (via dialog)
