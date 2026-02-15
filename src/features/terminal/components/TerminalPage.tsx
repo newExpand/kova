@@ -26,6 +26,15 @@ function TerminalPage() {
 
   const status = useTerminalStore((s) => s.status);
 
+  // Clean up terminal store when leaving terminal route (e.g. /sessions, /settings)
+  useEffect(() => {
+    console.warn(`[TERM-DEBUG] TerminalPage MOUNT projectId=${projectId}`);
+    return () => {
+      console.warn(`[TERM-DEBUG] TerminalPage UNMOUNT projectId=${projectId} status=${useTerminalStore.getState().status}`);
+      useTerminalStore.getState().reset();
+    };
+  }, [projectId]);
+
 
   const { sessions, projectSessions, isAvailable, isLoading, hasFetchedSessions } =
     useTmuxSessions(projectId);
@@ -47,7 +56,10 @@ function TerminalPage() {
   // Auto-connect: attach existing session or create new one
   useEffect(() => {
     if (autoConnectAttempted.current) return;
-    if (isAvailable === null || isLoading || !hasFetchedSessions) return;
+    if (isAvailable === null || isLoading || !hasFetchedSessions) {
+      console.warn(`[TERM-DEBUG] TerminalPage auto-connect WAITING projectId=${projectId} isAvailable=${isAvailable} isLoading=${isLoading} hasFetched=${hasFetchedSessions}`);
+      return;
+    }
     if (activeConfig) return;
 
     if (isAvailable === false) {
@@ -69,6 +81,7 @@ function TerminalPage() {
     const existsInTmux = sessions.some((s) => s.name === name);
     const isNewSession = !firstSession && !existsInTmux;
 
+    console.warn(`[TERM-DEBUG] TerminalPage auto-connect FIRE projectId=${projectId} session=${name} isNew=${isNewSession}`);
     handleConnect({
       projectId: projectId ?? "",
       sessionName: name,

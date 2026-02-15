@@ -1,5 +1,7 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useLayoutEffect } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { useTerminalStore } from "../features/terminal";
+import { useTmuxStore } from "../features/tmux/stores/tmuxStore";
 import { TerminalSquare, Command } from "lucide-react";
 import { SessionManagerPage } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
@@ -56,6 +58,24 @@ function WelcomePage() {
 /** Wrapper that keys TerminalPage by projectId → full remount on project switch */
 function TerminalRoute() {
   const { projectId } = useParams<{ projectId: string }>();
+
+  // Reset global stores synchronously BEFORE child renders,
+  // so TerminalPage always starts with clean "idle" state.
+  useLayoutEffect(() => {
+    const ts = useTerminalStore.getState();
+    console.warn(`[TERM-DEBUG] TerminalRoute layoutEffect projectId=${projectId} prev-status=${ts.status} prev-session=${ts.sessionName}`);
+    useTerminalStore.getState().reset();
+    // Preserve isAvailable (tmux install status is project-invariant).
+    // Reset hasFetchedSessions so auto-connect waits for fresh fetchSessions.
+    // Reset isLoading to prevent stuck state from a previous in-flight fetch.
+    useTmuxStore.setState({
+      hasFetchedSessions: false,
+      sessions: [],
+      error: null,
+      isLoading: false,
+    });
+  }, [projectId]);
+
   return (
     <Suspense
       fallback={

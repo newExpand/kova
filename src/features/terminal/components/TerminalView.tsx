@@ -20,8 +20,10 @@ function TerminalView({ config, glassClassName, onRequestPaneAction }: TerminalV
   const error = useTerminalStore((s) => s.error);
 
   useEffect(() => {
+    console.warn(`[TERM-DEBUG] TerminalView MOUNT+connect session=${config.sessionName} projectId=${config.projectId}`);
     connect(config);
     return () => {
+      console.warn(`[TERM-DEBUG] TerminalView UNMOUNT+disconnect session=${config.sessionName} status=${useTerminalStore.getState().status}`);
       disconnect();
     };
     // Only reconnect when config identity changes

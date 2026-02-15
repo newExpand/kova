@@ -58,6 +58,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const setSession = useTerminalStore((s) => s.setSession);
 
   const cleanup = useCallback(() => {
+    console.warn(`[TERM-DEBUG] useTerminal.cleanup() connectId=${connectIdRef.current} alive=${aliveRef.current}`);
     // Mark dead FIRST so callbacks stop writing
     aliveRef.current = false;
     // Bump connect ID so any in-flight connect() bails out
@@ -112,8 +113,13 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
       cleanup();
       // Capture this connection's ID — if it changes, we're stale
       const myId = connectIdRef.current;
-      const isStale = () => connectIdRef.current !== myId;
+      const isStale = () => {
+        const stale = connectIdRef.current !== myId;
+        if (stale) console.warn(`[TERM-DEBUG] useTerminal.connect STALE myId=${myId} currentId=${connectIdRef.current} session=${config.sessionName}`);
+        return stale;
+      };
 
+      console.warn(`[TERM-DEBUG] useTerminal.connect START session=${config.sessionName} connectId=${myId}`);
       setStatus("connecting");
       setSession(config.sessionName);
 
@@ -154,6 +160,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           allowProposedApi: true,
           allowTransparency: true,
           scrollback: 0,
+          macOptionClickForcesSelection: true,
         });
 
         // Load addons
@@ -180,27 +187,26 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           return;
         }
 
+        // Verify container is in the DOM and has non-zero dimensions.
+        // During rapid project switching, the container might not have
+        // been laid out yet when connect() reaches this point.
+        if (!container.isConnected) {
+          console.warn(`[TERM-DEBUG] container NOT connected to DOM, aborting`);
+          term.dispose();
+          setError("Terminal container detached from DOM");
+          return;
+        }
+        let dimAttempts = 0;
+        while ((container.clientWidth === 0 || container.clientHeight === 0) && dimAttempts < 20) {
+          dimAttempts++;
+          await new Promise((r) => setTimeout(r, 50));
+          if (isStale()) { term.dispose(); return; }
+        }
+        console.warn(`[TERM-DEBUG] container dims=${container.clientWidth}x${container.clientHeight} after ${dimAttempts} waits`);
+
         term.open(container);
         termRef.current = term;
         fitAddonRef.current = fitAddon;
-
-        // ── Block tmux mouse tracking to enable native xterm.js selection ──
-        // tmux enables mouse tracking via DECSET (CSI ? Pm h) escape sequences
-        // (modes 1000/1002/1003/1006). When active, xterm.js forwards mouse
-        // events to tmux instead of handling selection, making Cmd+C impossible.
-        // We intercept these sequences at the parser level so they never activate.
-        const mouseTrackingModes = new Set([1000, 1002, 1003, 1006]);
-        term.parser.registerCsiHandler(
-          { prefix: "?", final: "h" },
-          (params: (number | number[])[]) => {
-            for (const p of params) {
-              if (typeof p === "number" && mouseTrackingModes.has(p)) {
-                return true; // consume — don't enable mouse tracking
-              }
-            }
-            return false; // pass other DECSET modes through
-          },
-        );
 
         // Grab textarea reference immediately after open() — used throughout
         // initialisation for IME warm-up and jamo detection
@@ -253,6 +259,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           return;
         }
         fitAddon.fit();
+        console.warn(`[TERM-DEBUG] after fit: term=${term.cols}x${term.rows} container=${container.clientWidth}x${container.clientHeight}`);
 
         const cols = term.cols || config.cols;
         const rows = term.rows || config.rows;
@@ -275,6 +282,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         });
         ptyRef.current = pty;
         aliveRef.current = true;
+        console.warn(`[TERM-DEBUG] useTerminal.connect PTY spawned session=${config.sessionName} connectId=${myId}`);
 
         // PTY → Terminal
         // Our patched tauri-plugin-pty returns raw Vec<u8> from read(),
@@ -282,8 +290,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // and pass directly to xterm.js's byte parser, which correctly
         // handles partial multi-byte UTF-8 sequences (Korean/CJK/emoji)
         // split across read boundaries.
+        let firstDataLogged = false;
         pty.onData((data: Uint8Array | string | number[]) => {
           if (!aliveRef.current || !termRef.current) return;
+          if (!firstDataLogged) {
+            firstDataLogged = true;
+            const len = data instanceof Uint8Array ? data.length : Array.isArray(data) ? data.length : data.length;
+            console.warn(`[TERM-DEBUG] FIRST PTY DATA received len=${len} session=${config.sessionName} connectId=${myId}`);
+          }
           if (data instanceof Uint8Array) {
             termRef.current.write(data);
           } else if (Array.isArray(data)) {
@@ -622,8 +636,9 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           return true;
         });
 
-        // Handle PTY exit
+        // Handle PTY exit — guard against stale callbacks from cleanup'd PTY
         pty.onExit(() => {
+          if (!aliveRef.current) return; // cleanup already handled this
           aliveRef.current = false;
           useTerminalStore.getState().setStatus("disconnected");
         });
@@ -637,12 +652,30 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             } catch {
               // PTY may have exited between check and resize
             }
+            // Force repaint after resize — xterm.js DOM renderer can miss
+            // repaints when container dimensions change during rapid transitions.
+            termRef.current.refresh(0, termRef.current.rows - 1);
           }
         });
         observer.observe(container);
         observerRef.current = observer;
 
+        console.warn(`[TERM-DEBUG] useTerminal.connect CONNECTED session=${config.sessionName} connectId=${myId} term=${term.cols}x${term.rows}`);
         setStatus("connected");
+
+        // Force a full terminal repaint — ensures content is visible even if
+        // the initial paint was missed due to layout timing during fast switch.
+        term.refresh(0, term.rows - 1);
+
+        // Explicitly resize PTY to current terminal size — forces tmux to
+        // redraw the window contents. Without this, if the PTY was spawned
+        // with the exact same size as fitAddon calculated, tmux may not send
+        // an initial screen refresh.
+        try {
+          pty.resize(term.cols, term.rows);
+        } catch {
+          // PTY may have exited
+        }
 
         // Subscribe to runtime theme/opacity/font changes from settings store.
         // Glass mode changes are handled by TerminalPage via React key remount.
@@ -728,33 +761,6 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           }
         });
 
-        // ── Tauri drag-drop → PTY path injection (like native terminal) ──
-        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-        if (isStale()) return;
-
-        const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-          if (event.payload.type === "enter") {
-            onDragStateRef.current?.(true);
-          } else if (event.payload.type === "leave") {
-            onDragStateRef.current?.(false);
-          } else if (event.payload.type === "drop") {
-            onDragStateRef.current?.(false);
-            if (aliveRef.current && ptyRef.current) {
-              const paths = event.payload.paths;
-              if (paths.length > 0) {
-                const escaped = paths.map((p) => escapeShellPath(p)).join(" ");
-                ptyRef.current.write(escaped);
-              }
-            }
-          }
-        });
-
-        if (isStale()) {
-          unlisten();
-          return;
-        }
-        unlistenRef.current = unlisten;
-
         // Send initial command to the shell after it has started
         if (config.initialCommand) {
           initialCmdTimeoutRef.current = setTimeout(() => {
@@ -766,7 +772,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // Register session in DB for project ownership tracking
-        if (config.projectId) {
+        if (config.projectId && !isStale()) {
           useTmuxStore
             .getState()
             .registerSession(config.projectId, config.sessionName)
@@ -794,23 +800,83 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           });
         });
 
-        // Re-fit after 200ms to catch font loading & final layout shifts
+        // ── Timers: set BEFORE any remaining awaits so they always fire ──
+
+        // Re-fit after 200ms to catch font loading & final layout shifts.
         refitTimeoutRef.current = setTimeout(() => {
           refitTimeoutRef.current = null;
           if (aliveRef.current && fitAddonRef.current && termRef.current && ptyRef.current) {
+            const prevCols = termRef.current.cols;
+            const prevRows = termRef.current.rows;
             fitAddonRef.current.fit();
+            console.warn(`[TERM-DEBUG] delayed refit: ${prevCols}x${prevRows} → ${termRef.current.cols}x${termRef.current.rows} container=${container.clientWidth}x${container.clientHeight}`);
             try {
               ptyRef.current.resize(termRef.current.cols, termRef.current.rows);
             } catch {
               // ignore
             }
+            termRef.current.refresh(0, termRef.current.rows - 1);
           }
         }, 200);
+
+        // Data-arrival recovery: if no PTY data received within 1s, force
+        // tmux to redraw by cycling the PTY size. This handles the case where
+        // tauri-pty's onData listener was registered after tmux already sent
+        // the initial screen content (race between PTY spawn and JS listener).
+        void setTimeout(() => {
+          if (!firstDataLogged && aliveRef.current && ptyRef.current && termRef.current) {
+            console.warn(`[TERM-DEBUG] NO DATA after 1s — forcing tmux redraw session=${config.sessionName} connectId=${myId}`);
+            try {
+              // Shrink by 1 col then restore — forces tmux SIGWINCH + full redraw
+              ptyRef.current.resize(term.cols - 1, term.rows);
+              ptyRef.current.resize(term.cols, term.rows);
+            } catch {
+              // PTY may have exited
+            }
+          }
+        }, 1000);
+        // ── Tauri drag-drop → PTY path injection (fire-and-forget) ──
+        // Wrapped in async IIFE so awaits don't block the main connect flow.
+        // The timers above are already set, so even if this fails, recovery works.
+        (async () => {
+          try {
+            const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+            if (isStale()) return;
+
+            const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+              if (event.payload.type === "enter") {
+                onDragStateRef.current?.(true);
+              } else if (event.payload.type === "leave") {
+                onDragStateRef.current?.(false);
+              } else if (event.payload.type === "drop") {
+                onDragStateRef.current?.(false);
+                if (aliveRef.current && ptyRef.current) {
+                  const paths = event.payload.paths;
+                  if (paths.length > 0) {
+                    const escaped = paths.map((p) => escapeShellPath(p)).join(" ");
+                    ptyRef.current.write(escaped);
+                  }
+                }
+              }
+            });
+
+            if (isStale()) {
+              unlisten();
+              return;
+            }
+            unlistenRef.current = unlisten;
+          } catch (e) {
+            console.error("[useTerminal] drag-drop setup failed:", e);
+          }
+        })();
       } catch (err) {
         if (!isStale()) {
           const message = err instanceof Error ? err.message : String(err);
+          console.warn(`[TERM-DEBUG] useTerminal.connect ERROR session=${config.sessionName} connectId=${myId} err=${message}`);
           setError(message);
           cleanup();
+        } else {
+          console.warn(`[TERM-DEBUG] useTerminal.connect ERROR (stale, ignored) session=${config.sessionName} connectId=${myId} err=${err}`);
         }
       }
 
@@ -819,6 +885,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   );
 
   const disconnect = useCallback(() => {
+    console.warn(`[TERM-DEBUG] useTerminal.disconnect() connectId=${connectIdRef.current}`);
     cleanup();
     setStatus("disconnected");
   }, [cleanup, setStatus]);
