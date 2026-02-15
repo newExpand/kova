@@ -1,14 +1,27 @@
 import { lazy, Suspense, useState, useEffect } from "react";
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
-import { useTmuxStore } from "../features/tmux/stores/tmuxStore";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { TerminalSquare, Command } from "lucide-react";
-import { SessionManagerPage } from "../features/tmux";
+import { SessionManagerPage, useTmuxStore } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
 
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
   () => import("../features/terminal/components/TerminalPage"),
 );
+
+const TERMINAL_ROUTE_PATTERN = /^\/projects\/([^/]+)\/terminal$/;
+
+function useTerminalRouteMatch(): {
+  isTerminalRoute: boolean;
+  activeProjectId: string | null;
+} {
+  const location = useLocation();
+  const match = location.pathname.match(TERMINAL_ROUTE_PATTERN);
+  return {
+    isTerminalRoute: !!match,
+    activeProjectId: match?.[1] ?? null,
+  };
+}
 
 function WelcomePage() {
   return (
@@ -54,62 +67,80 @@ function WelcomePage() {
   );
 }
 
-/** Terminal pool — keeps visited TerminalPage instances alive via display toggle */
-function TerminalRoute() {
-  const { projectId } = useParams<{ projectId: string }>();
+/** Layout-level terminal pool — survives route navigation */
+function TerminalPool() {
+  const { isTerminalRoute, activeProjectId } = useTerminalRouteMatch();
   const [visitedProjects, setVisitedProjects] = useState<string[]>([]);
 
-  // Add new project to pool when first visited
+  // Add first-visited project to pool
   useEffect(() => {
-    if (projectId) {
+    if (activeProjectId) {
       setVisitedProjects((prev) =>
-        prev.includes(projectId) ? prev : [...prev, projectId],
+        prev.includes(activeProjectId) ? prev : [...prev, activeProjectId],
       );
     }
-  }, [projectId]);
+  }, [activeProjectId]);
 
-  // Clear tmux error state on project switch
+  // Clear tmux error state on project switch (only when entering a terminal)
   useEffect(() => {
-    useTmuxStore.setState({ error: null });
-  }, [projectId]);
+    if (activeProjectId) {
+      useTmuxStore.setState({ error: null });
+    }
+  }, [activeProjectId]);
 
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center">
-          <p className="text-sm text-text-muted">Loading terminal...</p>
-        </div>
-      }
+    <div
+      className="flex flex-1 min-w-0 flex-col overflow-hidden"
+      style={isTerminalRoute ? undefined : { display: "none" }}
     >
-      {visitedProjects.map((pid) => (
-        <div
-          key={pid}
-          style={{
-            display: pid === projectId ? "flex" : "none",
-            flex: 1,
-            flexDirection: "column",
-            minHeight: 0,
-          }}
-        >
-          <TerminalPage projectId={pid} isActive={pid === projectId} />
-        </div>
-      ))}
-    </Suspense>
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-text-muted">Loading terminal...</p>
+          </div>
+        }
+      >
+        {visitedProjects.map((pid) => (
+          <div
+            key={pid}
+            style={{
+              display: pid === activeProjectId ? "flex" : "none",
+              flex: 1,
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <TerminalPage
+              projectId={pid}
+              isActive={pid === activeProjectId}
+            />
+          </div>
+        ))}
+      </Suspense>
+    </div>
   );
 }
 
 function AppRoutes() {
+  const { isTerminalRoute } = useTerminalRouteMatch();
+
   return (
-    <main className="flex flex-1 min-w-0 flex-col overflow-hidden">
-      <Routes>
-        <Route path="/" element={<WelcomePage />} />
-        <Route path="/sessions" element={<SessionManagerPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
-        <Route path="/projects/:projectId/terminal" element={<TerminalRoute />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </main>
+    <>
+      <main
+        className="flex flex-1 min-w-0 flex-col overflow-hidden"
+        style={isTerminalRoute ? { display: "none" } : undefined}
+      >
+        <Routes>
+          <Route path="/" element={<WelcomePage />} />
+          <Route path="/sessions" element={<SessionManagerPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
+          <Route path="/projects/:projectId/terminal" element={<></>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+      <TerminalPool />
+    </>
   );
 }
 
