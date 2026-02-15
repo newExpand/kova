@@ -1,6 +1,5 @@
-import { lazy, Suspense, useLayoutEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
-import { useTerminalStore } from "../features/terminal";
 import { useTmuxStore } from "../features/tmux/stores/tmuxStore";
 import { TerminalSquare, Command } from "lucide-react";
 import { SessionManagerPage } from "../features/tmux";
@@ -55,25 +54,23 @@ function WelcomePage() {
   );
 }
 
-/** Wrapper that keys TerminalPage by projectId → full remount on project switch */
+/** Terminal pool — keeps visited TerminalPage instances alive via display toggle */
 function TerminalRoute() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [visitedProjects, setVisitedProjects] = useState<string[]>([]);
 
-  // Reset global stores synchronously BEFORE child renders,
-  // so TerminalPage always starts with clean "idle" state.
-  useLayoutEffect(() => {
-    const ts = useTerminalStore.getState();
-    console.warn(`[TERM-DEBUG] TerminalRoute layoutEffect projectId=${projectId} prev-status=${ts.status} prev-session=${ts.sessionName}`);
-    useTerminalStore.getState().reset();
-    // Preserve isAvailable (tmux install status is project-invariant).
-    // Reset hasFetchedSessions so auto-connect waits for fresh fetchSessions.
-    // Reset isLoading to prevent stuck state from a previous in-flight fetch.
-    useTmuxStore.setState({
-      hasFetchedSessions: false,
-      sessions: [],
-      error: null,
-      isLoading: false,
-    });
+  // Add new project to pool when first visited
+  useEffect(() => {
+    if (projectId) {
+      setVisitedProjects((prev) =>
+        prev.includes(projectId) ? prev : [...prev, projectId],
+      );
+    }
+  }, [projectId]);
+
+  // Clear tmux error state on project switch
+  useEffect(() => {
+    useTmuxStore.setState({ error: null });
   }, [projectId]);
 
   return (
@@ -84,14 +81,26 @@ function TerminalRoute() {
         </div>
       }
     >
-      <TerminalPage key={projectId} />
+      {visitedProjects.map((pid) => (
+        <div
+          key={pid}
+          style={{
+            display: pid === projectId ? "flex" : "none",
+            flex: 1,
+            flexDirection: "column",
+            minHeight: 0,
+          }}
+        >
+          <TerminalPage projectId={pid} isActive={pid === projectId} />
+        </div>
+      ))}
     </Suspense>
   );
 }
 
 function AppRoutes() {
   return (
-    <main className="flex-1 min-w-0 overflow-hidden">
+    <main className="flex flex-1 min-w-0 flex-col overflow-hidden">
       <Routes>
         <Route path="/" element={<WelcomePage />} />
         <Route path="/sessions" element={<SessionManagerPage />} />

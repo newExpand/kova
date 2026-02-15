@@ -104,6 +104,11 @@ pub fn kill_all_app_tmux_sessions(
 }
 
 #[tauri::command]
+pub fn refresh_tmux_client(session_name: String) -> Result<(), AppError> {
+    services::tmux::refresh_tmux_client(&session_name)
+}
+
+#[tauri::command]
 pub fn send_tmux_keys(session_name: String, keys: String) -> Result<(), AppError> {
     services::tmux::send_keys(&session_name, &keys)
 }

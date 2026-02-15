@@ -26,7 +26,7 @@ struct PluginState {
 }
 
 struct Session {
-    pair: Mutex<PtyPair>,
+    master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     writer: Mutex<Box<dyn std::io::Write + Send>>,
@@ -84,14 +84,20 @@ async fn spawn<R: Runtime>(
     let child_killer = child.clone_killer();
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 
-    let pair = Arc::new(Session {
-        pair: Mutex::new(pair),
+    // Destructure PtyPair — drop slave fd immediately.
+    // After child spawn, only the child process holds the slave fd.
+    // When child is killed, master read() will get EOF instead of blocking forever.
+    let PtyPair { master, slave: _slave } = pair;
+    drop(_slave);
+
+    let session = Arc::new(Session {
+        master: Mutex::new(master),
         child: Mutex::new(child),
         child_killer: Mutex::new(child_killer),
         writer: Mutex::new(writer),
         reader: Mutex::new(reader),
     });
-    state.sessions.write().await.insert(handler, pair);
+    state.sessions.write().await.insert(handler, session);
     Ok(handler)
 }
 
@@ -128,17 +134,23 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
         // Session was already killed — treat as normal EOF so the JS read loop exits cleanly
         None => return Err("EOF".to_string()),
     };
-    let mut buf = [0u8; 4096];
-    let n = session
-        .reader
-        .lock()
-        .await
-        .read(&mut buf)
-        .map_err(|e| e.to_string())?;
-    if n == 0 {
-        return Err("EOF".to_string());
-    }
-    Ok(buf[..n].to_vec())
+    // Blocking I/O read — must run off the tokio async runtime.
+    // readData() calls this in a tight loop; without spawn_blocking,
+    // each iteration permanently occupies a tokio worker thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut buf = [0u8; 4096];
+        let n = session
+            .reader
+            .blocking_lock()
+            .read(&mut buf)
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("EOF".to_string());
+        }
+        Ok(buf[..n].to_vec())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -156,10 +168,9 @@ async fn resize(
         .ok_or("Unavailable pid")?
         .clone();
     session
-        .pair
+        .master
         .lock()
         .await
-        .master
         .resize(PtySize {
             rows,
             cols,
@@ -178,12 +189,17 @@ async fn kill(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<(
         .await
         .remove(&pid)
         .ok_or("Unavailable pid")?;
-    session
-        .child_killer
-        .lock()
-        .await
-        .kill()
-        .map_err(|e| e.to_string())?;
+    // Move kill + session drop to a blocking thread.
+    // 1) child_killer.kill() sends SIGHUP (may briefly block)
+    // 2) When session's last Arc drops, UnixMasterWriter::drop()
+    //    does tcgetattr + write_all — blocking I/O.
+    // Neither should run on the tokio async runtime.
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = session.child_killer.blocking_lock().kill() {
+            eprintln!("[tauri-plugin-pty] Failed to kill child process: {}", e);
+        }
+        drop(session);
+    });
     Ok(())
 }
 
@@ -196,14 +212,18 @@ async fn exitstatus(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Re
         .get(&pid)
         .ok_or("Unavailable pid")?
         .clone();
-    let exitstatus = session
-        .child
-        .lock()
-        .await
-        .wait()
-        .map_err(|e| e.to_string())?
-        .exit_code();
-    Ok(exitstatus)
+    // waitpid() is a blocking syscall — must NOT run on tokio async threads.
+    let exit_code = tauri::async_runtime::spawn_blocking(move || {
+        session
+            .child
+            .blocking_lock()
+            .wait()
+            .map(|s| s.exit_code())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(exit_code)
 }
 
 /// Initializes the plugin.

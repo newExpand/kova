@@ -99,8 +99,7 @@ describe("Tauri IPC Command Wrappers", () => {
       expect(call[0]).toBe("update_project");
       expect(call[1]).toMatchObject({
         id: "uuid-1",
-        name: "New Name",
-        colorIndex: 5,
+        input: { name: "New Name", colorIndex: 5 },
       });
     });
 
@@ -279,6 +278,46 @@ describe("Tauri IPC Command Wrappers", () => {
       expect(getMockInvoke().mock.calls[0][0]).toBe(
         "list_tmux_sessions_with_ownership",
       );
+    });
+
+    it("refreshTmuxClient should pass sessionName", async () => {
+      getMockInvoke().mockResolvedValue(undefined);
+
+      const { refreshTmuxClient } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await refreshTmuxClient("my-session");
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("refresh_tmux_client");
+      expect(call[1]).toEqual({ sessionName: "my-session" });
+    });
+
+    it("killAllAppTmuxSessions should call invoke", async () => {
+      getMockInvoke().mockResolvedValue({ sessions: [], killedCount: 0, failed: [] });
+
+      const { killAllAppTmuxSessions } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await killAllAppTmuxSessions();
+
+      expect(getMockInvoke().mock.calls[0][0]).toBe("kill_all_app_tmux_sessions");
+    });
+  });
+
+  // ── PTY Commands ────────────────────────────────────────────────
+  describe("PTY commands", () => {
+    it("killPty should pass pid", async () => {
+      getMockInvoke().mockResolvedValue(undefined);
+
+      const { killPty } = await import(
+        "../../src/lib/tauri/commands"
+      );
+      await killPty(42);
+
+      const call = getMockInvoke().mock.calls[0];
+      expect(call[0]).toBe("plugin:pty|kill");
+      expect(call[1]).toEqual({ pid: 42 });
     });
   });
 

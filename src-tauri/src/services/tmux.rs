@@ -678,6 +678,23 @@ pub fn kill_all_app_sessions(conn: &Connection) -> Result<KillAllResult, AppErro
     })
 }
 
+/// Force the tmux server to redraw the client attached to this session.
+pub fn refresh_tmux_client(session_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    let output = tmux_cmd()
+        .args(["refresh-client", "-t", &format!("{}:", session_name)])
+        .output()
+        .map_err(|e| AppError::TmuxCommand(format!("Failed to refresh tmux client: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        warn!("tmux refresh-client for '{}': {}", session_name, stderr.trim());
+        return Err(AppError::TmuxCommand(format!(
+            "refresh-client failed for '{}': {}", session_name, stderr.trim()
+        )));
+    }
+    Ok(())
+}
+
 /// Validate session name to prevent command injection.
 /// Only allows alphanumeric characters, hyphens, underscores, and dots.
 fn validate_session_name(name: &str) -> Result<(), AppError> {
@@ -1060,6 +1077,24 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Keys cannot be empty"));
+    }
+
+    // ── refresh_tmux_client tests ─────────────────────────────────────
+
+    #[test]
+    fn test_refresh_tmux_client_rejects_invalid_name() {
+        let result = refresh_tmux_client("bad;name");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid session name"));
+    }
+
+    #[test]
+    fn test_refresh_tmux_client_rejects_empty_name() {
+        let result = refresh_tmux_client("");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot be empty"));
     }
 
     // ── DB-backed session ownership tests ────────────────────────────

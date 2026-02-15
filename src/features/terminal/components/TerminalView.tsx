@@ -6,29 +6,40 @@ import type { TerminalConfig, PaneAction } from "../types";
 
 interface TerminalViewProps {
   config: TerminalConfig;
+  isActive: boolean;
   glassClassName?: string;
   onRequestPaneAction?: (action: PaneAction) => void;
 }
 
-function TerminalView({ config, glassClassName, onRequestPaneAction }: TerminalViewProps) {
+function TerminalView({ config, isActive, glassClassName, onRequestPaneAction }: TerminalViewProps) {
   const [isDragOver, setIsDragOver] = useState(false);
-  const { containerRef, connect, disconnect } = useTerminal({
+  const { containerRef, connect, disconnect, refit } = useTerminal({
     onDragState: setIsDragOver,
     onRequestPaneAction,
   });
-  const status = useTerminalStore((s) => s.status);
-  const error = useTerminalStore((s) => s.error);
+  const status = useTerminalStore((s) => s.getTerminal(config.projectId).status);
+  const error = useTerminalStore((s) => s.getTerminal(config.projectId).error);
 
   useEffect(() => {
-    console.warn(`[TERM-DEBUG] TerminalView MOUNT+connect session=${config.sessionName} projectId=${config.projectId}`);
     connect(config);
     return () => {
-      console.warn(`[TERM-DEBUG] TerminalView UNMOUNT+disconnect session=${config.sessionName} status=${useTerminalStore.getState().status}`);
       disconnect();
     };
     // Only reconnect when config identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.sessionName]);
+
+  // Re-fit when becoming visible (display:none → flex transition)
+  useEffect(() => {
+    if (isActive && status === "connected") {
+      // Double rAF: first frame applies display change, second ensures layout
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          refit();
+        });
+      });
+    }
+  }, [isActive, status, refit]);
 
   // Re-focus xterm.js when the user clicks anywhere on the terminal area.
   // This handles cases where focus was lost (e.g., clicking the overlay area

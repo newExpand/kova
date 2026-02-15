@@ -3,13 +3,21 @@ import { devtools } from "zustand/middleware";
 import type { TerminalStatus } from "../types";
 
 // ---------------------------------------------------------------------------
+// Per-project instance state
+// ---------------------------------------------------------------------------
+
+interface TerminalInstanceState {
+  sessionName: string | null;
+  status: TerminalStatus;
+  error: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 interface TerminalState {
-  sessionName: string | null;
-  status: TerminalStatus;
-  error: string | null;
+  terminals: Record<string, TerminalInstanceState>;
 }
 
 // ---------------------------------------------------------------------------
@@ -17,10 +25,12 @@ interface TerminalState {
 // ---------------------------------------------------------------------------
 
 interface TerminalActions {
-  setSession: (name: string) => void;
-  setStatus: (status: TerminalStatus) => void;
-  setError: (error: string) => void;
-  reset: () => void;
+  setSession: (projectId: string, name: string) => void;
+  setStatus: (projectId: string, status: TerminalStatus) => void;
+  setError: (projectId: string, error: string) => void;
+  getTerminal: (projectId: string) => TerminalInstanceState;
+  resetTerminal: (projectId: string) => void;
+  resetAll: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,13 +40,17 @@ interface TerminalActions {
 type TerminalStore = TerminalState & TerminalActions;
 
 // ---------------------------------------------------------------------------
-// Initial state
+// Defaults
 // ---------------------------------------------------------------------------
 
-const initialState: TerminalState = {
+const defaultInstance: TerminalInstanceState = {
   sessionName: null,
   status: "idle",
   error: null,
+};
+
+const initialState: TerminalState = {
+  terminals: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -45,19 +59,71 @@ const initialState: TerminalState = {
 
 export const useTerminalStore = create<TerminalStore>()(
   devtools(
-    (set) => ({
+    (set, get) => ({
       ...initialState,
 
-      setSession: (name) =>
-        set({ sessionName: name, error: null }, undefined, "setSession"),
+      setSession: (projectId, name) =>
+        set(
+          (state) => ({
+            terminals: {
+              ...state.terminals,
+              [projectId]: {
+                ...(state.terminals[projectId] ?? defaultInstance),
+                sessionName: name,
+                error: null,
+              },
+            },
+          }),
+          undefined,
+          "setSession",
+        ),
 
-      setStatus: (status) =>
-        set({ status }, undefined, "setStatus"),
+      setStatus: (projectId, status) =>
+        set(
+          (state) => ({
+            terminals: {
+              ...state.terminals,
+              [projectId]: {
+                ...(state.terminals[projectId] ?? defaultInstance),
+                status,
+              },
+            },
+          }),
+          undefined,
+          "setStatus",
+        ),
 
-      setError: (error) =>
-        set({ error, status: "error" }, undefined, "setError"),
+      setError: (projectId, error) =>
+        set(
+          (state) => ({
+            terminals: {
+              ...state.terminals,
+              [projectId]: {
+                ...(state.terminals[projectId] ?? defaultInstance),
+                error,
+                status: "error" as TerminalStatus,
+              },
+            },
+          }),
+          undefined,
+          "setError",
+        ),
 
-      reset: () => set(initialState, undefined, "reset"),
+      getTerminal: (projectId) =>
+        get().terminals[projectId] ?? defaultInstance,
+
+      resetTerminal: (projectId) =>
+        set(
+          (state) => {
+            const next = { ...state.terminals };
+            delete next[projectId];
+            return { terminals: next };
+          },
+          undefined,
+          "resetTerminal",
+        ),
+
+      resetAll: () => set(initialState, undefined, "resetAll"),
     }),
     { name: "TerminalStore" },
   ),

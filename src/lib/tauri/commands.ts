@@ -97,6 +97,14 @@ export interface EnvironmentCheck {
 }
 
 // ---------------------------------------------------------------------------
+// PTY commands (plugin:pty)
+// ---------------------------------------------------------------------------
+
+export async function killPty(pid: number): Promise<void> {
+  return invoke<void>("plugin:pty|kill", { pid });
+}
+
+// ---------------------------------------------------------------------------
 // Project commands
 // ---------------------------------------------------------------------------
 
@@ -211,6 +219,10 @@ export async function nextTmuxWindow(sessionName: string): Promise<void> {
 
 export async function previousTmuxWindow(sessionName: string): Promise<void> {
   return invoke<void>("previous_tmux_window", { sessionName });
+}
+
+export async function refreshTmuxClient(sessionName: string): Promise<void> {
+  return invoke<void>("refresh_tmux_client", { sessionName });
 }
 
 export async function sendTmuxKeys(

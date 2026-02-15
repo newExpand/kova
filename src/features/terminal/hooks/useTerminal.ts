@@ -28,6 +28,7 @@ interface UseTerminalResult {
   containerRef: React.RefObject<HTMLDivElement | null>;
   connect: (config: TerminalConfig) => Promise<void>;
   disconnect: () => void;
+  refit: () => void;
 }
 
 export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
@@ -46,19 +47,18 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   onRequestPaneActionRef.current = options?.onRequestPaneAction;
   // Guard flag — prevents writes/kills after PTY has exited
   const aliveRef = useRef(false);
+  // Track current projectId for disconnect() — set during connect()
+  const projectIdRef = useRef<string | null>(null);
   // Monotonic counter — each connect() call gets a unique ID.
   // Stale async continuations check this to bail out.
   const connectIdRef = useRef(0);
   // setTimeout refs for cleanup
   const initialCmdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const setStatus = useTerminalStore((s) => s.setStatus);
-  const setError = useTerminalStore((s) => s.setError);
-  const setSession = useTerminalStore((s) => s.setSession);
+  const tier1TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tier2TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanup = useCallback(() => {
-    console.warn(`[TERM-DEBUG] useTerminal.cleanup() connectId=${connectIdRef.current} alive=${aliveRef.current}`);
     // Mark dead FIRST so callbacks stop writing
     aliveRef.current = false;
     // Bump connect ID so any in-flight connect() bails out
@@ -72,6 +72,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (refitTimeoutRef.current) {
       clearTimeout(refitTimeoutRef.current);
       refitTimeoutRef.current = null;
+    }
+    if (tier1TimeoutRef.current) {
+      clearTimeout(tier1TimeoutRef.current);
+      tier1TimeoutRef.current = null;
+    }
+    if (tier2TimeoutRef.current) {
+      clearTimeout(tier2TimeoutRef.current);
+      tier2TimeoutRef.current = null;
     }
 
     // Unsubscribe from theme changes
@@ -95,14 +103,24 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
       termRef.current = null;
     }
     fitAddonRef.current = null;
-    // Kill PTY LAST — it may already be dead, that's fine
+    // Kill PTY LAST — it may already be dead, that's fine.
+    // After Phase 3 slave fd fix, kill() → SIGHUP → child dies → slave fd
+    // closes → read() gets EOF → readData() exits cleanly. No pid poisoning needed.
     if (ptyRef.current) {
       const pty = ptyRef.current;
       ptyRef.current = null;
       try {
-        pty.kill();
+        const pid = (pty as unknown as { pid?: number }).pid;
+        if (pid != null && pid >= 0) {
+          commands.killPty(pid).catch((err) => {
+            const msg = String(err);
+            if (!msg.includes("Unavailable pid") && !msg.includes("No such process")) {
+              console.warn("[useTerminal] Unexpected PTY kill error:", err);
+            }
+          });
+        }
       } catch {
-        // PTY already exited — "No such process (os error 3)" is expected
+        // PTY already disposed
       }
     }
   }, []);
@@ -111,17 +129,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     async (config: TerminalConfig) => {
       // Clean up any existing connection
       cleanup();
+      // Track projectId for disconnect()
+      projectIdRef.current = config.projectId;
       // Capture this connection's ID — if it changes, we're stale
       const myId = connectIdRef.current;
-      const isStale = () => {
-        const stale = connectIdRef.current !== myId;
-        if (stale) console.warn(`[TERM-DEBUG] useTerminal.connect STALE myId=${myId} currentId=${connectIdRef.current} session=${config.sessionName}`);
-        return stale;
-      };
+      const isStale = () => connectIdRef.current !== myId;
 
-      console.warn(`[TERM-DEBUG] useTerminal.connect START session=${config.sessionName} connectId=${myId}`);
-      setStatus("connecting");
-      setSession(config.sessionName);
+      useTerminalStore.getState().setStatus(config.projectId, "connecting");
+      useTerminalStore.getState().setSession(config.projectId, config.sessionName);
 
       try {
         // Dynamic imports to keep xterm.js in separate chunk
@@ -136,7 +151,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
         const container = containerRef.current;
         if (!container) {
-          setError("Terminal container not found");
+          useTerminalStore.getState().setError(config.projectId, "Terminal container not found");
           return;
         }
 
@@ -191,9 +206,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // During rapid project switching, the container might not have
         // been laid out yet when connect() reaches this point.
         if (!container.isConnected) {
-          console.warn(`[TERM-DEBUG] container NOT connected to DOM, aborting`);
           term.dispose();
-          setError("Terminal container detached from DOM");
+          useTerminalStore.getState().setError(config.projectId, "Terminal container detached from DOM");
           return;
         }
         let dimAttempts = 0;
@@ -202,8 +216,6 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           await new Promise((r) => setTimeout(r, 50));
           if (isStale()) { term.dispose(); return; }
         }
-        console.warn(`[TERM-DEBUG] container dims=${container.clientWidth}x${container.clientHeight} after ${dimAttempts} waits`);
-
         term.open(container);
         termRef.current = term;
         fitAddonRef.current = fitAddon;
@@ -259,7 +271,6 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           return;
         }
         fitAddon.fit();
-        console.warn(`[TERM-DEBUG] after fit: term=${term.cols}x${term.rows} container=${container.clientWidth}x${container.clientHeight}`);
 
         const cols = term.cols || config.cols;
         const rows = term.rows || config.rows;
@@ -282,7 +293,6 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         });
         ptyRef.current = pty;
         aliveRef.current = true;
-        console.warn(`[TERM-DEBUG] useTerminal.connect PTY spawned session=${config.sessionName} connectId=${myId}`);
 
         // PTY → Terminal
         // Our patched tauri-plugin-pty returns raw Vec<u8> from read(),
@@ -291,12 +301,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // handles partial multi-byte UTF-8 sequences (Korean/CJK/emoji)
         // split across read boundaries.
         let firstDataLogged = false;
+
         pty.onData((data: Uint8Array | string | number[]) => {
-          if (!aliveRef.current || !termRef.current) return;
+          // Use isStale() instead of aliveRef — aliveRef is shared across
+          // connections and can be corrupted by the previous PTY's onExit
+          // firing after the new connection sets aliveRef = true.
+          if (isStale() || !termRef.current) return;
           if (!firstDataLogged) {
             firstDataLogged = true;
-            const len = data instanceof Uint8Array ? data.length : Array.isArray(data) ? data.length : data.length;
-            console.warn(`[TERM-DEBUG] FIRST PTY DATA received len=${len} session=${config.sessionName} connectId=${myId}`);
           }
           if (data instanceof Uint8Array) {
             termRef.current.write(data);
@@ -562,7 +574,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               }
 
               // ── Pane/window shortcuts ──
-              const sName = useTerminalStore.getState().sessionName;
+              const sName = config.sessionName;
               if (sName) {
                 // ⌘T — New window (via dialog)
                 if (event.key.toLowerCase() === "t" && !event.shiftKey) {
@@ -636,11 +648,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           return true;
         });
 
-        // Handle PTY exit — guard against stale callbacks from cleanup'd PTY
+        // Handle PTY exit — guard against stale callbacks from old PTY.
+        // CRITICAL: Use isStale() instead of aliveRef. When rapidly switching
+        // projects, the old PTY's onExit fires AFTER the new connection sets
+        // aliveRef = true, causing it to pass the !aliveRef guard and corrupt
+        // aliveRef for the new connection (setting it to false). This makes
+        // the new PTY's onData silently drop all data → blank screen.
         pty.onExit(() => {
-          if (!aliveRef.current) return; // cleanup already handled this
+          if (isStale()) return; // a newer connection is active — ignore this exit
           aliveRef.current = false;
-          useTerminalStore.getState().setStatus("disconnected");
+          useTerminalStore.getState().setStatus(config.projectId, "disconnected");
         });
 
         // ResizeObserver for auto-fit
@@ -660,8 +677,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         observer.observe(container);
         observerRef.current = observer;
 
-        console.warn(`[TERM-DEBUG] useTerminal.connect CONNECTED session=${config.sessionName} connectId=${myId} term=${term.cols}x${term.rows}`);
-        setStatus("connected");
+        useTerminalStore.getState().setStatus(config.projectId, "connected");
 
         // Force a full terminal repaint — ensures content is visible even if
         // the initial paint was missed due to layout timing during fast switch.
@@ -806,10 +822,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         refitTimeoutRef.current = setTimeout(() => {
           refitTimeoutRef.current = null;
           if (aliveRef.current && fitAddonRef.current && termRef.current && ptyRef.current) {
-            const prevCols = termRef.current.cols;
-            const prevRows = termRef.current.rows;
             fitAddonRef.current.fit();
-            console.warn(`[TERM-DEBUG] delayed refit: ${prevCols}x${prevRows} → ${termRef.current.cols}x${termRef.current.rows} container=${container.clientWidth}x${container.clientHeight}`);
             try {
               ptyRef.current.resize(termRef.current.cols, termRef.current.rows);
             } catch {
@@ -819,22 +832,39 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           }
         }, 200);
 
-        // Data-arrival recovery: if no PTY data received within 1s, force
-        // tmux to redraw by cycling the PTY size. This handles the case where
-        // tauri-pty's onData listener was registered after tmux already sent
-        // the initial screen content (race between PTY spawn and JS listener).
-        void setTimeout(() => {
-          if (!firstDataLogged && aliveRef.current && ptyRef.current && termRef.current) {
-            console.warn(`[TERM-DEBUG] NO DATA after 1s — forcing tmux redraw session=${config.sessionName} connectId=${myId}`);
+        // ── Tier 1 recovery: tmux refresh-client (800ms) ──
+        // Uses Rust IPC to call `tmux refresh-client` directly, bypassing
+        // SIGWINCH coalescing issues entirely.
+        tier1TimeoutRef.current = setTimeout(async () => {
+          tier1TimeoutRef.current = null;
+          if (!firstDataLogged && !isStale() && ptyRef.current) {
             try {
-              // Shrink by 1 col then restore — forces tmux SIGWINCH + full redraw
-              ptyRef.current.resize(term.cols - 1, term.rows);
-              ptyRef.current.resize(term.cols, term.rows);
+              await commands.refreshTmuxClient(config.sessionName);
             } catch {
-              // PTY may have exited
+              // tmux client might not be attached yet — tier 2 will handle it
             }
           }
-        }, 1000);
+        }, 800);
+
+        // ── Tier 2 recovery: resize cycle with 50ms gap (2000ms) ──
+        // Fallback if refresh-client didn't trigger data. The 50ms gap
+        // between shrink and restore prevents OS SIGWINCH coalescing.
+        tier2TimeoutRef.current = setTimeout(() => {
+          tier2TimeoutRef.current = null;
+          if (!firstDataLogged && !isStale() && ptyRef.current && termRef.current) {
+            try {
+              ptyRef.current.resize(term.cols - 1, term.rows);
+              setTimeout(() => {
+                if (!isStale() && ptyRef.current && termRef.current) {
+                  try {
+                    ptyRef.current.resize(term.cols, term.rows);
+                  } catch { /* PTY exited */ }
+                }
+              }, 50);
+            } catch { /* PTY exited */ }
+          }
+        }, 2000);
+
         // ── Tauri drag-drop → PTY path injection (fire-and-forget) ──
         // Wrapped in async IIFE so awaits don't block the main connect flow.
         // The timers above are already set, so even if this fails, recovery works.
@@ -872,23 +902,33 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
       } catch (err) {
         if (!isStale()) {
           const message = err instanceof Error ? err.message : String(err);
-          console.warn(`[TERM-DEBUG] useTerminal.connect ERROR session=${config.sessionName} connectId=${myId} err=${message}`);
-          setError(message);
+          useTerminalStore.getState().setError(config.projectId, message);
           cleanup();
-        } else {
-          console.warn(`[TERM-DEBUG] useTerminal.connect ERROR (stale, ignored) session=${config.sessionName} connectId=${myId} err=${err}`);
         }
       }
 
     },
-    [cleanup, setStatus, setError, setSession],
+    [cleanup],
   );
 
   const disconnect = useCallback(() => {
-    console.warn(`[TERM-DEBUG] useTerminal.disconnect() connectId=${connectIdRef.current}`);
     cleanup();
-    setStatus("disconnected");
-  }, [cleanup, setStatus]);
+    const pid = projectIdRef.current;
+    if (pid) {
+      useTerminalStore.getState().setStatus(pid, "disconnected");
+    }
+  }, [cleanup]);
+
+  const refit = useCallback(() => {
+    if (fitAddonRef.current && termRef.current && ptyRef.current && aliveRef.current) {
+      fitAddonRef.current.fit();
+      try {
+        ptyRef.current.resize(termRef.current.cols, termRef.current.rows);
+      } catch { /* PTY exited */ }
+      termRef.current.refresh(0, termRef.current.rows - 1);
+      termRef.current.focus();
+    }
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -897,5 +937,5 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     };
   }, [cleanup]);
 
-  return { containerRef, connect, disconnect };
+  return { containerRef, connect, disconnect, refit };
 }

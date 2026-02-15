@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTerminalStore } from "../stores/terminalStore";
@@ -18,20 +17,23 @@ import {
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
 
-function TerminalPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+interface TerminalPageProps {
+  projectId: string;
+  isActive: boolean;
+}
+
+function TerminalPage({ projectId, isActive }: TerminalPageProps) {
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   );
 
-  const status = useTerminalStore((s) => s.status);
+  const status = useTerminalStore((s) => s.getTerminal(projectId).status);
+  const errorMessage = useTerminalStore((s) => s.getTerminal(projectId).error);
 
-  // Clean up terminal store when leaving terminal route (e.g. /sessions, /settings)
+  // Clean up this project's terminal state on unmount
   useEffect(() => {
-    console.warn(`[TERM-DEBUG] TerminalPage MOUNT projectId=${projectId}`);
     return () => {
-      console.warn(`[TERM-DEBUG] TerminalPage UNMOUNT projectId=${projectId} status=${useTerminalStore.getState().status}`);
-      useTerminalStore.getState().reset();
+      useTerminalStore.getState().resetTerminal(projectId);
     };
   }, [projectId]);
 
@@ -48,7 +50,7 @@ function TerminalPage() {
 
   const handleConnect = useCallback(
     (config: TerminalConfig) => {
-      setActiveConfig({ ...config, projectId: projectId ?? "" });
+      setActiveConfig({ ...config, projectId });
     },
     [projectId],
   );
@@ -56,8 +58,10 @@ function TerminalPage() {
   // Auto-connect: attach existing session or create new one
   useEffect(() => {
     if (autoConnectAttempted.current) return;
-    if (isAvailable === null || isLoading || !hasFetchedSessions) {
-      console.warn(`[TERM-DEBUG] TerminalPage auto-connect WAITING projectId=${projectId} isAvailable=${isAvailable} isLoading=${isLoading} hasFetched=${hasFetchedSessions}`);
+    if (isAvailable === null || !hasFetchedSessions) {
+      // On first-ever mount, hasFetchedSessions is false → waits for fetch.
+      // On subsequent switches, cached data is preserved → fires immediately.
+      // isLoading is NOT checked: background fetch shouldn't block auto-connect.
       return;
     }
     if (activeConfig) return;
@@ -81,9 +85,8 @@ function TerminalPage() {
     const existsInTmux = sessions.some((s) => s.name === name);
     const isNewSession = !firstSession && !existsInTmux;
 
-    console.warn(`[TERM-DEBUG] TerminalPage auto-connect FIRE projectId=${projectId} session=${name} isNew=${isNewSession}`);
     handleConnect({
-      projectId: projectId ?? "",
+      projectId,
       sessionName: name,
       cols: 80,
       rows: 24,
@@ -109,8 +112,8 @@ function TerminalPage() {
     autoConnectAttempted.current = false;
     setAutoConnectDone(false);
     setActiveConfig(null);
-    useTerminalStore.getState().setStatus("idle");
-  }, []);
+    useTerminalStore.getState().setStatus(projectId, "idle");
+  }, [projectId]);
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
@@ -211,8 +214,13 @@ function TerminalPage() {
         </div>
       ) : showError ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="glass-surface rounded-xl border border-danger/30 p-4 text-center">
+          <div className="glass-surface rounded-xl border border-danger/30 p-4 text-center max-w-md">
             <p className="text-sm text-danger">Connection failed</p>
+            {errorMessage && (
+              <p className="mt-1 text-xs text-text-muted break-words">
+                {errorMessage}
+              </p>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -243,6 +251,7 @@ function TerminalPage() {
             <TerminalView
               key={activeConfig.sessionName}
               config={activeConfig}
+              isActive={isActive}
               glassClassName="terminal-glass"
               onRequestPaneAction={handleRequestAction}
             />
@@ -253,11 +262,13 @@ function TerminalPage() {
           </div>
         </div>
       ) : null}
-      <NewPaneDialog
-        action={pendingAction}
-        onConfirm={handleConfirmAction}
-        onCancel={handleCancelAction}
-      />
+      {isActive && (
+        <NewPaneDialog
+          action={pendingAction}
+          onConfirm={handleConfirmAction}
+          onCancel={handleCancelAction}
+        />
+      )}
     </div>
   );
 }
