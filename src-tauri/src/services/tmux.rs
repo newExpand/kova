@@ -253,7 +253,7 @@ pub fn kill_session(name: &str) -> Result<(), AppError> {
 pub fn split_pane_horizontal(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
     let output = tmux_cmd()
-        .args(["split-window", "-v", "-t", session_name])
+        .args(["split-window", "-v", "-t", session_name, "-c", "#{pane_current_path}"])
         .output()
         .map_err(|e| {
             AppError::TmuxCommand(format!("Failed to execute tmux split-window: {}", e))
@@ -274,7 +274,7 @@ pub fn split_pane_horizontal(session_name: &str) -> Result<(), AppError> {
 pub fn split_pane_vertical(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
     let output = tmux_cmd()
-        .args(["split-window", "-h", "-t", session_name])
+        .args(["split-window", "-h", "-t", session_name, "-c", "#{pane_current_path}"])
         .output()
         .map_err(|e| {
             AppError::TmuxCommand(format!("Failed to execute tmux split-window: {}", e))
@@ -414,7 +414,7 @@ pub fn create_window(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;
 
     let output = tmux_cmd()
-        .args(["new-window", "-t", session_name])
+        .args(["new-window", "-t", session_name, "-c", "#{pane_current_path}"])
         .output()
         .map_err(|e| {
             AppError::TmuxCommand(format!("Failed to execute tmux new-window: {}", e))
