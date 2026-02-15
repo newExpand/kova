@@ -31,6 +31,12 @@ src/
 - **Agent-owned files**: Each agent's task specifies its files (no overlap)
 - **Shared integration**: Agents provide integration notes, Lead applies them
 
+## 1.3 Platform Constraints
+
+- **WKWebView**: macOS Tauri uses WKWebView which blocks external CDN resources. Always use bundled/local assets (npm packages, fontsource, etc.) instead of CDN links.
+- **Terminal**: The project uses xterm.js 6.0 with DOM renderer. `@xterm/addon-canvas` 0.7.0 is incompatible with xterm 6.0. Terminal transparency must be achieved through CSS on the DOM renderer's actual viewport elements (`.xterm-viewport`, `.xterm-screen`), not through canvas addons.
+- **tmux**: The app manages tmux programmatically via Rust. When fixing tmux-related behavior, check BOTH `.tmux.conf` configuration AND the Rust source code's programmatic tmux API calls (`split-window`, `new-window` commands). Config-only fixes are often insufficient.
+
 ## 2. Rust Coding Rules
 
 ### 2.1 Error Handling
