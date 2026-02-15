@@ -187,6 +187,7 @@ pub fn run() {
             commands::tmux::list_tmux_panes,
             commands::tmux::create_tmux_session,
             commands::tmux::kill_tmux_session,
+            commands::tmux::kill_all_app_tmux_sessions,
             commands::tmux::split_tmux_pane_horizontal,
             commands::tmux::split_tmux_pane_vertical,
             commands::tmux::close_tmux_pane,

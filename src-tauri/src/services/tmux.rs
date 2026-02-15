@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::tmux::{ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession, TmuxWindow};
+use crate::models::tmux::{KillAllResult, KillFailure, ProjectTmuxSession, SessionInfo, TmuxPane, TmuxSession, TmuxWindow};
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -527,7 +527,7 @@ pub fn register_session(
 
     let id = Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT INTO project_tmux_sessions (id, project_id, session_name)
+        "INSERT OR REPLACE INTO project_tmux_sessions (id, project_id, session_name)
          VALUES (?1, ?2, ?3)",
         params![&id, project_id, session_name],
     )?;
@@ -625,6 +625,57 @@ pub fn list_sessions_with_ownership(conn: &Connection) -> Result<Vec<SessionInfo
     }
 
     Ok(result)
+}
+
+/// Kill all app-managed sessions (registered in DB) in a single operation.
+/// Returns the updated session list along with kill/failure counts.
+pub fn kill_all_app_sessions(conn: &Connection) -> Result<KillAllResult, AppError> {
+    // 1. Query registered session names from DB
+    let mut stmt = conn.prepare("SELECT session_name FROM project_tmux_sessions")?;
+    let app_session_names: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+
+    // 2. Kill each session, partitioning results directly
+    let mut killed_count: i32 = 0;
+    let mut failed: Vec<KillFailure> = Vec::new();
+
+    for name in app_session_names {
+        match kill_session(&name) {
+            Ok(()) => {
+                killed_count += 1;
+                if let Err(e) = unregister_session(conn, &name) {
+                    warn!(
+                        "Killed tmux session '{}' but failed to unregister from DB: {}. \
+                         Will be cleaned up on next session list refresh.",
+                        name, e
+                    );
+                }
+            }
+            Err(err) => {
+                warn!("Failed to kill session '{}': {}", name, err);
+                failed.push(KillFailure {
+                    session_name: name,
+                    error: err.to_string(),
+                });
+            }
+        }
+    }
+
+    // 4. Return updated session list
+    let sessions = list_sessions_with_ownership(conn)?;
+
+    info!(
+        "Kill all app sessions: {} killed, {} failed",
+        killed_count,
+        failed.len()
+    );
+
+    Ok(KillAllResult {
+        sessions,
+        killed_count,
+        failed,
+    })
 }
 
 /// Validate session name to prevent command injection.
@@ -1056,14 +1107,26 @@ mod tests {
     }
 
     #[test]
-    fn test_register_session_duplicate_rejected() {
+    fn test_register_session_duplicate_replaces() {
         let conn = setup_test_db();
         let project_id = Uuid::new_v4().to_string();
         insert_test_project(&conn, &project_id);
 
-        let _ = register_session(&conn, &project_id, "dup-session").unwrap();
-        let result = register_session(&conn, &project_id, "dup-session");
-        assert!(result.is_err());
+        let first = register_session(&conn, &project_id, "dup-session").unwrap();
+        let second = register_session(&conn, &project_id, "dup-session").unwrap();
+        // INSERT OR REPLACE should succeed, creating a new row (new UUID)
+        assert_ne!(first.id, second.id);
+        assert_eq!(second.session_name, "dup-session");
+
+        // Only one record should exist in DB
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM project_tmux_sessions WHERE session_name = ?1",
+                ["dup-session"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
@@ -1127,6 +1190,39 @@ mod tests {
             .query_row(
                 "SELECT COUNT(*) FROM project_tmux_sessions",
                 [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_kill_all_app_sessions_empty() {
+        let conn = setup_test_db();
+        let result = kill_all_app_sessions(&conn).unwrap();
+        assert_eq!(result.killed_count, 0);
+        assert!(result.failed.is_empty());
+    }
+
+    #[test]
+    fn test_kill_all_app_sessions_with_registered() {
+        let conn = setup_test_db();
+        let project_id = Uuid::new_v4().to_string();
+        insert_test_project(&conn, &project_id);
+
+        // Register a session (tmux won't actually have it, but kill_session handles that gracefully)
+        register_session(&conn, &project_id, "test-bulk-kill").unwrap();
+
+        let result = kill_all_app_sessions(&conn).unwrap();
+        // kill_session returns Ok even for non-existent sessions, so killed_count should be 1
+        assert_eq!(result.killed_count, 1);
+        assert!(result.failed.is_empty());
+
+        // Verify DB record was cleaned up
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM project_tmux_sessions WHERE session_name = ?1",
+                ["test-bulk-kill"],
                 |r| r.get(0),
             )
             .unwrap();

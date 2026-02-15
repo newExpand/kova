@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { SessionInfo, TmuxPane } from "../types";
+import type { SessionInfo, TmuxPane, KillFailure } from "../types";
 import * as commands from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,7 @@ interface TmuxActions {
   fetchSessions: () => Promise<void>;
   registerSession: (projectId: string, sessionName: string) => Promise<void>;
   unregisterSession: (sessionName: string) => Promise<void>;
+  killAllAppSessions: () => Promise<{ killedCount: number; failed: KillFailure[] }>;
   selectSession: (name: string | null) => void;
   fetchPanes: (sessionName: string) => Promise<void>;
   reset: () => void;
@@ -116,6 +117,31 @@ export const useTmuxStore = create<TmuxStore>()(
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           set({ error: message }, undefined, "unregisterSession/error");
+        }
+      },
+
+      killAllAppSessions: async () => {
+        set(
+          { isLoading: true, error: null },
+          undefined,
+          "killAllAppSessions/start",
+        );
+        try {
+          const result = await commands.killAllAppTmuxSessions();
+          set(
+            { sessions: result.sessions, isLoading: false },
+            undefined,
+            "killAllAppSessions/success",
+          );
+          return { killedCount: result.killedCount, failed: result.failed };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          set(
+            { error: message, isLoading: false },
+            undefined,
+            "killAllAppSessions/error",
+          );
+          throw err;
         }
       },
 

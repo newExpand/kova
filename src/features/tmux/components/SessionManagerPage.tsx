@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Monitor, RefreshCw, X } from "lucide-react";
+import { Monitor, RefreshCw, Trash2, X } from "lucide-react";
 import { useTmuxStore } from "../stores/tmuxStore";
-import { useProjectStore } from "../../project/stores/projectStore";
+import { useProjectStore } from "../../project";
 import { killTmuxSession } from "../../../lib/tauri/commands";
 import type { SessionInfo } from "../types";
 import { Button } from "../../../components/ui/button";
@@ -139,8 +139,14 @@ function SessionManagerPage() {
   const fetchSessions = useTmuxStore((s) => s.fetchSessions);
   const getProjectById = useProjectStore((s) => s.getProjectById);
 
+  const killAllAppSessions = useTmuxStore((s) => s.killAllAppSessions);
+
   const [killTarget, setKillTarget] = useState<SessionInfo | null>(null);
   const [isKilling, setIsKilling] = useState(false);
+  const [killError, setKillError] = useState<string | null>(null);
+  const [showKillAllDialog, setShowKillAllDialog] = useState(false);
+  const [isKillingAll, setIsKillingAll] = useState(false);
+  const [killAllError, setKillAllError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSessions();
@@ -163,15 +169,40 @@ function SessionManagerPage() {
     [getProjectById],
   );
 
+  const handleKillAllConfirm = async () => {
+    setIsKillingAll(true);
+    setKillAllError(null);
+    try {
+      const result = await killAllAppSessions();
+      if (result.failed.length > 0) {
+        const failedNames = result.failed.map((f) => f.sessionName).join(", ");
+        setKillAllError(
+          `${result.killedCount}개 종료됨, ${result.failed.length}개 실패: ${failedNames}`,
+        );
+        return;
+      }
+      setShowKillAllDialog(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setKillAllError(`세션 종료 실패: ${message}`);
+    } finally {
+      setIsKillingAll(false);
+    }
+  };
+
   const handleKillConfirm = async () => {
     if (!killTarget) return;
     setIsKilling(true);
+    setKillError(null);
     try {
       await killTmuxSession(killTarget.name);
       await fetchSessions();
+      setKillTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setKillError(`'${killTarget.name}' 종료 실패: ${message}`);
     } finally {
       setIsKilling(false);
-      setKillTarget(null);
     }
   };
 
@@ -189,16 +220,30 @@ function SessionManagerPage() {
             {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchSessions()}
-          disabled={isLoading}
-          className="gap-1.5"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {appSessions.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowKillAllDialog(true)}
+              disabled={isLoading || isKillingAll}
+              className="gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Kill All
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchSessions()}
+            disabled={isLoading}
+            className="gap-1.5"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
@@ -221,7 +266,10 @@ function SessionManagerPage() {
       <Dialog
         open={!!killTarget}
         onOpenChange={(open) => {
-          if (!open) setKillTarget(null);
+          if (!open) {
+            setKillTarget(null);
+            setKillError(null);
+          }
         }}
       >
         <DialogContent>
@@ -232,11 +280,17 @@ function SessionManagerPage() {
               세션을 종료하시겠습니까? 이 작업은 되돌릴 수 없습니다.
             </DialogDescription>
           </DialogHeader>
+          {killError && (
+            <p className="text-sm text-danger">{killError}</p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setKillTarget(null)}
+              onClick={() => {
+                setKillTarget(null);
+                setKillError(null);
+              }}
               disabled={isKilling}
             >
               취소
@@ -248,6 +302,49 @@ function SessionManagerPage() {
               disabled={isKilling}
             >
               {isKilling ? "종료 중..." : "종료"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Kill All confirmation dialog */}
+      <Dialog
+        open={showKillAllDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowKillAllDialog(false);
+            setKillAllError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kill All App Sessions</DialogTitle>
+            <DialogDescription>
+              {appSessions.length}개의 앱 관리 세션을 모두 종료하시겠습니까? 외부 세션은 영향받지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {killAllError && (
+            <p className="text-sm text-danger">{killAllError}</p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowKillAllDialog(false);
+                setKillAllError(null);
+              }}
+              disabled={isKillingAll}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleKillAllConfirm}
+              disabled={isKillingAll}
+            >
+              {isKillingAll ? "종료 중..." : `${appSessions.length}개 세션 종료`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -51,3 +51,20 @@ pub struct SessionInfo {
     pub is_app_session: bool,
     pub project_id: Option<String>,
 }
+
+/// A single session that failed to be killed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KillFailure {
+    pub session_name: String,
+    pub error: String,
+}
+
+/// Result of killing all app-managed sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KillAllResult {
+    pub sessions: Vec<SessionInfo>,
+    pub killed_count: i32,
+    pub failed: Vec<KillFailure>,
+}

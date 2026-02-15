@@ -67,6 +67,17 @@ export interface SessionInfo {
   projectId: string | null;
 }
 
+export interface KillFailure {
+  sessionName: string;
+  error: string;
+}
+
+export interface KillAllResult {
+  sessions: SessionInfo[];
+  killedCount: number;
+  failed: KillFailure[];
+}
+
 export interface NotificationRecord {
   id: string;
   projectId: string;
@@ -227,6 +238,10 @@ export async function unregisterTmuxSession(
 
 export async function listTmuxSessionsWithOwnership(): Promise<SessionInfo[]> {
   return invoke<SessionInfo[]>("list_tmux_sessions_with_ownership");
+}
+
+export async function killAllAppTmuxSessions(): Promise<KillAllResult> {
+  return invoke<KillAllResult>("kill_all_app_tmux_sessions");
 }
 
 // ---------------------------------------------------------------------------

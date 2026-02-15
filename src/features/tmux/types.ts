@@ -4,4 +4,6 @@ export type {
   TmuxPane,
   ProjectTmuxSession,
   SessionInfo,
+  KillFailure,
+  KillAllResult,
 } from "../../lib/tauri/commands";
