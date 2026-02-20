@@ -1,6 +1,7 @@
 use crate::errors::AppError;
 use crate::models::notification::NotificationRecord;
 use rusqlite::Connection;
+use std::thread;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
@@ -64,9 +65,15 @@ fn send_via_alerter_or_osascript(title: &str, body: &str) -> Result<(), AppError
         .arg(escape_alerter_arg(alert_message))
         .arg("-sound")
         .arg("default")
+        .arg("-timeout")
+        .arg("10")
         .spawn()
     {
-        Ok(_child) => {
+        Ok(mut child) => {
+            // Reap child to prevent zombie process accumulation
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
             info!("Native notification sent (alerter): {}", title);
             return Ok(());
         }
@@ -88,15 +95,20 @@ fn send_via_osascript(title: &str, body: &str) -> Result<(), AppError> {
         escaped_body, escaped_title
     );
 
-    let output = std::process::Command::new("osascript")
+    match std::process::Command::new("osascript")
         .arg("-e")
         .arg(&script)
-        .output()
-        .map_err(|e| AppError::Internal(format!("osascript failed: {}", e)))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        warn!("osascript notification failed: {}", stderr);
+        .spawn()
+    {
+        Ok(mut child) => {
+            // Reap child to prevent zombie process accumulation
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => {
+            warn!("osascript notification failed: {}", e);
+        }
     }
 
     info!("Native notification sent (osascript): {}", title);
@@ -162,6 +174,27 @@ pub fn list_notifications(
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(notifications)
+}
+
+/// Delete notification records older than `retention_days`.
+/// Returns the number of deleted rows.
+pub fn prune_old_notifications(conn: &Connection, retention_days: i64) -> Result<u64, AppError> {
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
+    let cutoff_str = cutoff.to_rfc3339();
+
+    let deleted = conn.execute(
+        "DELETE FROM notification_history WHERE created_at < ?1",
+        rusqlite::params![cutoff_str],
+    )?;
+
+    if deleted > 0 {
+        info!(
+            "Pruned {} old notifications (older than {} days)",
+            deleted, retention_days
+        );
+    }
+
+    Ok(deleted as u64)
 }
 
 #[cfg(test)]
@@ -281,5 +314,31 @@ mod tests {
         assert_eq!(escape_applescript("line1\nline2"), "line1 line2");
         assert_eq!(escape_applescript("back\\slash"), "back\\\\slash");
         assert_eq!(escape_applescript("cr\r\ntest"), "cr test");
+    }
+
+    #[test]
+    fn test_prune_old_notifications() {
+        let conn = setup_test_db();
+
+        // Insert a notification with an old timestamp (30 days ago)
+        let old_time = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        conn.execute(
+            "INSERT INTO notification_history (id, project_id, event_type, title, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["old-1", "proj1", "type1", "Old Notif", old_time],
+        )
+        .unwrap();
+
+        // Insert a recent notification
+        store_notification(&conn, "proj1", "type1", "Recent Notif", None, None).unwrap();
+
+        // Prune notifications older than 7 days
+        let deleted = prune_old_notifications(&conn, 7).unwrap();
+        assert_eq!(deleted, 1);
+
+        // Verify only recent notification remains
+        let remaining = list_notifications(&conn, "proj1", 10).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].title, "Recent Notif");
     }
 }

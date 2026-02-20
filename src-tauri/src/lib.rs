@@ -130,6 +130,37 @@ pub fn run() {
             let db = DbConnection::initialize(app)?;
             app.manage(Mutex::new(db));
 
+            // Prune old notifications on startup
+            {
+                let db_state = app.state::<Mutex<DbConnection>>();
+                if let Ok(db) = db_state.lock() {
+                    let retention_days: i64 = services::settings::get_with_default(
+                        &db.conn,
+                        "notification_retention_days",
+                        "7",
+                    )
+                    .parse()
+                    .unwrap_or(7);
+
+                    match services::notification::prune_old_notifications(
+                        &db.conn,
+                        retention_days,
+                    ) {
+                        Ok(deleted) => {
+                            if deleted > 0 {
+                                tracing::info!(
+                                    "Startup prune: removed {} old notifications",
+                                    deleted
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Startup notification prune failed: {}", e);
+                        }
+                    }
+                };
+            }
+
             // Start event server
             let event_server = EventServer::start(app.handle().clone())
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
@@ -203,6 +234,7 @@ pub fn run() {
             commands::tmux::list_tmux_sessions_with_ownership,
             // Notification commands
             commands::notification::list_project_notifications,
+            commands::notification::prune_notifications,
             // Settings commands
             commands::settings::get_setting,
             commands::settings::set_setting,

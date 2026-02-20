@@ -270,6 +270,12 @@ export async function listProjectNotifications(
   });
 }
 
+export async function pruneNotifications(
+  retentionDays?: number,
+): Promise<number> {
+  return invoke<number>("prune_notifications", { retentionDays });
+}
+
 // ---------------------------------------------------------------------------
 // Settings commands
 // ---------------------------------------------------------------------------

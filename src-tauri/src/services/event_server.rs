@@ -1,7 +1,9 @@
 use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{ListenAddr, Method, Response, Server, StatusCode};
 use tracing::{error, info, warn};
@@ -73,13 +75,75 @@ impl EventServer {
     }
 }
 
+/// Per-thread throttle state for rate-limiting native notifications and periodic DB cleanup.
+/// Lives entirely within the event server thread — no synchronization needed.
+struct ThrottleState {
+    /// Last native notification time per "project_path:event_type" key
+    last_native: HashMap<String, Instant>,
+    /// Last DB prune time
+    last_prune: Instant,
+}
+
+impl ThrottleState {
+    fn new() -> Self {
+        Self {
+            last_native: HashMap::new(),
+            last_prune: Instant::now(),
+        }
+    }
+
+    /// Returns true if enough time has elapsed since the last native notification for this key.
+    fn should_send_native(&mut self, key: &str, cooldown_secs: u64) -> bool {
+        let now = Instant::now();
+        if let Some(last) = self.last_native.get(key) {
+            if now.duration_since(*last).as_secs() < cooldown_secs {
+                return false;
+            }
+        }
+        self.last_native.insert(key.to_string(), now);
+        true
+    }
+
+    /// Returns true if 30 minutes have elapsed since last prune.
+    fn should_prune(&mut self) -> bool {
+        let now = Instant::now();
+        if now.duration_since(self.last_prune).as_secs() >= 1800 {
+            self.last_prune = now;
+            return true;
+        }
+        false
+    }
+}
+
 /// Main request handling loop.
 fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: AppHandle) {
+    let mut throttle = ThrottleState::new();
+
     loop {
         // Check for shutdown signal
         if shutdown_rx.try_recv().is_ok() {
             info!("Event server received shutdown signal");
             break;
+        }
+
+        // Periodic DB prune (every 30 minutes)
+        if throttle.should_prune() {
+            let db_state = app_handle.state::<StdMutex<DbConnection>>();
+            if let Ok(db) = db_state.lock() {
+                let retention_days: i64 = crate::services::settings::get_with_default(
+                    &db.conn,
+                    "notification_retention_days",
+                    "7",
+                )
+                .parse()
+                .unwrap_or(7);
+
+                if let Err(e) =
+                    crate::services::notification::prune_old_notifications(&db.conn, retention_days)
+                {
+                    warn!("Periodic notification prune failed: {}", e);
+                }
+            };
         }
 
         // Try to receive a request (with timeout)
@@ -92,7 +156,7 @@ fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: 
             }
         };
 
-        if let Err(e) = process_request(request, &app_handle) {
+        if let Err(e) = process_request(request, &app_handle, &mut throttle) {
             warn!("Error processing request: {}", e);
         }
     }
@@ -102,6 +166,7 @@ fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: 
 fn process_request(
     mut request: tiny_http::Request,
     app_handle: &AppHandle,
+    throttle: &mut ThrottleState,
 ) -> Result<(), AppError> {
     let url = request.url().to_string();
     let method = request.method().clone();
@@ -222,15 +287,32 @@ fn process_request(
                     warn!("Failed to store notification: {}", e);
                 }
 
-                // macOS 네이티브 알림
-                let notification_style = crate::services::settings::get_with_default(
-                    &db.conn, "notification_style", "alert",
-                );
+                // macOS 네이티브 알림 (throttled)
+                let throttle_key =
+                    format!("{}:{}", hook_event.project_path, hook_event.event_type);
+                let cooldown_secs: u64 = crate::services::settings::get_with_default(
+                    &db.conn,
+                    "notification_cooldown_secs",
+                    "5",
+                )
+                .parse()
+                .unwrap_or(5);
 
-                if let Err(e) = crate::services::notification::send_native_notification(
-                    app_handle, &title, &body, &notification_style,
-                ) {
-                    warn!("Failed to send native notification: {}", e);
+                if throttle.should_send_native(&throttle_key, cooldown_secs) {
+                    let notification_style = crate::services::settings::get_with_default(
+                        &db.conn,
+                        "notification_style",
+                        "alert",
+                    );
+
+                    if let Err(e) = crate::services::notification::send_native_notification(
+                        app_handle,
+                        &title,
+                        &body,
+                        &notification_style,
+                    ) {
+                        warn!("Failed to send native notification: {}", e);
+                    }
                 }
             }
             Ok(None) => warn!("No active project for path: {}", hook_event.project_path),
