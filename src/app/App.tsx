@@ -1,4 +1,4 @@
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, useNavigate } from "react-router-dom";
 import { AppProviders } from "./providers";
 import { AppRoutes } from "./routes";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -9,12 +9,18 @@ import { useEffect, useState } from "react";
 import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
+import { useAppStore } from "../stores/appStore";
 
 function AppShell() {
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
+  const navigate = useNavigate();
+  const pendingProjectNavigation = useAppStore(
+    (s) => s.pendingProjectNavigation,
+  );
+
   useEffect(() => {
     // Load core data on app start (survives page reloads)
     fetchProjects();
@@ -23,6 +29,15 @@ function AppShell() {
       .then(setTmuxAvailable)
       .catch(() => setTmuxAvailable(false));
   }, [fetchProjects, fetchSettings]);
+
+  // Handle notification click → navigate to project terminal
+  useEffect(() => {
+    if (pendingProjectNavigation) {
+      useProjectStore.getState().selectProject(pendingProjectNavigation);
+      navigate(`/projects/${pendingProjectNavigation}/terminal`);
+      useAppStore.getState().setPendingProjectNavigation(null);
+    }
+  }, [pendingProjectNavigation, navigate]);
 
   return (
     <div className="flex h-screen w-screen flex-col glass-gradient-bg text-text relative">

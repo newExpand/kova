@@ -221,6 +221,15 @@ fn process_request(
         }
     };
 
+    // Guard against oversized payloads (1MB limit)
+    if request.body_length().is_some_and(|len| len > 1_048_576) {
+        let _ = request.respond(
+            Response::from_string(r#"{"error":"Request body too large"}"#)
+                .with_status_code(StatusCode(413)),
+        );
+        return Ok(());
+    }
+
     // Read and parse JSON body
     let mut body = String::new();
     if let Err(e) = request.as_reader().read_to_string(&mut body) {
@@ -311,6 +320,7 @@ fn process_request(
                         &body,
                         &notification_style,
                         &project.name,
+                        &project.id,
                     ) {
                         warn!("Failed to send native notification: {}", e);
                     }

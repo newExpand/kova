@@ -4,8 +4,8 @@ import { setupNotificationEvents } from "./notification-events";
 let unlisteners: UnlistenFn[] = [];
 
 export async function initEventBridge(): Promise<void> {
-  const notifUnlisten = await setupNotificationEvents();
-  unlisteners.push(notifUnlisten);
+  const notifUnlisteners = await setupNotificationEvents();
+  unlisteners.push(...notifUnlisteners);
 }
 
 export function destroyEventBridge(): void {

@@ -10,6 +10,7 @@ interface AppState {
   sidebarMode: "projects" | "sessions";
   currentRoute: string;
   isOnboarding: boolean;
+  pendingProjectNavigation: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,7 @@ interface AppActions {
   setSidebarMode: (mode: "projects" | "sessions") => void;
   setCurrentRoute: (route: string) => void;
   setOnboarding: (value: boolean) => void;
+  setPendingProjectNavigation: (id: string | null) => void;
   reset: () => void;
 }
 
@@ -40,6 +42,7 @@ const initialState: AppState = {
   sidebarMode: "projects",
   currentRoute: "/",
   isOnboarding: false,
+  pendingProjectNavigation: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -69,6 +72,13 @@ export const useAppStore = create<AppStore>()(
 
       setOnboarding: (value) =>
         set({ isOnboarding: value }, undefined, "setOnboarding"),
+
+      setPendingProjectNavigation: (id) =>
+        set(
+          { pendingProjectNavigation: id },
+          undefined,
+          "setPendingProjectNavigation",
+        ),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

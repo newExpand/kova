@@ -2,7 +2,7 @@ use crate::errors::AppError;
 use crate::models::notification::NotificationRecord;
 use rusqlite::Connection;
 use std::thread;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
@@ -19,11 +19,18 @@ pub fn send_native_notification(
     body: &str,
     notification_style: &str,
     group_id: &str,
+    project_id: &str,
 ) -> Result<(), AppError> {
     if cfg!(target_os = "macos") {
         return match notification_style {
             "banner" => send_via_osascript(title, body),
-            _ => send_via_alerter_or_osascript(title, body, group_id),
+            _ => send_via_alerter_or_osascript(
+                title,
+                body,
+                group_id,
+                app.clone(),
+                project_id.to_string(),
+            ),
         };
     }
 
@@ -55,7 +62,13 @@ fn escape_alerter_arg(s: &str) -> String {
     }
 }
 
-fn send_via_alerter_or_osascript(title: &str, body: &str, group_id: &str) -> Result<(), AppError> {
+fn send_via_alerter_or_osascript(
+    title: &str,
+    body: &str,
+    group_id: &str,
+    app_handle: AppHandle,
+    project_id: String,
+) -> Result<(), AppError> {
     // body가 비어있으면 title을 message로 사용 (방어적 폴백)
     let alert_message = if body.is_empty() { title } else { body };
 
@@ -68,12 +81,43 @@ fn send_via_alerter_or_osascript(title: &str, body: &str, group_id: &str) -> Res
         .arg("default")
         .arg("-group")
         .arg(format!("flow-orche:{}", group_id))
+        .stdout(std::process::Stdio::piped())
         .spawn()
     {
-        Ok(mut child) => {
-            // Reap child to prevent zombie process accumulation
+        Ok(child) => {
+            // Reap child + capture stdout to detect user click
             thread::spawn(move || {
-                let _ = child.wait();
+                if let Ok(output) = child.wait_with_output() {
+                    let result = String::from_utf8_lossy(&output.stdout);
+                    if result.contains("@CONTENTCLICKED") || result.contains("@ACTIONCLICKED") {
+                        // Activate the macOS app (bring to foreground from other apps)
+                        #[cfg(target_os = "macos")]
+                        {
+                            use objc2::rc::Retained;
+                            use objc2::runtime::{AnyClass, NSObject};
+                            use objc2::msg_send;
+
+                            unsafe {
+                                if let Some(cls) = AnyClass::get(c"NSRunningApplication") {
+                                    let current: Retained<NSObject> =
+                                        msg_send![cls, currentApplication];
+                                    // NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps
+                                    let _: bool =
+                                        msg_send![&*current, activateWithOptions: 3_usize];
+                                }
+                            }
+                        }
+                        // Focus the app window
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        // Emit event to frontend for project navigation
+                        let _ = app_handle.emit("notification:clicked", &project_id);
+                        info!("Notification clicked for project: {}", project_id);
+                    }
+                }
             });
             info!("Native notification sent (alerter): {}", title);
             return Ok(());
@@ -180,6 +224,7 @@ pub fn list_notifications(
 /// Delete notification records older than `retention_days`.
 /// Returns the number of deleted rows.
 pub fn prune_old_notifications(conn: &Connection, retention_days: i64) -> Result<u64, AppError> {
+    let retention_days = retention_days.max(1);
     let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
     let cutoff_str = cutoff.to_rfc3339();
 
