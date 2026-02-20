@@ -1,7 +1,9 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Monitor, RefreshCw, Trash2, X } from "lucide-react";
 import { useTmuxStore } from "../stores/tmuxStore";
 import { useProjectStore } from "../../project";
+import { useTerminalStore } from "../../terminal";
+import { useSessionClassification } from "../hooks/useSessionClassification";
 import { killTmuxSession } from "../../../lib/tauri/commands";
 import type { SessionInfo } from "../types";
 import { Button } from "../../../components/ui/button";
@@ -139,8 +141,6 @@ function SessionManagerPage() {
   const fetchSessions = useTmuxStore((s) => s.fetchSessions);
   const getProjectById = useProjectStore((s) => s.getProjectById);
 
-  const killAllAppSessions = useTmuxStore((s) => s.killAllAppSessions);
-
   const [killTarget, setKillTarget] = useState<SessionInfo | null>(null);
   const [isKilling, setIsKilling] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
@@ -152,14 +152,7 @@ function SessionManagerPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  const appSessions = useMemo(
-    () => sessions.filter((s) => s.isAppSession),
-    [sessions],
-  );
-  const externalSessions = useMemo(
-    () => sessions.filter((s) => !s.isAppSession),
-    [sessions],
-  );
+  const { appSessions, externalSessions } = useSessionClassification(sessions);
 
   const getProjectName = useCallback(
     (projectId: string | null): string | null => {
@@ -173,18 +166,41 @@ function SessionManagerPage() {
     setIsKillingAll(true);
     setKillAllError(null);
     try {
-      const result = await killAllAppSessions();
-      if (result.failed.length > 0) {
-        const failedNames = result.failed.map((f) => f.sessionName).join(", ");
+      // Set error state on matching terminals FIRST to prevent auto-reconnect
+      for (const session of appSessions) {
+        if (session.projectId) {
+          useTerminalStore.getState().setError(session.projectId, "Session was terminated.");
+        }
+      }
+      // Kill each session individually
+      const failed: string[] = [];
+      for (const session of appSessions) {
+        try {
+          await killTmuxSession(session.name);
+        } catch (err) {
+          console.error(`[Kill All] Failed to kill session '${session.name}':`, err);
+          failed.push(session.name);
+          // Revert error state for failed kills — session is still alive
+          if (session.projectId) {
+            useTerminalStore.getState().setStatus(session.projectId, "disconnected");
+          }
+        }
+      }
+      try {
+        await fetchSessions();
+      } catch (err) {
+        console.error("[Kill All] Failed to refresh session list:", err);
+      }
+      if (failed.length > 0) {
         setKillAllError(
-          `${result.killedCount}개 종료됨, ${result.failed.length}개 실패: ${failedNames}`,
+          `${appSessions.length - failed.length}개 종료됨, ${failed.length}개 실패: ${failed.join(", ")}`,
         );
         return;
       }
       setShowKillAllDialog(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setKillAllError(`세션 종료 실패: ${message}`);
+      setKillAllError(`세션 종료 중 오류: ${message}`);
     } finally {
       setIsKillingAll(false);
     }

@@ -57,6 +57,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const refitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tier1TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tier2TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clipboardToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanup = useCallback(() => {
     // Mark dead FIRST so callbacks stop writing
@@ -80,6 +81,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (tier2TimeoutRef.current) {
       clearTimeout(tier2TimeoutRef.current);
       tier2TimeoutRef.current = null;
+    }
+    if (clipboardToastTimeoutRef.current) {
+      clearTimeout(clipboardToastTimeoutRef.current);
+      clipboardToastTimeoutRef.current = null;
     }
 
     // Unsubscribe from theme changes
@@ -200,11 +205,16 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             // Decode base64 with proper UTF-8 handling (Korean/CJK/emoji)
             const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
             const text = new TextDecoder().decode(bytes);
-            writeText(text).catch((err) =>
-              console.error("[OSC 52] clipboard write failed:", err),
-            );
-          } catch {
-            // invalid base64 — silently ignore
+            writeText(text)
+              .then(() => showClipboardToast())
+              .catch((err) =>
+                console.error("[OSC 52] clipboard write failed:", err),
+              );
+          } catch (err) {
+            // atob() throws DOMException for invalid base64 — expected for non-OSC52 data.
+            if (!(err instanceof DOMException)) {
+              console.warn("[OSC 52] Unexpected error processing clipboard data:", err);
+            }
           }
           return true;
         });
@@ -266,11 +276,41 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           `background:${currentTheme.xterm.background ?? "#1a1b26"}`,
           "white-space:pre",
         ].join(";");
+        // Clipboard "Copied!" toast overlay.
+        // Shown when OSC 52 clipboard write succeeds (mouse drag-select in tmux).
+        const clipboardToast = document.createElement("div");
+        clipboardToast.style.cssText = [
+          "position:absolute", "pointer-events:none", "z-index:10",
+          "bottom:12px", "left:50%", "transform:translateX(-50%)",
+          "padding:4px 12px", "border-radius:6px",
+          "font-size:12px", "font-weight:500", "opacity:0",
+          "transition:opacity 150ms ease-in-out",
+          "color:rgba(255,255,255,0.9)",
+          "background:rgba(0,0,0,0.65)",
+          "backdrop-filter:blur(8px)", "-webkit-backdrop-filter:blur(8px)",
+          "border:1px solid rgba(255,255,255,0.1)",
+          "white-space:nowrap",
+        ].join(";");
+        clipboardToast.textContent = "Copied!";
+
+        const showClipboardToast = () => {
+          // Reset timer on rapid re-selections
+          if (clipboardToastTimeoutRef.current) {
+            clearTimeout(clipboardToastTimeoutRef.current);
+          }
+          clipboardToast.style.opacity = "1";
+          clipboardToastTimeoutRef.current = setTimeout(() => {
+            clipboardToast.style.opacity = "0";
+            clipboardToastTimeoutRef.current = null;
+          }, 1500);
+        };
+
         if (xtermScreen) {
           if (getComputedStyle(xtermScreen).position === "static") {
             xtermScreen.style.position = "relative";
           }
           xtermScreen.appendChild(imeOverlay);
+          xtermScreen.appendChild(clipboardToast);
         }
 
         // macOS IME pre-warm: focus textarea early so macOS starts IME context
@@ -309,6 +349,28 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           "-x", String(cols), "-y", String(rows),
           ";", "set-option", "mouse", "on",
           ";", "set-option", "set-clipboard", "on",
+          // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
+          // NOTE: These copy-mode bindings are also configured in
+          // src-tauri/src/services/tmux.rs create_session(). Keep both in sync.
+          ";", "bind-key", "-T", "copy-mode", "MouseDown1Pane",
+              "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
+          ";", "bind-key", "-T", "copy-mode-vi", "MouseDown1Pane",
+              "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
+          // MouseUp1Pane: exit copy mode on simple click (does not fire after drag).
+          ";", "bind-key", "-T", "copy-mode", "MouseUp1Pane",
+              "send-keys", "-X", "cancel",
+          ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
+              "send-keys", "-X", "cancel",
+          // Override MouseDragEnd1Pane: copy-selection-no-clear copies text to the
+          // tmux paste buffer and (because set-clipboard is on) emits OSC 52 to the
+          // terminal. Stays in copy mode to preserve scroll position.
+          ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
+              "send-keys", "-X", "copy-selection-no-clear",
+          ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
+              "send-keys", "-X", "copy-selection-no-clear",
+          // Cancel copy mode on the previously-active pane when switching panes.
+          ";", "set-hook", "window-pane-changed",
+              "send-keys -t '{last}' -X cancel",
         ];
 
         const pty = spawn("tmux", args, {
@@ -439,42 +501,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           if (xtermTextarea) xtermTextarea.value = "";
         };
 
-        // Terminal → PTY: user keystrokes (with IME guard + Ctrl+V image bridge)
+        // Terminal → PTY: user keystrokes (with IME guard)
         term.onData((data: string) => {
           imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
           if (imeActive) return;
-
-          // Ctrl+V produces \x16 (SYN). Intercept it to bridge clipboard
-          // images from the host Tauri app — PTY subprocess cannot access
-          // macOS clipboard due to sandbox restrictions.
-          // Strategy: try osascript image save → then text fallback → then \x16.
-          if (data === "\x16") {
-            commands
-              .saveClipboardImageToTemp()
-              .then((path) => {
-                if (path && ptyRef.current) {
-                  ptyRef.current.write(escapeShellPath(path));
-                }
-              })
-              .catch(() => {
-                // No image → fall back to text paste
-                readText()
-                  .then((text) => {
-                    if (text && ptyRef.current) {
-                      ptyRef.current.write(text);
-                    } else if (aliveRef.current && ptyRef.current) {
-                      ptyRef.current.write("\x16");
-                    }
-                  })
-                  .catch(() => {
-                    if (aliveRef.current && ptyRef.current) {
-                      ptyRef.current.write("\x16");
-                    }
-                  });
-              });
-            return;
-          }
-
           if (aliveRef.current && ptyRef.current) {
             ptyRef.current.write(data);
           }
@@ -609,35 +639,18 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 return false;
               }
 
-              // ⌘V — Paste from clipboard into terminal (text → image fallback)
+              // ⌘V — Paste from clipboard into terminal
               if (event.key.toLowerCase() === "v" && !event.shiftKey) {
                 event.preventDefault();
                 readText()
                   .then((text) => {
                     if (text && termRef.current) {
                       termRef.current.paste(text);
-                    } else {
-                      // No text → try clipboard image bridge
-                      commands
-                        .saveClipboardImageToTemp()
-                        .then((path) => {
-                          if (path && ptyRef.current) {
-                            ptyRef.current.write(escapeShellPath(path));
-                          }
-                        })
-                        .catch(() => {});
                     }
                   })
-                  .catch(() => {
-                    commands
-                      .saveClipboardImageToTemp()
-                      .then((path) => {
-                        if (path && ptyRef.current) {
-                          ptyRef.current.write(escapeShellPath(path));
-                        }
-                      })
-                      .catch(() => {});
-                  });
+                  .catch((err) =>
+                    console.error("Clipboard read failed:", err),
+                  );
                 return false;
               }
 
@@ -732,7 +745,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         pty.onExit(() => {
           if (isStale()) return; // a newer connection is active — ignore this exit
           aliveRef.current = false;
-          useTerminalStore.getState().setStatus(config.projectId, "disconnected");
+          // Don't overwrite "error" status — Kill All sets it to prevent auto-reconnect
+          const current = useTerminalStore.getState().getTerminal(config.projectId).status;
+          if (current !== "error") {
+            useTerminalStore.getState().setStatus(config.projectId, "disconnected");
+          }
         });
 
         // ResizeObserver for auto-fit

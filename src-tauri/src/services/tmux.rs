@@ -185,6 +185,25 @@ pub fn list_panes(session_name: &str) -> Result<Vec<TmuxPane>, AppError> {
     Ok(panes)
 }
 
+/// Run a non-fatal tmux command: IO errors propagate, but non-zero exit only logs a warning.
+/// Used for non-critical session configuration that shouldn't abort session creation.
+fn run_tmux_nonfatal(args: &[&str], context: &str, session_name: &str) -> Result<(), AppError> {
+    let output = tmux_cmd()
+        .args(args)
+        .output()
+        .map_err(|e| AppError::TmuxCommand(format!("Failed to {}: {}", context, e)))?;
+
+    if !output.status.success() {
+        warn!(
+            "Failed to {} for session '{}': {}",
+            context,
+            session_name,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Create a new detached tmux session with the given name and dimensions.
 pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> {
     validate_session_name(name)?;
@@ -214,33 +233,53 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
     }
 
     // Enable mouse mode so tmux intercepts mouse events within pane boundaries.
-    // This prevents text selection from crossing pane borders.
-    let mouse_output = tmux_cmd()
-        .args(["set-option", "-t", name, "mouse", "on"])
-        .output()
-        .map_err(|e| AppError::TmuxCommand(format!("Failed to set mouse option: {}", e)))?;
-
-    if !mouse_output.status.success() {
-        warn!(
-            "Failed to enable mouse mode for session '{}': {}",
-            name,
-            String::from_utf8_lossy(&mouse_output.stderr).trim()
-        );
-    }
+    run_tmux_nonfatal(
+        &["set-option", "-t", name, "mouse", "on"],
+        "enable mouse mode", name,
+    )?;
 
     // Enable OSC 52 clipboard so tmux sends clipboard data to the terminal.
-    let clipboard_output = tmux_cmd()
-        .args(["set-option", "-t", name, "set-clipboard", "on"])
-        .output()
-        .map_err(|e| AppError::TmuxCommand(format!("Failed to set clipboard option: {}", e)))?;
+    // NOTE: set-clipboard must be on for copy-selection-no-clear to emit OSC 52.
+    run_tmux_nonfatal(
+        &["set-option", "-t", name, "set-clipboard", "on"],
+        "enable set-clipboard", name,
+    )?;
 
-    if !clipboard_output.status.success() {
-        warn!(
-            "Failed to enable set-clipboard for session '{}': {}",
-            name,
-            String::from_utf8_lossy(&clipboard_output.stderr).trim()
-        );
+    // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
+    // NOTE: These copy-mode bindings are also configured in
+    // src/features/terminal/hooks/useTerminal.ts. Keep both in sync.
+    for table in &["copy-mode", "copy-mode-vi"] {
+        run_tmux_nonfatal(
+            &["bind-key", "-T", table, "MouseDown1Pane",
+              "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection"],
+            &format!("bind MouseDown1Pane ({})", table), name,
+        )?;
     }
+
+    // MouseUp1Pane: exit copy mode on simple click (does not fire after drag).
+    for table in &["copy-mode", "copy-mode-vi"] {
+        run_tmux_nonfatal(
+            &["bind-key", "-T", table, "MouseUp1Pane",
+              "send-keys", "-X", "cancel"],
+            &format!("bind MouseUp1Pane ({})", table), name,
+        )?;
+    }
+
+    // Override MouseDragEnd1Pane: copy-selection-no-clear copies text to the
+    // tmux paste buffer and (because set-clipboard is on) emits OSC 52 to the
+    // terminal. Stays in copy mode to preserve scroll position.
+    for table in &["copy-mode", "copy-mode-vi"] {
+        run_tmux_nonfatal(
+            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-no-clear"],
+            &format!("bind MouseDragEnd1Pane ({})", table), name,
+        )?;
+    }
+
+    // Cancel copy mode on the previously-active pane when switching panes.
+    run_tmux_nonfatal(
+        &["set-hook", "-t", name, "window-pane-changed", "send-keys -t '{last}' -X cancel"],
+        "set window-pane-changed hook", name,
+    )?;
 
     info!("Created tmux session '{}' ({}x{})", name, cols, rows);
     Ok(())

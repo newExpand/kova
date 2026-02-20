@@ -306,10 +306,3 @@ export async function checkEnvironment(): Promise<EnvironmentCheck> {
   return invoke<EnvironmentCheck>("check_environment");
 }
 
-// ---------------------------------------------------------------------------
-// Clipboard commands
-// ---------------------------------------------------------------------------
-
-export async function saveClipboardImageToTemp(): Promise<string> {
-  return invoke<string>("save_clipboard_image_to_temp");
-}

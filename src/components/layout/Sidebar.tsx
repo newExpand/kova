@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project/stores/projectStore";
-import { useTmuxStore } from "../../features/tmux/stores/tmuxStore";
+import { useTmuxStore, useSessionClassification } from "../../features/tmux";
 import { killTmuxSession } from "../../lib/tauri/commands";
 import { StatusIndicator } from "../../features/project/components/StatusIndicator";
 import { ProjectEditForm } from "../../features/project/components/ProjectEditForm";
@@ -70,14 +70,7 @@ function Sidebar() {
   const isLoadingSessions = useTmuxStore((s) => s.isLoading);
   const fetchSessions = useTmuxStore((s) => s.fetchSessions);
 
-  const appSessions = useMemo(
-    () => sessions.filter((s) => s.isAppSession),
-    [sessions],
-  );
-  const externalSessions = useMemo(
-    () => sessions.filter((s) => !s.isAppSession),
-    [sessions],
-  );
+  const { appSessions, externalSessions } = useSessionClassification(sessions);
 
   const navigate = useNavigate();
   const location = useLocation();

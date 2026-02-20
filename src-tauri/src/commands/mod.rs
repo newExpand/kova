@@ -1,4 +1,3 @@
-pub mod clipboard;
 pub mod environment;
 pub mod hooks;
 pub mod notification;
