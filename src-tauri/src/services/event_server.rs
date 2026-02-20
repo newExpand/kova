@@ -310,6 +310,7 @@ fn process_request(
                         &title,
                         &body,
                         &notification_style,
+                        &project.name,
                     ) {
                         warn!("Failed to send native notification: {}", e);
                     }

@@ -18,11 +18,12 @@ pub fn send_native_notification(
     title: &str,
     body: &str,
     notification_style: &str,
+    group_id: &str,
 ) -> Result<(), AppError> {
     if cfg!(target_os = "macos") {
         return match notification_style {
             "banner" => send_via_osascript(title, body),
-            _ => send_via_alerter_or_osascript(title, body),
+            _ => send_via_alerter_or_osascript(title, body, group_id),
         };
     }
 
@@ -54,7 +55,7 @@ fn escape_alerter_arg(s: &str) -> String {
     }
 }
 
-fn send_via_alerter_or_osascript(title: &str, body: &str) -> Result<(), AppError> {
+fn send_via_alerter_or_osascript(title: &str, body: &str, group_id: &str) -> Result<(), AppError> {
     // body가 비어있으면 title을 message로 사용 (방어적 폴백)
     let alert_message = if body.is_empty() { title } else { body };
 
@@ -65,8 +66,8 @@ fn send_via_alerter_or_osascript(title: &str, body: &str) -> Result<(), AppError
         .arg(escape_alerter_arg(alert_message))
         .arg("-sound")
         .arg("default")
-        .arg("-timeout")
-        .arg("10")
+        .arg("-group")
+        .arg(format!("flow-orche:{}", group_id))
         .spawn()
     {
         Ok(mut child) => {
