@@ -439,10 +439,42 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           if (xtermTextarea) xtermTextarea.value = "";
         };
 
-        // Terminal → PTY: user keystrokes (with IME guard)
+        // Terminal → PTY: user keystrokes (with IME guard + Ctrl+V image bridge)
         term.onData((data: string) => {
           imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
           if (imeActive) return;
+
+          // Ctrl+V produces \x16 (SYN). Intercept it to bridge clipboard
+          // images from the host Tauri app — PTY subprocess cannot access
+          // macOS clipboard due to sandbox restrictions.
+          // Strategy: try osascript image save → then text fallback → then \x16.
+          if (data === "\x16") {
+            commands
+              .saveClipboardImageToTemp()
+              .then((path) => {
+                if (path && ptyRef.current) {
+                  ptyRef.current.write(escapeShellPath(path));
+                }
+              })
+              .catch(() => {
+                // No image → fall back to text paste
+                readText()
+                  .then((text) => {
+                    if (text && ptyRef.current) {
+                      ptyRef.current.write(text);
+                    } else if (aliveRef.current && ptyRef.current) {
+                      ptyRef.current.write("\x16");
+                    }
+                  })
+                  .catch(() => {
+                    if (aliveRef.current && ptyRef.current) {
+                      ptyRef.current.write("\x16");
+                    }
+                  });
+              });
+            return;
+          }
+
           if (aliveRef.current && ptyRef.current) {
             ptyRef.current.write(data);
           }
@@ -577,18 +609,35 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 return false;
               }
 
-              // ⌘V — Paste from clipboard into terminal
+              // ⌘V — Paste from clipboard into terminal (text → image fallback)
               if (event.key.toLowerCase() === "v" && !event.shiftKey) {
                 event.preventDefault();
                 readText()
                   .then((text) => {
                     if (text && termRef.current) {
                       termRef.current.paste(text);
+                    } else {
+                      // No text → try clipboard image bridge
+                      commands
+                        .saveClipboardImageToTemp()
+                        .then((path) => {
+                          if (path && ptyRef.current) {
+                            ptyRef.current.write(escapeShellPath(path));
+                          }
+                        })
+                        .catch(() => {});
                     }
                   })
-                  .catch((err) =>
-                    console.error("Clipboard read failed:", err),
-                  );
+                  .catch(() => {
+                    commands
+                      .saveClipboardImageToTemp()
+                      .then((path) => {
+                        if (path && ptyRef.current) {
+                          ptyRef.current.write(escapeShellPath(path));
+                        }
+                      })
+                      .catch(() => {});
+                  });
                 return false;
               }
 

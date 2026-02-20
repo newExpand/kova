@@ -167,6 +167,9 @@ pub fn run() {
                 }
             }
 
+            // Clean up old clipboard images from previous sessions
+            services::clipboard::cleanup_old_images();
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -209,6 +212,8 @@ pub fn run() {
             commands::settings::list_settings,
             // Environment commands
             commands::environment::check_environment,
+            // Clipboard commands
+            commands::clipboard::save_clipboard_image_to_temp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
