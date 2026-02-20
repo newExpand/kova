@@ -188,6 +188,27 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         const webFontsAddon = new WebFontsAddon();
         term.loadAddon(webFontsAddon);
 
+        // OSC 52 clipboard handler — tmux sends this when mouse-selected text
+        // is copied with set-clipboard on.
+        // Format: OSC 52 ; <selection> ; <base64-data> ST
+        term.parser.registerOscHandler(52, (data: string) => {
+          const idx = data.indexOf(";");
+          if (idx < 0) return false;
+          const payload = data.slice(idx + 1);
+          if (payload === "?") return true; // clipboard query — ignore
+          try {
+            // Decode base64 with proper UTF-8 handling (Korean/CJK/emoji)
+            const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+            const text = new TextDecoder().decode(bytes);
+            writeText(text).catch((err) =>
+              console.error("[OSC 52] clipboard write failed:", err),
+            );
+          } catch {
+            // invalid base64 — silently ignore
+          }
+          return true;
+        });
+
         // Step 2: Wait for xterm to load the actual font glyphs BEFORE open()
         // System fonts won't be in document.fonts, so we catch the rejection.
         if (fontPreset.category === "popular") {
@@ -283,7 +304,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // -A flag: create session if not exists, attach if it does
-        const args = ["new-session", "-A", "-s", config.sessionName, "-x", String(cols), "-y", String(rows)];
+        const args = [
+          "new-session", "-A", "-s", config.sessionName,
+          "-x", String(cols), "-y", String(rows),
+          ";", "set-option", "mouse", "on",
+          ";", "set-option", "set-clipboard", "on",
+        ];
 
         const pty = spawn("tmux", args, {
           name: "xterm-256color",

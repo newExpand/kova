@@ -213,6 +213,35 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
         )));
     }
 
+    // Enable mouse mode so tmux intercepts mouse events within pane boundaries.
+    // This prevents text selection from crossing pane borders.
+    let mouse_output = tmux_cmd()
+        .args(["set-option", "-t", name, "mouse", "on"])
+        .output()
+        .map_err(|e| AppError::TmuxCommand(format!("Failed to set mouse option: {}", e)))?;
+
+    if !mouse_output.status.success() {
+        warn!(
+            "Failed to enable mouse mode for session '{}': {}",
+            name,
+            String::from_utf8_lossy(&mouse_output.stderr).trim()
+        );
+    }
+
+    // Enable OSC 52 clipboard so tmux sends clipboard data to the terminal.
+    let clipboard_output = tmux_cmd()
+        .args(["set-option", "-t", name, "set-clipboard", "on"])
+        .output()
+        .map_err(|e| AppError::TmuxCommand(format!("Failed to set clipboard option: {}", e)))?;
+
+    if !clipboard_output.status.success() {
+        warn!(
+            "Failed to enable set-clipboard for session '{}': {}",
+            name,
+            String::from_utf8_lossy(&clipboard_output.stderr).trim()
+        );
+    }
+
     info!("Created tmux session '{}' ({}x{})", name, cols, rows);
     Ok(())
 }
