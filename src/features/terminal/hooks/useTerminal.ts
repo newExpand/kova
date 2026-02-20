@@ -941,7 +941,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     cleanup();
     const pid = projectIdRef.current;
     if (pid) {
-      useTerminalStore.getState().setStatus(pid, "disconnected");
+      // Guard: don't overwrite "idle" status during intentional reconnection.
+      // When handleRetry() sets status to "idle" and TerminalView unmounts,
+      // this cleanup runs — without the guard it would set "disconnected"
+      // and trigger an infinite reconnect loop.
+      const currentStatus = useTerminalStore.getState().getTerminal(pid).status;
+      if (currentStatus !== "idle") {
+        useTerminalStore.getState().setStatus(pid, "disconnected");
+      }
     }
   }, [cleanup]);
 

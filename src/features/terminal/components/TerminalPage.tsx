@@ -115,6 +115,33 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     useTerminalStore.getState().setStatus(projectId, "idle");
   }, [projectId]);
 
+  // --- Auto-reconnect on session disconnect ---
+  const consecutiveDisconnects = useRef(0);
+
+  // Reset counter on successful connection
+  useEffect(() => {
+    if (status === "connected") {
+      consecutiveDisconnects.current = 0;
+    }
+  }, [status]);
+
+  // Detect disconnect and schedule reconnect (with loop protection)
+  useEffect(() => {
+    if (status === "disconnected") {
+      consecutiveDisconnects.current += 1;
+      if (consecutiveDisconnects.current > 3) {
+        useTerminalStore.getState().setError(
+          projectId,
+          "Session keeps disconnecting. Click Retry to try again.",
+        );
+        consecutiveDisconnects.current = 0;
+        return;
+      }
+      const timer = setTimeout(() => handleRetry(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [status, handleRetry, projectId]);
+
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
       const textarea = terminalContainerRef.current?.querySelector(
