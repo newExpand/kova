@@ -207,7 +207,7 @@ export const useAgentActivityStore = create<
             subagentCount: 0,
             isWaitingForInput: false,
             lastActivity: now,
-            lastMessage: null,
+            lastMessage: "Session started",
           };
           break;
         }
