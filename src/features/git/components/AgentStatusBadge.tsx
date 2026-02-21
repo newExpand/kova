@@ -29,6 +29,7 @@ export function AgentStatusBadge({
           {isWaitingForInput && "Waiting..."}
           {!isWaitingForInput && status === "loading" && "Thinking..."}
           {!isWaitingForInput && status === "active" && (lastMessage ?? "Working...")}
+          {!isWaitingForInput && status === "ready" && (lastMessage ?? "Ready")}
           {status === "idle" && "Idle"}
           {status === "done" && "Done"}
           {status === "error" && "Error"}
@@ -92,6 +93,10 @@ function StatusDot({
         <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
       </span>
     );
+  }
+
+  if (status === "ready") {
+    return <span className="h-2 w-2 rounded-full bg-success" />;
   }
 
   if (status === "active") {

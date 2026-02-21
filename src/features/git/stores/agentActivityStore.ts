@@ -19,7 +19,7 @@ export function normalizePathKey(path: string): string {
 // Types
 // ---------------------------------------------------------------------------
 
-export type AgentStatus = "loading" | "active" | "idle" | "done" | "error";
+export type AgentStatus = "loading" | "active" | "idle" | "done" | "error" | "ready";
 
 export interface AgentSessionState {
   projectPath: string;
@@ -199,7 +199,7 @@ export const useAgentActivityStore = create<
           // Always reset to a fresh session (fixes stale "done" state)
           sessions[path] = {
             projectPath: path,
-            status: "active",
+            status: "ready",
             toolUseCount: 0,
             fileEditCount: 0,
             commitCount: 0,

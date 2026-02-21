@@ -83,12 +83,13 @@ function WorktreeCollapsedDot({ worktree }: { worktree: GitWorktree }) {
     return s.sessions[normalizedWtPath];
   });
   const isActive = session?.status === "active";
+  const isAlive = isActive || session?.status === "ready";
 
   return (
     <div
       className={`h-2 w-2 rounded-full ${isActive ? "agent-breathing" : ""}`}
       style={{
-        backgroundColor: isActive
+        backgroundColor: isAlive
           ? "var(--color-success)"
           : worktree.isMain
             ? "var(--color-success)"
