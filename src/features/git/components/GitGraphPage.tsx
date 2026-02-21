@@ -4,6 +4,7 @@ import { useGitGraph } from "../hooks/useGitGraph";
 import { BranchGraph } from "./BranchGraph";
 import { WorktreePanel } from "./WorktreePanel";
 import { useProjectStore } from "../../project/stores/projectStore";
+import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { GitBranch } from "lucide-react";
 
@@ -16,6 +17,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   );
+  const { projectSessions } = useTmuxSessions(projectId);
+  const sessionName = projectSessions[0]?.name ?? null;
   const graphData = useGitStore((s) => s.graphData[projectId]);
   const isLoading = useGitStore((s) => s.isProjectLoading(projectId));
   const error = useGitStore((s) => s.getProjectError(projectId));
@@ -114,6 +117,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         collapsed={panelCollapsed}
         onToggle={togglePanel}
         projectId={projectId}
+        projectPath={project?.path ?? ""}
+        sessionName={sessionName}
         hoveredBranch={hoveredBranch}
         onHoverBranch={handleHoverBranch}
         onLeaveBranch={handleLeaveBranch}

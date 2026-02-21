@@ -1,0 +1,153 @@
+import { useState, useCallback, useEffect } from "react";
+import { Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../../../components/ui/dialog";
+import { Button } from "../../../components/ui/button";
+import { startWorktreeTask } from "../../../lib/tauri/commands";
+
+interface NewAgentTaskDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sessionName: string | null;
+  projectPath: string;
+}
+
+const TASK_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+const MAX_TASK_NAME_LENGTH = 50;
+
+export function NewAgentTaskDialog({
+  open,
+  onOpenChange,
+  sessionName,
+  projectPath,
+}: NewAgentTaskDialogProps) {
+  const [taskName, setTaskName] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setTaskName("");
+      setError(null);
+    }
+  }, [open]);
+
+  const isValid =
+    taskName.length > 0 &&
+    taskName.length <= MAX_TASK_NAME_LENGTH &&
+    TASK_NAME_REGEX.test(taskName);
+
+  const handleSubmit = useCallback(async () => {
+    if (!isValid || !sessionName) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await startWorktreeTask(sessionName, taskName, projectPath);
+      setTaskName("");
+      onOpenChange(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isValid, sessionName, taskName, projectPath, onOpenChange]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && isValid && !isLoading) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    },
+    [isValid, isLoading, handleSubmit],
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>New Agent Worktree</DialogTitle>
+          <DialogDescription>
+            Create a new tmux window with Claude Code worktree.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div>
+            <label
+              htmlFor="task-name"
+              className="mb-1 block text-xs font-medium text-text-secondary"
+            >
+              Task name
+            </label>
+            <input
+              id="task-name"
+              type="text"
+              autoFocus
+              value={taskName}
+              onChange={(e) => {
+                setTaskName(e.target.value);
+                setError(null);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="fix-auth"
+              maxLength={MAX_TASK_NAME_LENGTH}
+              className="w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {taskName.length > 0 && !TASK_NAME_REGEX.test(taskName) && (
+              <p className="mt-1 text-[11px] text-danger">
+                Letters, numbers, hyphens, underscores only
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error}
+            </p>
+          )}
+
+          {!sessionName && (
+            <p className="text-xs text-warning">
+              No active tmux session. Open the terminal first.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={!isValid || isLoading || !sessionName}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              "Start"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

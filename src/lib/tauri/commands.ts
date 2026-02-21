@@ -404,3 +404,87 @@ export async function listAgentActivities(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Agent worktree commands
+// ---------------------------------------------------------------------------
+
+export interface WorktreeTaskResult {
+  windowName: string;
+  worktreeName: string;
+}
+
+export interface RestoreResult {
+  restoredCount: number;
+  worktreeNames: string[];
+}
+
+export interface RemoveWorktreeResult {
+  windowClosed: boolean;
+  branchDeleted: boolean;
+}
+
+export async function startWorktreeTask(
+  sessionName: string,
+  taskName: string,
+  projectPath: string,
+): Promise<WorktreeTaskResult> {
+  return invoke<WorktreeTaskResult>("start_worktree_task", {
+    sessionName,
+    taskName,
+    projectPath,
+  });
+}
+
+export async function restoreWorktreeWindows(
+  sessionName: string,
+  projectPath: string,
+): Promise<RestoreResult> {
+  return invoke<RestoreResult>("restore_worktree_windows", {
+    sessionName,
+    projectPath,
+  });
+}
+
+export async function removeAgentWorktree(
+  repoPath: string,
+  worktreePath: string,
+  sessionName: string | null,
+  branchName: string | null,
+  force: boolean,
+): Promise<RemoveWorktreeResult> {
+  return invoke<RemoveWorktreeResult>("remove_agent_worktree", {
+    repoPath,
+    worktreePath,
+    sessionName,
+    branchName,
+    force,
+  });
+}
+
+export async function pushGitBranch(
+  repoPath: string,
+  branchName: string,
+  remote?: string,
+): Promise<void> {
+  return invoke<void>("push_git_branch", { repoPath, branchName, remote });
+}
+
+export async function selectTmuxWindow(
+  sessionName: string,
+  windowTarget: string,
+): Promise<void> {
+  return invoke<void>("select_tmux_window", { sessionName, windowTarget });
+}
+
+export async function sendKeysToTmuxWindow(
+  sessionName: string,
+  windowName: string,
+  keys: string,
+): Promise<void> {
+  return invoke<void>("send_keys_to_tmux_window", {
+    sessionName,
+    windowName,
+    keys,
+  });
+}
+

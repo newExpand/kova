@@ -543,6 +543,138 @@ pub fn close_window(session_name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Create a new named window with a specific working directory.
+pub fn create_window_named(
+    session_name: &str,
+    window_name: &str,
+    cwd: &str,
+) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    validate_session_name(window_name)?; // same charset rules
+
+    let target = format!("{}:", session_name);
+    let output = tmux_cmd()
+        .args(["new-window", "-t", &target, "-n", window_name, "-c", cwd])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux new-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux new-window (named) failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!(
+        "Created named window '{}' in session '{}' (cwd={})",
+        window_name, session_name, cwd
+    );
+    Ok(())
+}
+
+/// Select (switch to) a specific window by name or index.
+pub fn select_window(session_name: &str, window_target: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+
+    let target = format!("{}:{}", session_name, window_target);
+    let output = tmux_cmd()
+        .args(["select-window", "-t", &target])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux select-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux select-window failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!(
+        "Selected window '{}' in session '{}'",
+        window_target, session_name
+    );
+    Ok(())
+}
+
+/// Send keys to a specific named window (not the active one).
+pub fn send_keys_to_window(
+    session_name: &str,
+    window_name: &str,
+    keys: &str,
+) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    validate_session_name(window_name)?;
+    if keys.is_empty() {
+        return Err(AppError::InvalidInput("Keys cannot be empty".into()));
+    }
+
+    let target = format!("{}:{}", session_name, window_name);
+    let output = tmux_cmd()
+        .args(["send-keys", "-t", &target, keys, "Enter"])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux send-keys: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux send-keys (window) failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!(
+        "Sent keys to window '{}' in session '{}'",
+        window_name, session_name
+    );
+    Ok(())
+}
+
+/// Close a specific named window. Silently succeeds if window not found.
+pub fn close_window_by_name(session_name: &str, window_name: &str) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    validate_session_name(window_name)?;
+
+    let target = format!("{}:{}", session_name, window_name);
+    let output = tmux_cmd()
+        .args(["kill-window", "-t", &target])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux kill-window: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find window") {
+            return Ok(());
+        }
+        if stderr.contains("no server running") {
+            warn!(
+                "tmux server not running during window close for '{}:{}'",
+                session_name, window_name
+            );
+            return Ok(());
+        }
+        return Err(AppError::TmuxCommand(format!(
+            "tmux kill-window (named) failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!(
+        "Closed window '{}' in session '{}'",
+        window_name, session_name
+    );
+    Ok(())
+}
+
 /// Switch to the next window in the given session (wraps around).
 pub fn next_window(session_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;

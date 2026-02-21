@@ -27,3 +27,5 @@ export { useGitPolling } from "./hooks/useGitPolling";
 
 // Components
 export { ProjectTabSwitcher } from "./components/ProjectTabSwitcher";
+export { NewAgentTaskDialog } from "./components/NewAgentTaskDialog";
+export { WorktreeContextMenu } from "./components/WorktreeContextMenu";

@@ -12,12 +12,14 @@ import type { PaneAction } from "../types";
 interface WindowToolbarProps {
   sessionName: string;
   disabled: boolean;
+  isActive: boolean;
   onRequestAction: (action: PaneAction) => void;
 }
 
 export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
+  isActive,
   onRequestAction,
 }: WindowToolbarProps) {
   const [windows, setWindows] = useState<TmuxWindow[]>([]);
@@ -42,11 +44,12 @@ export const WindowToolbar = memo(function WindowToolbar({
     fetchWindows();
   }, [fetchWindows]);
 
-  // Polling every 3s
+  // Polling every 3s — only when active (visible tab)
   useEffect(() => {
+    if (!isActive) return;
     const interval = setInterval(fetchWindows, 3000);
     return () => clearInterval(interval);
-  }, [fetchWindows]);
+  }, [fetchWindows, isActive]);
 
   const handleNew = useCallback(
     () => onRequestAction("new-window"),

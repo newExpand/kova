@@ -314,6 +314,37 @@ pub fn get_graph_data(repo_path: &Path, limit: u32) -> Result<GitGraphData, AppE
     })
 }
 
+// ---------------------------------------------------------------------------
+// Write operations
+// ---------------------------------------------------------------------------
+
+/// Remove a git worktree.
+pub fn remove_worktree(repo_path: &Path, worktree_path: &str, force: bool) -> Result<(), AppError> {
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(worktree_path);
+    run_git(repo_path, &args)?;
+    info!("Removed worktree: {}", worktree_path);
+    Ok(())
+}
+
+/// Push a branch to a remote.
+pub fn push_branch(repo_path: &Path, branch_name: &str, remote: &str) -> Result<(), AppError> {
+    run_git(repo_path, &["push", remote, branch_name])?;
+    info!("Pushed branch '{}' to '{}'", branch_name, remote);
+    Ok(())
+}
+
+/// Delete a local branch.
+pub fn delete_branch(repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError> {
+    let flag = if force { "-D" } else { "-d" };
+    run_git(repo_path, &["branch", flag, branch_name])?;
+    info!("Deleted branch: {}", branch_name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

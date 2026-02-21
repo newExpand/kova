@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod agent_activity;
 pub mod event_server;
 pub mod git;

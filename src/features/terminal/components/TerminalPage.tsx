@@ -14,6 +14,7 @@ import {
   splitTmuxPaneHorizontal,
   createTmuxWindow,
   sendTmuxKeys,
+  restoreWorktreeWindows,
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
 
@@ -99,6 +100,22 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
         ? "claude --dangerously-skip-permissions"
         : undefined,
     });
+
+    // Restore worktree windows for existing .claude/worktrees/* entries
+    if (isNewSession && project?.path) {
+      setTimeout(async () => {
+        try {
+          const result = await restoreWorktreeWindows(name, project.path);
+          if (result.restoredCount > 0) {
+            console.log(
+              `Restored ${result.restoredCount} worktree windows: ${result.worktreeNames.join(", ")}`,
+            );
+          }
+        } catch (e) {
+          console.warn("Failed to restore worktree windows:", e);
+        }
+      }, 800);
+    }
   }, [
     isAvailable,
     isLoading,
@@ -106,6 +123,7 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     projectSessions.length,
     activeConfig,
     project?.name,
+    project?.path,
     projectId,
     handleConnect,
     projectSessions,
@@ -270,6 +288,7 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
           <WindowToolbar
             sessionName={activeConfig.sessionName}
             disabled={status !== "connected"}
+            isActive={isActive}
             onRequestAction={handleRequestAction}
           />
           <PaneToolbar

@@ -1,8 +1,11 @@
+import { useState, useCallback } from "react";
 import type { GitWorktree, GitStatus } from "../../../lib/tauri/commands";
-import { GitBranch, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { motion } from "motion/react";
+import { selectTmuxWindow } from "../../../lib/tauri/commands";
+import { GitBranch, PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AgentStatusBadge } from "./AgentStatusBadge";
+import { NewAgentTaskDialog } from "./NewAgentTaskDialog";
+import { WorktreeContextMenu } from "./WorktreeContextMenu";
 import {
   useAgentActivityStore,
   normalizePathKey,
@@ -14,6 +17,8 @@ interface WorktreePanelProps {
   collapsed: boolean;
   onToggle: () => void;
   projectId: string;
+  projectPath: string;
+  sessionName: string | null;
   hoveredBranch?: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
@@ -25,12 +30,42 @@ export function WorktreePanel({
   collapsed,
   onToggle,
   projectId,
+  projectPath,
+  sessionName,
   hoveredBranch,
   onHoverBranch,
   onLeaveBranch,
 }: WorktreePanelProps) {
   const navigate = useNavigate();
-  const handleNavigate = () => navigate(`/projects/${projectId}/terminal`);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const handleNavigate = useCallback(
+    (worktree?: GitWorktree) => {
+      // Optimistic navigation: navigate immediately
+      navigate(`/projects/${projectId}/terminal`);
+
+      // Background: select the matching tmux window (fire-and-forget)
+      if (sessionName && worktree) {
+        const isClaudeWt = worktree.path.includes(".claude/worktrees/");
+        if (isClaudeWt) {
+          const taskName = worktree.path
+            .split(".claude/worktrees/")
+            .pop()
+            ?.replace(/\/$/, "");
+          if (taskName) {
+            selectTmuxWindow(sessionName, taskName).catch((e) => {
+              console.warn(`Failed to select tmux window '${taskName}':`, e);
+            });
+          }
+        } else if (worktree.isMain) {
+          selectTmuxWindow(sessionName, "0").catch((e) => {
+            console.warn("Failed to select main tmux window:", e);
+          });
+        }
+      }
+    },
+    [navigate, projectId, sessionName],
+  );
 
   if (collapsed) {
     return (
@@ -46,7 +81,7 @@ export function WorktreePanel({
         {/* Cross-highlight intentionally omitted in collapsed mode — dots are too small for hover interaction */}
         <div className="mt-3 flex flex-col items-center gap-2">
           {worktrees.map((wt) => (
-            <WorktreeCollapsedDot key={wt.path} worktree={wt} onNavigate={handleNavigate} />
+            <WorktreeCollapsedDot key={wt.path} worktree={wt} onNavigate={() => handleNavigate(wt)} />
           ))}
         </div>
       </div>
@@ -60,14 +95,24 @@ export function WorktreePanel({
         <span className="text-xs font-medium text-text-secondary">
           Worktrees
         </span>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-md p-1 text-text-muted hover:bg-white/[0.06] hover:text-text-secondary transition-colors"
-          title="Collapse panel"
-        >
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setDialogOpen(true)}
+            className="rounded-md p-1 text-text-muted hover:bg-white/[0.06] hover:text-text-secondary transition-colors"
+            title="New agent worktree"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-md p-1 text-text-muted hover:bg-white/[0.06] hover:text-text-secondary transition-colors"
+            title="Collapse panel"
+          >
+            <PanelRightClose className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Worktree list */}
@@ -79,18 +124,35 @@ export function WorktreePanel({
           </div>
         ) : (
           worktrees.map((wt) => (
-            <WorktreeCard
+            <WorktreeContextMenu
               key={wt.path}
               worktree={wt}
-              isRootDirty={wt.isMain && (status?.isDirty ?? false)}
-              onNavigate={handleNavigate}
-              isHighlighted={hoveredBranch === wt.branch}
-              onHoverBranch={onHoverBranch}
-              onLeaveBranch={onLeaveBranch}
-            />
+              projectId={projectId}
+              projectPath={projectPath}
+              sessionName={sessionName}
+            >
+              {({ onContextMenu }) => (
+                <WorktreeCard
+                  worktree={wt}
+                  isRootDirty={wt.isMain && (status?.isDirty ?? false)}
+                  onNavigate={() => handleNavigate(wt)}
+                  onContextMenu={onContextMenu}
+                  isHighlighted={hoveredBranch === wt.branch}
+                  onHoverBranch={onHoverBranch}
+                  onLeaveBranch={onLeaveBranch}
+                />
+              )}
+            </WorktreeContextMenu>
           ))
         )}
       </div>
+
+      <NewAgentTaskDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        sessionName={sessionName}
+        projectPath={projectPath}
+      />
     </div>
   );
 }
@@ -124,6 +186,7 @@ function WorktreeCard({
   worktree,
   isRootDirty,
   onNavigate,
+  onContextMenu,
   isHighlighted,
   onHoverBranch,
   onLeaveBranch,
@@ -131,6 +194,7 @@ function WorktreeCard({
   worktree: GitWorktree;
   isRootDirty: boolean;
   onNavigate: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   isHighlighted?: boolean;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
@@ -155,19 +219,18 @@ function WorktreeCard({
   }
 
   return (
-    <motion.button
+    <button
       type="button"
       onClick={onNavigate}
+      onContextMenu={onContextMenu}
       onMouseEnter={() => worktree.branch && onHoverBranch?.(worktree.branch)}
       onMouseLeave={() => onLeaveBranch?.()}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      animate={isHighlighted ? { scale: 1.02 } : { scale: 1 }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
       aria-label={`Open terminal for ${branchLabel}${statusLabel ? ` (${statusLabel})` : ""}`}
-      className={`w-full cursor-pointer rounded-lg border bg-white/[0.02] p-2.5 space-y-1.5 text-left transition-colors duration-150 ease-out
+      className={`w-full cursor-pointer rounded-lg border bg-white/[0.02] p-2.5 space-y-1.5 text-left
+        transition-all duration-150 ease-out
+        hover:scale-[1.02] active:scale-[0.98]
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1a2e]
-        ${borderClasses}`}
+        ${isHighlighted ? "scale-[1.02] " : ""}${borderClasses}`}
       style={
         isAgentActive
           ? ({ "--breath-color": "oklch(0.65 0.18 150 / 0.4)" } as React.CSSProperties)
@@ -218,6 +281,6 @@ function WorktreeCard({
           isWaitingForInput={session?.isWaitingForInput}
         />
       </div>
-    </motion.button>
+    </button>
   );
 }

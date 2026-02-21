@@ -242,6 +242,13 @@ pub fn run() {
             // Git commands
             commands::git::get_git_graph,
             commands::git::get_git_status,
+            // Agent worktree commands
+            commands::agent::start_worktree_task,
+            commands::agent::restore_worktree_windows,
+            commands::agent::remove_agent_worktree,
+            commands::agent::push_git_branch,
+            commands::agent::select_tmux_window,
+            commands::agent::send_keys_to_tmux_window,
             // Agent activity commands
             commands::agent_activity::list_agent_activities,
             // Environment commands
