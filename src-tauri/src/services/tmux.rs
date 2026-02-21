@@ -245,6 +245,12 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
         "enable set-clipboard", name,
     )?;
 
+    // Enable true color (24-bit RGB) passthrough: tmux 3.2+
+    run_tmux_nonfatal(
+        &["set-option", "-as", "terminal-features", ",xterm-256color:RGB"],
+        "set terminal-features RGB", name,
+    )?;
+
     // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
     // NOTE: These copy-mode bindings are also configured in
     // src/features/terminal/hooks/useTerminal.ts. Keep both in sync.

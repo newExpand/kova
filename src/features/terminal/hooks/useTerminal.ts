@@ -349,6 +349,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           "-x", String(cols), "-y", String(rows),
           ";", "set-option", "mouse", "on",
           ";", "set-option", "set-clipboard", "on",
+          // Enable true color (24-bit RGB) passthrough: tmux 3.2+
+          ";", "set-option", "-as", "terminal-features", ",xterm-256color:RGB",
           // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
           // NOTE: These copy-mode bindings are also configured in
           // src-tauri/src/services/tmux.rs create_session(). Keep both in sync.
