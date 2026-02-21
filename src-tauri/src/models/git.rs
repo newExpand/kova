@@ -27,6 +27,44 @@ pub struct GitCommit {
     pub date: String,
     pub parents: Vec<String>,
     pub refs: Vec<GitRef>,
+    pub is_agent_commit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffStats {
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDiff {
+    pub path: String,
+    pub status: FileStatus,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub patch: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDetail {
+    pub hash: String,
+    pub full_message: String,
+    pub is_agent_commit: bool,
+    pub stats: DiffStats,
+    pub files: Vec<FileDiff>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
