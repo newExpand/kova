@@ -133,6 +133,7 @@ export interface GitWorktree {
   commitHash: string;
   isBare: boolean;
   isMain: boolean;
+  status: GitStatus | null;
 }
 
 export interface GitStatus {
@@ -149,7 +150,7 @@ export interface GitGraphData {
   status: GitStatus;
 }
 
-export type FileStatus = "added" | "modified" | "deleted" | "renamed";
+export type FileStatus = "added" | "modified" | "deleted" | "renamed" | "untracked";
 
 export interface DiffStats {
   filesChanged: number;
@@ -171,6 +172,14 @@ export interface CommitDetail {
   isAgentCommit: boolean;
   stats: DiffStats;
   files: FileDiff[];
+}
+
+export interface WorkingChanges {
+  worktreePath: string;
+  staged: FileDiff[];
+  unstaged: FileDiff[];
+  untracked: FileDiff[];
+  stats: DiffStats;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +418,12 @@ export async function getCommitDetail(
   hash: string,
 ): Promise<CommitDetail> {
   return invoke<CommitDetail>("get_commit_detail", { path, hash });
+}
+
+export async function getWorkingChanges(
+  worktreePath: string,
+): Promise<WorkingChanges> {
+  return invoke<WorkingChanges>("get_working_changes", { worktreePath });
 }
 
 // ---------------------------------------------------------------------------

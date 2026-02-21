@@ -3,6 +3,7 @@ import { useGitPolling } from "../hooks/useGitPolling";
 import { useGitGraph } from "../hooks/useGitGraph";
 import { BranchGraph } from "./BranchGraph";
 import { CommitDetailPanel } from "./CommitDetailPanel";
+import { WorkingChangesPanel } from "./WorkingChangesPanel";
 import { WorktreePanel } from "./WorktreePanel";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
@@ -25,6 +26,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const error = useGitStore((s) => s.getProjectError(projectId));
   const selectedCommitHash = useGitStore((s) => s.selectedCommitHash);
   const selectCommit = useGitStore((s) => s.selectCommit);
+  const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
+  const selectWorktree = useGitStore((s) => s.selectWorktree);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
@@ -119,12 +122,16 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
             onClose={() => selectCommit(null)}
           />
         )}
+        {selectedWorktreePath && (
+          <WorkingChangesPanel
+            onClose={() => selectWorktree(null)}
+          />
+        )}
       </div>
 
       {/* Worktree panel */}
       <WorktreePanel
         worktrees={graphData?.worktrees ?? []}
-        status={graphData?.status}
         collapsed={panelCollapsed}
         onToggle={togglePanel}
         projectId={projectId}
@@ -133,6 +140,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         hoveredBranch={hoveredBranch}
         onHoverBranch={handleHoverBranch}
         onLeaveBranch={handleLeaveBranch}
+        onSelectWorktreeChanges={selectWorktree}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { CommitDetail, GitGraphData, GitStatus } from "../../../lib/tauri/commands";
-import { getCommitDetail, getGitGraph, getGitStatus } from "../../../lib/tauri/commands";
+import type { CommitDetail, GitGraphData, GitStatus, WorkingChanges } from "../../../lib/tauri/commands";
+import { getCommitDetail, getGitGraph, getGitStatus, getWorkingChanges } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
 // State
@@ -14,6 +14,11 @@ interface GitState {
   commitDetail: CommitDetail | null;
   isDetailLoading: boolean;
   detailError: string | null;
+  // Working changes (mutual exclusive with commit detail)
+  selectedWorktreePath: string | null;
+  workingChanges: WorkingChanges | null;
+  isWorkingChangesLoading: boolean;
+  workingChangesError: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,6 +35,11 @@ interface GitActions {
   selectCommit: (hash: string | null) => void;
   fetchCommitDetail: (projectPath: string, hash: string) => Promise<void>;
   clearCommitDetail: () => void;
+  // Working changes
+  selectWorktree: (worktreePath: string | null) => void;
+  fetchWorkingChanges: (worktreePath: string) => Promise<void>;
+  clearWorkingChanges: () => void;
+  // Computed
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
   getProjectError: (projectId: string) => string | null;
@@ -48,6 +58,10 @@ const initialState: GitState = {
   commitDetail: null,
   isDetailLoading: false,
   detailError: null,
+  selectedWorktreePath: null,
+  workingChanges: null,
+  isWorkingChangesLoading: false,
+  workingChangesError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -97,7 +111,15 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
     if (hash === null) {
       set({ selectedCommitHash: null, commitDetail: null, isDetailLoading: false, detailError: null });
     } else {
-      set({ selectedCommitHash: hash, detailError: null });
+      set({
+        selectedCommitHash: hash,
+        detailError: null,
+        // Mutual exclusion: clear working changes
+        selectedWorktreePath: null,
+        workingChanges: null,
+        isWorkingChangesLoading: false,
+        workingChangesError: null,
+      });
     }
   },
 
@@ -118,6 +140,51 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   },
 
   clearCommitDetail: () => set({ commitDetail: null, isDetailLoading: false, detailError: null }),
+
+  // Working changes actions
+  selectWorktree: (worktreePath) => {
+    if (worktreePath === null) {
+      set({
+        selectedWorktreePath: null,
+        workingChanges: null,
+        isWorkingChangesLoading: false,
+        workingChangesError: null,
+      });
+    } else {
+      set({
+        selectedWorktreePath: worktreePath,
+        workingChanges: null,
+        workingChangesError: null,
+        // Mutual exclusion: clear commit detail
+        selectedCommitHash: null,
+        commitDetail: null,
+        isDetailLoading: false,
+        detailError: null,
+      });
+    }
+  },
+
+  fetchWorkingChanges: async (worktreePath) => {
+    set({ isWorkingChangesLoading: true, workingChangesError: null });
+    try {
+      const changes = await getWorkingChanges(worktreePath);
+      // Guard against stale response
+      if (get().selectedWorktreePath !== worktreePath) return;
+      set({ workingChanges: changes, isWorkingChangesLoading: false });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("[gitStore] fetchWorkingChanges failed:", e);
+      if (get().selectedWorktreePath !== worktreePath) return;
+      set({ workingChanges: null, isWorkingChangesLoading: false, workingChangesError: message });
+    }
+  },
+
+  clearWorkingChanges: () => set({
+    selectedWorktreePath: null,
+    workingChanges: null,
+    isWorkingChangesLoading: false,
+    workingChangesError: null,
+  }),
 
   reset: () => set(initialState),
 }));

@@ -37,6 +37,7 @@ pub enum FileStatus {
     Modified,
     Deleted,
     Renamed,
+    Untracked,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +86,7 @@ pub struct GitWorktree {
     pub commit_hash: String,
     pub is_bare: bool,
     pub is_main: bool,
+    pub status: Option<GitStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +96,37 @@ pub struct GitStatus {
     pub staged_count: u32,
     pub unstaged_count: u32,
     pub untracked_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingChanges {
+    pub worktree_path: String,
+    pub staged: Vec<FileDiff>,
+    pub unstaged: Vec<FileDiff>,
+    pub untracked: Vec<FileDiff>,
+    pub stats: DiffStats,
+}
+
+impl WorkingChanges {
+    /// Construct with auto-computed stats from the three file lists.
+    pub fn new(
+        worktree_path: String,
+        staged: Vec<FileDiff>,
+        unstaged: Vec<FileDiff>,
+        untracked: Vec<FileDiff>,
+    ) -> Self {
+        let total = (staged.len() + unstaged.len() + untracked.len()) as u32;
+        let ins: u32 = staged.iter().chain(unstaged.iter()).chain(untracked.iter()).map(|f| f.insertions).sum();
+        let del: u32 = staged.iter().chain(unstaged.iter()).chain(untracked.iter()).map(|f| f.deletions).sum();
+        Self {
+            worktree_path,
+            staged,
+            unstaged,
+            untracked,
+            stats: DiffStats { files_changed: total, insertions: ins, deletions: del },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

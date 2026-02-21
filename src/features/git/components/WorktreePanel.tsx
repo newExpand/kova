@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { GitWorktree, GitStatus } from "../../../lib/tauri/commands";
+import type { GitWorktree } from "../../../lib/tauri/commands";
 import { selectTmuxWindow } from "../../../lib/tauri/commands";
 import { GitBranch, PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -13,7 +13,6 @@ import {
 
 interface WorktreePanelProps {
   worktrees: GitWorktree[];
-  status: GitStatus | undefined;
   collapsed: boolean;
   onToggle: () => void;
   projectId: string;
@@ -22,11 +21,11 @@ interface WorktreePanelProps {
   hoveredBranch?: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
+  onSelectWorktreeChanges?: (worktreePath: string) => void;
 }
 
 export function WorktreePanel({
   worktrees,
-  status,
   collapsed,
   onToggle,
   projectId,
@@ -35,6 +34,7 @@ export function WorktreePanel({
   hoveredBranch,
   onHoverBranch,
   onLeaveBranch,
+  onSelectWorktreeChanges,
 }: WorktreePanelProps) {
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -134,12 +134,12 @@ export function WorktreePanel({
               {({ onContextMenu }) => (
                 <WorktreeCard
                   worktree={wt}
-                  isRootDirty={wt.isMain && (status?.isDirty ?? false)}
                   onNavigate={() => handleNavigate(wt)}
                   onContextMenu={onContextMenu}
                   isHighlighted={hoveredBranch === wt.branch}
                   onHoverBranch={onHoverBranch}
                   onLeaveBranch={onLeaveBranch}
+                  onSelectWorktreeChanges={onSelectWorktreeChanges}
                 />
               )}
             </WorktreeContextMenu>
@@ -184,29 +184,32 @@ function WorktreeCollapsedDot({ worktree, onNavigate }: { worktree: GitWorktree;
 
 function WorktreeCard({
   worktree,
-  isRootDirty,
   onNavigate,
   onContextMenu,
   isHighlighted,
   onHoverBranch,
   onLeaveBranch,
+  onSelectWorktreeChanges,
 }: {
   worktree: GitWorktree;
-  isRootDirty: boolean;
   onNavigate: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   isHighlighted?: boolean;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
+  onSelectWorktreeChanges?: (worktreePath: string) => void;
 }) {
   const isClaudeWorktree = worktree.path.includes(".claude/worktrees/");
   const session = useAgentActivityStore(
     (s) => s.sessions[normalizePathKey(worktree.path)],
   );
   const isAgentActive = session?.status === "active";
+  // Per-worktree dirty state (null = status unknown, don't guess)
+  const isDirty = worktree.status?.isDirty ?? false;
+  const isClean = worktree.status ? !worktree.status.isDirty : false;
   let statusLabel = "";
-  if (isRootDirty) statusLabel = "dirty";
-  else if (worktree.isMain) statusLabel = "clean";
+  if (isDirty) statusLabel = "dirty";
+  else if (isClean) statusLabel = "clean";
   const branchLabel = worktree.branch ?? "detached HEAD";
 
   let borderClasses: string;
@@ -257,16 +260,37 @@ function WorktreeCard({
       {/* Details row */}
       <div className="flex items-center gap-2 text-[10px] text-text-muted">
         <span className="font-mono">{worktree.commitHash.slice(0, 7)}</span>
-        {isRootDirty && (
-          <span className="rounded bg-warning/20 px-1 py-0.5 text-warning">
-            dirty
+        {isDirty ? (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectWorktreeChanges?.(worktree.path);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                e.preventDefault();
+                onSelectWorktreeChanges?.(worktree.path);
+              }
+            }}
+            title={worktree.status
+              ? `${worktree.status.stagedCount} staged, ${worktree.status.unstagedCount} unstaged, ${worktree.status.untrackedCount} untracked — click to view`
+              : "Has uncommitted changes — click to view"
+            }
+            className="rounded bg-warning/20 px-1 py-0.5 text-warning cursor-pointer hover:bg-warning/30 transition-colors"
+          >
+            {worktree.status
+              ? `dirty (${worktree.status.stagedCount + worktree.status.unstagedCount + worktree.status.untrackedCount})`
+              : "dirty"
+            }
           </span>
-        )}
-        {!isRootDirty && worktree.isMain && (
+        ) : isClean ? (
           <span className="rounded bg-success/20 px-1 py-0.5 text-success">
             clean
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Agent status — always visible */}

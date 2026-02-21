@@ -10,6 +10,7 @@ export type {
   DiffStats,
   FileDiff,
   FileStatus,
+  WorkingChanges,
 } from "../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ export type {
   DiffStats,
   FileDiff,
   FileStatus,
+  WorkingChanges,
   GraphNode,
   GraphEdge,
   GraphLayout,

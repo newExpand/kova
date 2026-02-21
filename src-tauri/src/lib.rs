@@ -243,6 +243,7 @@ pub fn run() {
             commands::git::get_git_graph,
             commands::git::get_git_status,
             commands::git::get_commit_detail,
+            commands::git::get_working_changes,
             // Agent worktree commands
             commands::agent::start_worktree_task,
             commands::agent::restore_worktree_windows,

@@ -308,6 +308,7 @@ pub fn kill_session(name: &str) -> Result<(), AppError> {
         if stderr.contains("can't find session")
             || stderr.contains("no server running")
             || stderr.contains("session not found")
+            || stderr.contains("error connecting")
         {
             info!("tmux session '{}' already terminated", name);
             return Ok(());

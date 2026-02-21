@@ -234,6 +234,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
                     commit_hash: current_hash.clone(),
                     is_bare,
                     is_main: is_first,
+                    status: None,
                 });
                 is_first = false;
             }
@@ -269,6 +270,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
             commit_hash: current_hash,
             is_bare,
             is_main: is_first,
+            status: None,
         });
     }
 
@@ -314,11 +316,26 @@ pub fn get_status(repo_path: &Path) -> Result<GitStatus, AppError> {
 }
 
 /// Combined query that returns all git data in a single IPC call.
+/// Each worktree is enriched with its own GitStatus for per-worktree dirty state.
 pub fn get_graph_data(repo_path: &Path, limit: u32) -> Result<GitGraphData, AppError> {
     let commits = get_log(repo_path, limit)?;
     let branches = get_branches(repo_path)?;
-    let worktrees = get_worktrees(repo_path)?;
+    let mut worktrees = get_worktrees(repo_path)?;
     let status = get_status(repo_path)?;
+
+    // Enrich each worktree with its own status
+    for wt in &mut worktrees {
+        if wt.is_bare {
+            continue;
+        }
+        let wt_path = Path::new(&wt.path);
+        match get_status(wt_path) {
+            Ok(s) => wt.status = Some(s),
+            Err(e) => {
+                warn!("Failed to get status for worktree {}: {}", wt.path, e);
+            }
+        }
+    }
 
     Ok(GitGraphData {
         commits,
@@ -357,6 +374,120 @@ pub fn delete_branch(repo_path: &Path, branch_name: &str, force: bool) -> Result
     run_git(repo_path, &["branch", flag, branch_name])?;
     info!("Deleted branch: {}", branch_name);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Working tree changes
+// ---------------------------------------------------------------------------
+
+/// Get uncommitted changes for a specific worktree.
+/// Returns staged, unstaged, and untracked file diffs.
+pub fn get_working_changes(worktree_path: &Path) -> Result<WorkingChanges, AppError> {
+    // 1. Staged changes (index vs HEAD)
+    let staged_raw = run_git(worktree_path, &["diff", "--cached"])?;
+    let staged = parse_unified_diff(&staged_raw);
+
+    // 2. Unstaged changes (working tree vs index)
+    let unstaged_raw = run_git(worktree_path, &["diff"])?;
+    let unstaged = parse_unified_diff(&unstaged_raw);
+
+    // 3. Untracked files — read content to build synthetic diff
+    let untracked_raw = run_git(
+        worktree_path,
+        &["ls-files", "--others", "--exclude-standard"],
+    )?;
+    const MAX_UNTRACKED_FILE_SIZE: u64 = 1_048_576; // 1MB
+    let canonical_root = worktree_path.canonicalize().unwrap_or_else(|_| worktree_path.to_path_buf());
+
+    let untracked: Vec<FileDiff> = untracked_raw
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|rel_path| {
+            let full_path = worktree_path.join(rel_path);
+
+            // Path traversal guard: ensure resolved path stays within worktree
+            if let Ok(canonical) = full_path.canonicalize() {
+                if !canonical.starts_with(&canonical_root) {
+                    warn!("Skipping suspicious path outside worktree: {}", rel_path);
+                    return FileDiff {
+                        path: rel_path.to_string(),
+                        status: FileStatus::Untracked,
+                        insertions: 0,
+                        deletions: 0,
+                        patch: "Path outside worktree".to_string(),
+                    };
+                }
+            }
+
+            // Size guard: skip files larger than 1MB
+            match std::fs::metadata(&full_path) {
+                Ok(m) if m.len() > MAX_UNTRACKED_FILE_SIZE => {
+                    return FileDiff {
+                        path: rel_path.to_string(),
+                        status: FileStatus::Untracked,
+                        insertions: 0,
+                        deletions: 0,
+                        patch: format!("File too large to display ({:.1} KB)", m.len() as f64 / 1024.0),
+                    };
+                }
+                _ => {}
+            }
+
+            match std::fs::read(&full_path) {
+                Ok(bytes) => {
+                    // Detect binary: NUL byte in first 8KB
+                    let check_len = bytes.len().min(8192);
+                    if bytes[..check_len].contains(&0) {
+                        return FileDiff {
+                            path: rel_path.to_string(),
+                            status: FileStatus::Untracked,
+                            insertions: 0,
+                            deletions: 0,
+                            patch: "Binary file".to_string(),
+                        };
+                    }
+                    let content = String::from_utf8_lossy(&bytes);
+                    let lines: Vec<&str> = content.lines().collect();
+                    let line_count = lines.len() as u32;
+                    // Build synthetic unified diff patch
+                    let mut patch = format!(
+                        "diff --git a/{p} b/{p}\nnew file mode 100644\n--- /dev/null\n+++ b/{p}\n@@ -0,0 +1,{n} @@\n",
+                        p = rel_path,
+                        n = line_count
+                    );
+                    for line in &lines {
+                        patch.push('+');
+                        patch.push_str(line);
+                        patch.push('\n');
+                    }
+                    FileDiff {
+                        path: rel_path.to_string(),
+                        status: FileStatus::Untracked,
+                        insertions: line_count,
+                        deletions: 0,
+                        patch,
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read untracked file {}: {}", rel_path, e);
+                    FileDiff {
+                        path: rel_path.to_string(),
+                        status: FileStatus::Untracked,
+                        insertions: 0,
+                        deletions: 0,
+                        patch: format!("Failed to read: {}", e),
+                    }
+                }
+            }
+        })
+        .collect();
+
+    Ok(WorkingChanges::new(
+        worktree_path.to_string_lossy().to_string(),
+        staged,
+        unstaged,
+        untracked,
+    ))
 }
 
 // ---------------------------------------------------------------------------
