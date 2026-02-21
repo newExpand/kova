@@ -102,16 +102,16 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
               onMouseEnter={() => branch && onHoverBranch?.(branch)}
               onMouseLeave={() => onLeaveBranch?.()}
             >
-              <span className="shrink-0 font-mono text-[10px] text-text-muted">
+              <span className="shrink-0 font-mono text-[11px] text-text-muted">
                 {node.commit.shortHash}
               </span>
-              <span className="truncate text-xs text-text-secondary">
+              <span className="truncate text-sm text-text-secondary">
                 {node.commit.message}
               </span>
               {node.commit.isAgentCommit && (
                 <span
                   className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
-                    text-[9px] font-bold leading-none
+                    text-[10px] font-bold leading-none
                     bg-purple-500/10 text-purple-300 border border-purple-400/20
                     shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
                   aria-label="AI Agent commit"
@@ -124,7 +124,7 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
               {node.commit.refs.map((ref) => (
                 <span
                   key={ref.name}
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${
                     ref.refType === "head"
                       ? "bg-primary/20 text-primary border border-primary/30"
                       : ref.refType === "tag"
@@ -137,7 +137,7 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
                   {ref.name}
                 </span>
               ))}
-              <span className="ml-auto shrink-0 text-[10px] text-text-muted">
+              <span className="ml-auto shrink-0 text-[11px] text-text-muted">
                 {formatRelativeDate(node.commit.date)}
               </span>
             </button>

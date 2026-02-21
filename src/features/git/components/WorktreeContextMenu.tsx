@@ -172,11 +172,11 @@ export function WorktreeContextMenu({
             <DialogTitle>Delete Worktree</DialogTitle>
             <DialogDescription>
               This will remove the worktree at{" "}
-              <code className="rounded bg-white/[0.06] px-1 text-[11px]">
+              <code className="rounded bg-white/[0.06] px-1 text-xs">
                 {taskName ?? worktree.path}
               </code>{" "}
               and delete the branch{" "}
-              <code className="rounded bg-white/[0.06] px-1 text-[11px]">
+              <code className="rounded bg-white/[0.06] px-1 text-xs">
                 {worktree.branch ?? "unknown"}
               </code>
               . This cannot be undone.
@@ -219,7 +219,7 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
         danger
           ? "text-danger hover:bg-danger/10"
           : "text-text-secondary hover:bg-white/[0.06] hover:text-text"

@@ -25,7 +25,7 @@ export function AgentStatusBadge({
       {/* Status line: dot + action description */}
       <div className="flex items-center gap-1.5">
         <StatusDot status={status} isWaiting={isWaitingForInput} />
-        <span className="text-[10px] text-text-muted truncate">
+        <span className="text-[11px] text-text-muted truncate">
           {isWaitingForInput && "Waiting..."}
           {!isWaitingForInput && status === "loading" && "Thinking..."}
           {!isWaitingForInput && status === "active" && (lastMessage ?? "Working...")}
@@ -38,26 +38,26 @@ export function AgentStatusBadge({
       {/* Counts line: icons + numbers */}
       {(toolUseCount ?? 0) > 0 && (
         <div className="flex items-center gap-1 pl-3.5">
-          <span className="flex items-center gap-0.5 text-[9px] text-text-muted" title="Tool uses">
+          <span className="flex items-center gap-0.5 text-[10px] text-text-muted" title="Tool uses">
             <Zap className="h-2.5 w-2.5" />
             {toolUseCount}
           </span>
           {(fileEditCount ?? 0) > 0 && (
-            <span className="flex items-center gap-0.5 text-[9px] text-text-muted" title="File edits">
+            <span className="flex items-center gap-0.5 text-[10px] text-text-muted" title="File edits">
               <Pencil className="h-2.5 w-2.5" />
               {fileEditCount}
             </span>
           )}
           {(commitCount ?? 0) > 0 && (
-            <span className="flex items-center gap-0.5 text-[9px] text-text-muted" title="Commits">
+            <span className="flex items-center gap-0.5 text-[10px] text-text-muted" title="Commits">
               <GitCommit className="h-2.5 w-2.5" />
               {commitCount}
             </span>
           )}
           {(errorCount ?? 0) > 0 && (
             <>
-              <span className="text-[9px] text-text-muted/30">│</span>
-              <span className="flex items-center gap-0.5 text-[9px] text-danger font-medium" title="Errors">
+              <span className="text-[10px] text-text-muted/30">│</span>
+              <span className="flex items-center gap-0.5 text-[10px] text-danger font-medium" title="Errors">
                 <AlertTriangle className="h-2.5 w-2.5" />
                 {errorCount} err
               </span>

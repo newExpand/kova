@@ -92,7 +92,7 @@ export function WorktreePanel({
     <div className="flex w-60 shrink-0 flex-col border-l border-white/[0.06] glass-surface">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
-        <span className="text-xs font-medium text-text-secondary">
+        <span className="text-sm font-medium text-text-secondary">
           Worktrees
         </span>
         <div className="flex items-center gap-1">
@@ -120,7 +120,7 @@ export function WorktreePanel({
         {worktrees.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <GitBranch className="h-8 w-8 text-text-muted opacity-40" strokeWidth={1} />
-            <p className="text-[11px] text-text-muted">No worktrees</p>
+            <p className="text-xs text-text-muted">No worktrees</p>
           </div>
         ) : (
           worktrees.map((wt) => (
@@ -243,22 +243,22 @@ function WorktreeCard({
       {/* Branch name row */}
       <div className="flex items-center gap-1.5">
         {isClaudeWorktree && (
-          <span className="text-[10px]" title="Claude Code worktree">
+          <span className="text-[11px]" title="Claude Code worktree">
             🤖
           </span>
         )}
-        <span className="truncate text-xs font-medium text-text">
+        <span className="truncate text-sm font-medium text-text">
           {branchLabel}
         </span>
         {worktree.isMain && (
-          <span className="shrink-0 rounded bg-white/[0.06] px-1 py-0.5 text-[9px] text-text-muted">
+          <span className="shrink-0 rounded bg-white/[0.06] px-1 py-0.5 text-[10px] text-text-muted">
             root
           </span>
         )}
       </div>
 
       {/* Details row */}
-      <div className="flex items-center gap-2 text-[10px] text-text-muted">
+      <div className="flex items-center gap-2 text-[11px] text-text-muted">
         <span className="font-mono">{worktree.commitHash.slice(0, 7)}</span>
         {isDirty ? (
           <span

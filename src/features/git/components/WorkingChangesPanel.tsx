@@ -57,10 +57,10 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
         onDoubleClick={onToggleMaximize}
       >
         <FolderGit2 className="h-3.5 w-3.5 text-text-muted" />
-        <span className="text-xs font-medium text-text-secondary">
+        <span className="text-sm font-medium text-text-secondary">
           Working Changes
         </span>
-        <span className="text-[10px] text-text-muted font-mono truncate">
+        <span className="text-[11px] text-text-muted font-mono truncate">
           {shortPath}
         </span>
         <div className="flex-1" />
@@ -87,22 +87,22 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-primary" />
-            <span className="ml-2 text-xs text-text-muted">Loading changes...</span>
+            <span className="ml-2 text-sm text-text-muted">Loading changes...</span>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center gap-2 py-8">
             <AlertCircle className="h-4 w-4 text-red-400" />
-            <span className="text-xs text-red-400">{error || "An unknown error occurred"}</span>
+            <span className="text-sm text-red-400">{error || "An unknown error occurred"}</span>
           </div>
         ) : workingChanges ? (
           workingChanges.stats.filesChanged === 0 ? (
             <div className="flex items-center justify-center py-8">
-              <span className="text-xs text-text-muted">No uncommitted changes</span>
+              <span className="text-sm text-text-muted">No uncommitted changes</span>
             </div>
           ) : (
             <div className="space-y-4">
               {/* Stats summary */}
-              <div className="text-xs text-text-muted">
+              <div className="text-sm text-text-muted">
                 {workingChanges.stats.filesChanged} files changed,{" "}
                 <span className="text-green-400">+{workingChanges.stats.insertions}</span>
                 {" insertions, "}
@@ -134,7 +134,7 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
           )
         ) : (
           <div className="flex items-center justify-center py-8">
-            <span className="text-xs text-text-muted">No data available</span>
+            <span className="text-sm text-text-muted">No data available</span>
           </div>
         )}
       </div>

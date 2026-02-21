@@ -126,7 +126,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
         <button
           type="button"
           onClick={handleCopyHash}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-xs text-text-muted hover:bg-white/[0.06] transition-colors"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-sm text-text-muted hover:bg-white/[0.06] transition-colors"
           title="Copy full hash"
         >
           {commitDetail?.hash.slice(0, 10) ?? selectedHash.slice(0, 10)}
@@ -143,7 +143,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
         {commitDetail?.isAgentCommit && (
           <span
             className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5
-              text-[10px] font-bold leading-none
+              text-[11px] font-bold leading-none
               bg-purple-500/10 text-purple-300 border border-purple-400/20
               shadow-[0_0_6px_oklch(0.6_0.2_290/0.25)]"
             aria-label="Committed by AI Agent Claude"
@@ -182,7 +182,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
         {isDetailLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-primary" />
-            <span className="ml-2 text-xs text-text-muted">Loading details...</span>
+            <span className="ml-2 text-sm text-text-muted">Loading details...</span>
           </div>
         ) : commitDetail ? (
           <div className="space-y-3">
@@ -190,7 +190,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
             <div>
               <h3 className="text-sm font-medium text-text-primary">{subject}</h3>
               {body && (
-                <pre className="mt-1 text-xs text-text-muted whitespace-pre-wrap font-mono leading-relaxed">
+                <pre className="mt-1 text-sm text-text-muted whitespace-pre-wrap font-mono leading-relaxed">
                   {body}
                 </pre>
               )}
@@ -198,7 +198,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
 
             {/* Meta section */}
             {selectedCommit && (
-              <div className="text-xs text-text-muted space-y-0.5">
+              <div className="text-sm text-text-muted space-y-0.5">
                 <div>
                   {selectedCommit.authorName}
                   {" "}
@@ -221,7 +221,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
             )}
 
             {/* Stats summary + Expand/Collapse toggle */}
-            <div className="flex items-center justify-between text-xs text-text-muted">
+            <div className="flex items-center justify-between text-sm text-text-muted">
               <span>
                 {commitDetail.stats.filesChanged} files changed,{" "}
                 <span className="text-green-400">+{commitDetail.stats.insertions}</span>
@@ -239,7 +239,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
                       setExpandedFiles(new Set(commitDetail.files.map((f) => f.path)));
                     }
                   }}
-                  className="shrink-0 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+                  className="shrink-0 text-xs text-text-muted hover:text-text-secondary transition-colors"
                 >
                   {expandedFiles.size === commitDetail.files.length ? "Collapse all" : "Expand all"}
                 </button>
@@ -263,11 +263,11 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
         ) : detailError ? (
           <div className="flex items-center justify-center gap-2 py-8">
             <AlertCircle className="h-4 w-4 text-red-400" />
-            <span className="text-xs text-red-400">{detailError}</span>
+            <span className="text-sm text-red-400">{detailError}</span>
           </div>
         ) : (
           <div className="flex items-center justify-center py-8">
-            <span className="text-xs text-text-muted">No detail available</span>
+            <span className="text-sm text-text-muted">No detail available</span>
           </div>
         )}
       </div>

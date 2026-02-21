@@ -68,16 +68,16 @@ export const FileDiffRow = memo(function FileDiffRow({
         </motion.span>
 
         <span
-          className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-bold leading-none ${badge.className}`}
+          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none ${badge.className}`}
         >
           {badge.label}
         </span>
 
-        <span className="flex-1 min-w-0 truncate font-mono text-xs text-text-secondary">
+        <span className="flex-1 min-w-0 truncate font-mono text-sm text-text-secondary">
           {file.path}
         </span>
 
-        <span className="shrink-0 text-[11px]">
+        <span className="shrink-0 text-xs">
           <span className="text-green-400">+{file.insertions}</span>
           {" "}
           <span className="text-red-400">-{file.deletions}</span>
@@ -93,7 +93,7 @@ export const FileDiffRow = memo(function FileDiffRow({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="overflow-hidden"
           >
-            <pre className="px-2 py-1 text-[11px] leading-[1.6] font-mono overflow-x-auto border-t border-white/[0.04]">
+            <pre className="px-2 py-1 text-xs leading-[1.6] font-mono overflow-x-auto border-t border-white/[0.04]">
               {file.patch.split("\n").map((line, i) => (
                 <div key={i} className={getDiffLineClass(line)}>
                   {line}
@@ -146,7 +146,7 @@ export function DiffFileList({
     <div className="space-y-1">
       {sectionLabel && (
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">
+          <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
             {sectionLabel} ({files.length})
           </span>
           <button
@@ -158,7 +158,7 @@ export function DiffFileList({
                 setExpandedFiles(new Set(files.map((f) => f.path)));
               }
             }}
-            className="shrink-0 text-[11px] text-text-muted hover:text-text-secondary transition-colors"
+            className="shrink-0 text-xs text-text-muted hover:text-text-secondary transition-colors"
           >
             {expandedFiles.size === files.length ? "Collapse all" : "Expand all"}
           </button>

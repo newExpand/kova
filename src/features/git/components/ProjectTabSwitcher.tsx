@@ -29,7 +29,7 @@ export function ProjectTabSwitcher({ projectId }: ProjectTabSwitcherProps) {
             onClick={() =>
               navigate(`/projects/${projectId}/${tab.key}`)
             }
-            className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+            className={`relative z-10 flex items-center gap-1.5 rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors ${
               isActive ? "text-text" : "text-text-muted hover:text-text-secondary"
             }`}
           >

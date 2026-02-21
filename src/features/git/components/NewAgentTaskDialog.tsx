@@ -85,7 +85,7 @@ export function NewAgentTaskDialog({
           <div>
             <label
               htmlFor="task-name"
-              className="mb-1 block text-xs font-medium text-text-secondary"
+              className="mb-1 block text-sm font-medium text-text-secondary"
             >
               Task name
             </label>
@@ -104,20 +104,20 @@ export function NewAgentTaskDialog({
               className="w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
             {taskName.length > 0 && !TASK_NAME_REGEX.test(taskName) && (
-              <p className="mt-1 text-[11px] text-danger">
+              <p className="mt-1 text-xs text-danger">
                 Letters, numbers, hyphens, underscores only
               </p>
             )}
           </div>
 
           {error && (
-            <p className="rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+            <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
             </p>
           )}
 
           {!sessionName && (
-            <p className="text-xs text-warning">
+            <p className="text-sm text-warning">
               No active tmux session. Open the terminal first.
             </p>
           )}
