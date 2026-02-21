@@ -3,7 +3,9 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tracing::info;
+use std::thread;
+use std::time::Duration;
+use tracing::{info, warn};
 use url::form_urlencoded;
 
 /// Read .claude/settings.local.json from project directory (machine-specific, auto-gitignored)
@@ -169,6 +171,87 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
 
     info!("Removed hooks from project: {}", canonical_path.display());
     Ok(())
+}
+
+/// Inject hooks for all existing worktrees of a project.
+/// Each worktree gets hooks that send the worktree's own path (not the parent project path),
+/// enabling the frontend to track agent activity per-worktree.
+pub fn inject_hooks_for_worktrees(project_path: &Path, port: u16) -> Result<u32, AppError> {
+    let worktrees = crate::services::git::get_worktrees(project_path)?;
+    let mut count = 0u32;
+
+    for wt in &worktrees {
+        if wt.is_main {
+            continue;
+        }
+        let wt_path = Path::new(&wt.path);
+        if !wt_path.exists() {
+            warn!("Worktree path does not exist, skipping hook injection: {}", wt.path);
+            continue;
+        }
+        match inject_hooks(wt_path, port) {
+            Ok(()) => {
+                count += 1;
+            }
+            Err(e) => {
+                warn!("Failed to inject hooks for worktree '{}': {}", wt.path, e);
+            }
+        }
+    }
+
+    if count > 0 {
+        info!(
+            "Injected hooks for {} worktree(s) of {}",
+            count,
+            project_path.display()
+        );
+    }
+    Ok(count)
+}
+
+/// Spawn a background thread that polls for a worktree directory to appear,
+/// then injects hooks for it.
+///
+/// Handles the timing gap where `start_worktree_task` sends `claude --worktree <name>`
+/// but Claude Code creates the worktree directory asynchronously.
+pub fn inject_hooks_for_worktree_when_ready(project_path: String, task_name: String) {
+    thread::spawn(move || {
+        let worktree_path_str = format!("{}/.claude/worktrees/{}", project_path, task_name);
+        let wt = Path::new(&worktree_path_str);
+
+        let port = match crate::services::event_server::read_port_from_file() {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "Cannot inject hooks for worktree '{}': port file unreadable: {}",
+                    task_name, e
+                );
+                return;
+            }
+        };
+
+        for attempt in 0..60 {
+            if wt.exists() {
+                match inject_hooks(wt, port) {
+                    Ok(()) => info!(
+                        "Injected hooks for new worktree '{}' (after ~{}s)",
+                        task_name, attempt
+                    ),
+                    Err(e) => warn!(
+                        "Hook injection failed for new worktree '{}': {}",
+                        task_name, e
+                    ),
+                }
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        warn!(
+            "Timed out waiting for worktree directory: {}",
+            worktree_path_str
+        );
+    });
 }
 
 #[cfg(test)]

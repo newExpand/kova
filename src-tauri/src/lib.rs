@@ -185,6 +185,16 @@ pub fn run() {
                                         project.name, e
                                     );
                                 }
+                                // Also inject hooks for existing worktrees
+                                if let Err(e) = services::hooks::inject_hooks_for_worktrees(
+                                    std::path::Path::new(&project.path),
+                                    port,
+                                ) {
+                                    tracing::warn!(
+                                        "Worktree hook injection failed for '{}': {}",
+                                        project.name, e
+                                    );
+                                }
                             }
                             tracing::info!(
                                 "Injected hooks for {} active project(s)",

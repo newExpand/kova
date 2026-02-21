@@ -62,6 +62,13 @@ pub fn start_worktree_task(
         // Window is created but Claude didn't start — user can type manually
     }
 
+    // Schedule background hook injection for when the worktree directory appears.
+    // Claude Code creates the worktree asynchronously; the polling thread waits for it.
+    crate::services::hooks::inject_hooks_for_worktree_when_ready(
+        project_path.to_string(),
+        task_name.to_string(),
+    );
+
     info!(
         "Started worktree task '{}' in session '{}'",
         task_name, session_name
@@ -99,6 +106,16 @@ pub fn restore_worktree_windows(
                             "Failed to send claude to restored window '{}': {}",
                             task_name, e
                         );
+                    }
+                    // Inject hooks for this worktree (path exists since we're restoring)
+                    if let Ok(port) = crate::services::event_server::read_port_from_file() {
+                        let wt_path = Path::new(&wt.path);
+                        if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                            warn!(
+                                "Failed to inject hooks for restored worktree '{}': {}",
+                                task_name, e
+                            );
+                        }
                     }
                     restored_names.push(task_name);
                 }

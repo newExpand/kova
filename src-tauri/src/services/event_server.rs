@@ -292,8 +292,21 @@ fn process_request(
     // Single project lookup shared by both notification and agent activity logic.
     let db_state = app_handle.state::<StdMutex<DbConnection>>();
     if let Ok(db) = db_state.lock() {
-        let project_result =
-            crate::services::project::get_by_path(&db.conn, &hook_event.project_path);
+        let project_result = {
+            let direct = crate::services::project::get_by_path(&db.conn, &hook_event.project_path);
+            match &direct {
+                Ok(Some(_)) => direct,
+                _ => {
+                    // Fallback: worktree paths won't match DB entries directly.
+                    // Extract the parent project path and retry.
+                    if let Some(parent) = extract_parent_project_path(&hook_event.project_path) {
+                        crate::services::project::get_by_path(&db.conn, &parent)
+                    } else {
+                        direct
+                    }
+                }
+            }
+        };
 
         match &project_result {
             Ok(Some(project)) => {
@@ -460,6 +473,27 @@ pub fn cleanup_port_file() -> Result<(), AppError> {
     }
 }
 
+/// Read the event server port from the port file.
+/// Useful for hook injection outside of the startup context.
+pub fn read_port_from_file() -> Result<u16, AppError> {
+    let port_dir = get_port_dir()?;
+    let port_file = port_dir.join("event-server.port");
+    let content = std::fs::read_to_string(&port_file).map_err(|e| {
+        AppError::EventServer(format!("Port file not found or unreadable: {}", e))
+    })?;
+    content
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| AppError::EventServer(format!("Invalid port in file: {}", content.trim())))
+}
+
+/// Extract the main project path from a worktree path.
+/// e.g., "/Users/x/project/.claude/worktrees/fix-auth" -> Some("/Users/x/project")
+fn extract_parent_project_path(path: &str) -> Option<String> {
+    path.find("/.claude/worktrees/")
+        .map(|idx| path[..idx].to_string())
+}
+
 /// Get the directory for the port file (~/.flow-orche/).
 fn get_port_dir() -> Result<std::path::PathBuf, AppError> {
     let home = dirs::home_dir().ok_or_else(|| {
@@ -471,6 +505,20 @@ fn get_port_dir() -> Result<std::path::PathBuf, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_parent_project_path() {
+        assert_eq!(
+            extract_parent_project_path("/Users/me/project/.claude/worktrees/fix-auth"),
+            Some("/Users/me/project".to_string())
+        );
+        assert_eq!(
+            extract_parent_project_path("/Users/me/project/.claude/worktrees/add-ui"),
+            Some("/Users/me/project".to_string())
+        );
+        assert_eq!(extract_parent_project_path("/Users/me/project"), None);
+        assert_eq!(extract_parent_project_path("/Users/me/project/src"), None);
+    }
 
     #[test]
     fn test_hook_event_serialization() {
