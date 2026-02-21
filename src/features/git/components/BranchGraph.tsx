@@ -194,15 +194,7 @@ export function BranchGraph({
                 {node.commit.refs.map((ref) => (
                   <span
                     key={ref.name}
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${
-                      ref.refType === "head"
-                        ? "bg-primary/20 text-primary border border-primary/30"
-                        : ref.refType === "tag"
-                          ? "bg-warning/20 text-warning border border-warning/30"
-                          : ref.refType === "remoteBranch"
-                            ? "border border-dashed border-text-muted/30 text-text-muted"
-                            : "bg-white/[0.08] text-text-secondary"
-                    }`}
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
                   >
                     {ref.name}
                   </span>
@@ -231,6 +223,19 @@ export function BranchGraph({
       </div>
     </div>
   );
+}
+
+function refBadgeClassName(refType: string): string {
+  switch (refType) {
+    case "head":
+      return "bg-primary/20 text-primary border border-primary/30";
+    case "tag":
+      return "bg-warning/20 text-warning border border-warning/30";
+    case "remoteBranch":
+      return "border border-dashed border-text-muted/30 text-text-muted";
+    default:
+      return "bg-white/[0.08] text-text-secondary";
+  }
 }
 
 function formatRelativeDate(isoDate: string): string {

@@ -296,7 +296,7 @@ fn process_request(
             let direct = crate::services::project::get_by_path(&db.conn, &hook_event.project_path);
             match &direct {
                 Ok(Some(_)) => direct,
-                _ => {
+                Ok(None) => {
                     // Fallback: worktree paths won't match DB entries directly.
                     // Extract the parent project path and retry.
                     if let Some(parent) = extract_parent_project_path(&hook_event.project_path) {
@@ -304,6 +304,10 @@ fn process_request(
                     } else {
                         direct
                     }
+                }
+                Err(e) => {
+                    warn!("DB lookup failed for path '{}': {}", hook_event.project_path, e);
+                    direct
                 }
             }
         };

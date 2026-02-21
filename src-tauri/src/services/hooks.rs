@@ -74,6 +74,21 @@ pub fn generate_hook_commands(project_path: &str, port: u16) -> HashMap<String, 
     hooks
 }
 
+/// Returns true if the given hook entry was injected by flow-orche
+/// (identified by the characteristic `127.0.0.1` + `/hook` URL pattern).
+fn is_flow_orche_hook(entry: &Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(|v| v.as_array())
+        .is_some_and(|hooks| {
+            hooks.iter().any(|hook| {
+                hook.get("command")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook"))
+            })
+        })
+}
+
 /// Inject hooks into project settings.json
 pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
     let canonical_path = fs::canonicalize(project_path)?;
@@ -104,21 +119,8 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
             AppError::Hook(format!("hooks.{} is not an array", hook_type))
         })?;
 
-        // Remove existing flow-orche hooks (based on URL pattern)
-        existing_array.retain(|h| {
-            if let Some(hooks_arr) = h.get("hooks").and_then(|v| v.as_array()) {
-                !hooks_arr.iter().any(|hook| {
-                    hook.get("command")
-                        .and_then(|c| c.as_str())
-                        .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook") && cmd.contains("&type="))
-                        .unwrap_or(false)
-                })
-            } else {
-                true
-            }
-        });
-
-        // Add new flow-orche hook
+        // Remove existing flow-orche hooks, then add the new one
+        existing_array.retain(|h| !is_flow_orche_hook(h));
         existing_array.push(hook_value);
     }
 
@@ -145,19 +147,7 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
     for hook_type in HOOK_TYPES {
         if let Some(existing) = hooks_obj.get_mut(*hook_type) {
             if let Some(existing_array) = existing.as_array_mut() {
-                // Remove flow-orche hooks
-                existing_array.retain(|h| {
-                    if let Some(hooks_arr) = h.get("hooks").and_then(|v| v.as_array()) {
-                        !hooks_arr.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook") && cmd.contains("&type="))
-                                .unwrap_or(false)
-                        })
-                    } else {
-                        true
-                    }
-                });
+                existing_array.retain(|h| !is_flow_orche_hook(h));
             }
         }
     }

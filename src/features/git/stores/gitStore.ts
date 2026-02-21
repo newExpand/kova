@@ -19,7 +19,7 @@ interface PaginationState {
 interface GitState {
   graphData: Record<string, GitGraphData>; // keyed by projectId
   loadingProjects: Record<string, boolean>; // per-project loading state
-  errorByProject: Record<string, string>; // per-project errors
+  errorByProject: Record<string, string | undefined>; // per-project errors
   selectedCommitHash: string | null;
   commitDetail: CommitDetail | null;
   isDetailLoading: boolean;
@@ -155,7 +155,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   fetchGraphData: async (projectId, projectPath, limit = DEFAULT_PAGE_SIZE) => {
     set((state) => ({
       loadingProjects: { ...state.loadingProjects, [projectId]: true },
-      errorByProject: { ...state.errorByProject, [projectId]: undefined as unknown as string },
+      errorByProject: { ...state.errorByProject, [projectId]: undefined },
     }));
     try {
       const data = await getGitGraph(projectPath, limit);
@@ -194,7 +194,15 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
     try {
       const page = await getGitCommitsPage(projectPath, pagination.offset, DEFAULT_PAGE_SIZE);
       const existing = get().graphData[projectId];
-      if (!existing) return;
+      if (!existing) {
+        set((state) => ({
+          paginationByProject: {
+            ...state.paginationByProject,
+            [projectId]: { ...pagination, isFetchingMore: false },
+          },
+        }));
+        return;
+      }
 
       // Deduplicate by hash
       const existingHashes = new Set(existing.commits.map((c) => c.hash));
@@ -211,7 +219,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         paginationByProject: {
           ...state.paginationByProject,
           [projectId]: {
-            offset: pagination.offset + newCommits.length,
+            offset: pagination.offset + page.commits.length,
             hasMore: page.hasMore,
             isFetchingMore: false,
           },

@@ -108,11 +108,19 @@ pub fn restore_worktree_windows(
                         );
                     }
                     // Inject hooks for this worktree (path exists since we're restoring)
-                    if let Ok(port) = crate::services::event_server::read_port_from_file() {
-                        let wt_path = Path::new(&wt.path);
-                        if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                    match crate::services::event_server::read_port_from_file() {
+                        Ok(port) => {
+                            let wt_path = Path::new(&wt.path);
+                            if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                                warn!(
+                                    "Failed to inject hooks for restored worktree '{}': {}",
+                                    task_name, e
+                                );
+                            }
+                        }
+                        Err(e) => {
                             warn!(
-                                "Failed to inject hooks for restored worktree '{}': {}",
+                                "Skipping hook injection for restored worktree '{}': {}",
                                 task_name, e
                             );
                         }

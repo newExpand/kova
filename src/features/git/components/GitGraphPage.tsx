@@ -76,7 +76,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const layout = useGitGraph(graphData);
 
   const handleLoadMore = useCallback(() => {
-    fetchMoreCommits(projectId, project?.path ?? "");
+    if (!project?.path) return;
+    fetchMoreCommits(projectId, project.path);
   }, [fetchMoreCommits, projectId, project?.path]);
 
   // Empty state — not a git repo
