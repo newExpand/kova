@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GraphLayout } from "../types";
 import { COLUMN_WIDTH, ROW_HEIGHT } from "../types";
 import { BranchLine } from "./BranchLine";
@@ -6,16 +7,52 @@ import { CommitNode } from "./CommitNode";
 import { useGitStore } from "../stores/gitStore";
 import { Sparkles } from "lucide-react";
 
+/** Extra rows beyond node overscan for rendering long-spanning edges */
+const EDGE_OVERSCAN = 20;
+
 interface BranchGraphProps {
   layout: GraphLayout;
   highlightBranch?: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  isFetchingMore: boolean;
 }
 
-export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBranch }: BranchGraphProps) {
+export function BranchGraph({
+  layout,
+  highlightBranch,
+  onHoverBranch,
+  onLeaveBranch,
+  scrollContainerRef,
+  onLoadMore,
+  hasMore,
+  isFetchingMore,
+}: BranchGraphProps) {
   const selectedHash = useGitStore((s) => s.selectedCommitHash);
   const selectCommit = useGitStore((s) => s.selectCommit);
+
+  // Virtualizer for fixed-height rows
+  const rowVirtualizer = useVirtualizer({
+    count: layout.rows,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 15,
+    useFlushSync: false, // React 19 compatibility
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
+  // --- Infinite scroll trigger ---
+  useEffect(() => {
+    if (!hasMore || isFetchingMore) return;
+    const lastItem = virtualItems[virtualItems.length - 1];
+    if (lastItem && lastItem.index >= layout.rows - 30) {
+      onLoadMore();
+    }
+  }, [virtualItems, layout.rows, hasMore, isFetchingMore, onLoadMore]);
 
   // Compute highlight color from branch name
   const highlightColor = useMemo(() => {
@@ -26,16 +63,12 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
       );
       if (hasRef) return node.color;
     }
-    console.debug(`[BranchGraph] Branch "${highlightBranch}" not found in visible commits`);
     return null;
   }, [highlightBranch, layout.nodes]);
 
   const isHighlighting = highlightColor !== null;
 
-  const graphWidth = (layout.columns + 1) * COLUMN_WIDTH + 16;
-  const svgHeight = layout.rows * ROW_HEIGHT;
-
-  // Map each node color → branch name by finding the tip commit with that color
+  // Map each node color → branch name
   const colorToBranch = useMemo(() => {
     const map = new Map<string, string>();
     for (const node of layout.nodes) {
@@ -48,101 +81,153 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
     return map;
   }, [layout.nodes]);
 
+  // --- Visible range for edge filtering ---
+  const visibleStart = virtualItems[0]?.index ?? 0;
+  const visibleEnd = virtualItems[virtualItems.length - 1]?.index ?? 0;
+  const edgeStart = Math.max(0, visibleStart - EDGE_OVERSCAN);
+  const edgeEnd = Math.min(layout.rows - 1, visibleEnd + EDGE_OVERSCAN);
+
+  const visibleEdges = useMemo(() => {
+    return layout.edges.filter((edge) => {
+      const minY = Math.min(edge.fromY, edge.toY);
+      const maxY = Math.max(edge.fromY, edge.toY);
+      return maxY >= edgeStart && minY <= edgeEnd;
+    });
+  }, [layout.edges, edgeStart, edgeEnd]);
+
+  const graphWidth = (layout.columns + 1) * COLUMN_WIDTH + 16;
+  const totalHeight = rowVirtualizer.getTotalSize();
+
   return (
-    <div className="flex min-h-0" style={{ minHeight: svgHeight }}>
-      {/* SVG graph lane */}
-      <svg
-        width={graphWidth}
-        height={svgHeight}
-        className="shrink-0"
-        style={{ minWidth: graphWidth }}
+    <div
+      ref={scrollContainerRef}
+      className="h-full overflow-y-auto"
+    >
+      <div
+        style={{ height: totalHeight, position: "relative", display: "flex" }}
       >
-        <g transform="translate(16, 0)">
-          {/* Edges first (behind nodes) — dimmed edges rendered first */}
-          {layout.edges.map((edge, i) => {
-            const isDimmed = isHighlighting && edge.color !== highlightColor;
-            return (
-              <BranchLine key={`e-${i}`} edge={edge} isDimmed={isDimmed} isHighlighted={isHighlighting && !isDimmed} />
-            );
-          })}
-          {/* Nodes */}
-          {layout.nodes.map((node) => {
+        {/* SVG graph lane */}
+        <svg
+          width={graphWidth}
+          height={totalHeight}
+          className="shrink-0"
+          style={{ minWidth: graphWidth }}
+        >
+          <g transform="translate(16, 0)">
+            {/* Edges (behind nodes) */}
+            {visibleEdges.map((edge, i) => {
+              const isDimmed = isHighlighting && edge.color !== highlightColor;
+              return (
+                <BranchLine
+                  key={`e-${edge.fromY}-${edge.toY}-${edge.fromX}-${edge.toX}-${i}`}
+                  edge={edge}
+                  isDimmed={isDimmed}
+                  isHighlighted={isHighlighting && !isDimmed}
+                />
+              );
+            })}
+            {/* Nodes (only visible) */}
+            {virtualItems.map((virtualItem) => {
+              const node = layout.nodes[virtualItem.index];
+              if (!node) return null;
+              const isDimmed = isHighlighting && node.color !== highlightColor;
+              return (
+                <CommitNode
+                  key={node.commit.hash}
+                  node={node}
+                  isSelected={selectedHash === node.commit.hash}
+                  onSelect={() => selectCommit(node.commit.hash)}
+                  isDimmed={isDimmed}
+                />
+              );
+            })}
+          </g>
+        </svg>
+
+        {/* Commit message list (virtualized) */}
+        <div className="flex-1 min-w-0 relative">
+          {virtualItems.map((virtualItem) => {
+            const node = layout.nodes[virtualItem.index];
+            if (!node) return null;
             const isDimmed = isHighlighting && node.color !== highlightColor;
+            const branch = colorToBranch.get(node.color) ?? null;
+
             return (
-              <CommitNode
+              <button
                 key={node.commit.hash}
-                node={node}
-                isSelected={selectedHash === node.commit.hash}
-                onSelect={() => selectCommit(node.commit.hash)}
-                isDimmed={isDimmed}
-              />
+                type="button"
+                className={`flex w-full items-center gap-3 px-3 text-left transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
+                  selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
+                }`}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: ROW_HEIGHT,
+                  transform: `translateY(${virtualItem.start}px)`,
+                  opacity: isDimmed ? 0.4 : 1,
+                }}
+                onClick={() => selectCommit(node.commit.hash)}
+                onMouseEnter={() => branch && onHoverBranch?.(branch)}
+                onMouseLeave={() => onLeaveBranch?.()}
+              >
+                <span className="shrink-0 font-mono text-[11px] text-text-muted">
+                  {node.commit.shortHash}
+                </span>
+                <span className="truncate text-sm text-text-secondary">
+                  {node.commit.message}
+                </span>
+                {node.commit.isAgentCommit && (
+                  <span
+                    className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                      text-[10px] font-bold leading-none
+                      bg-purple-500/10 text-purple-300 border border-purple-400/20
+                      shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
+                    aria-label="AI Agent commit"
+                  >
+                    <Sparkles className="h-2.5 w-2.5" />
+                    AI
+                  </span>
+                )}
+                {/* Ref badges */}
+                {node.commit.refs.map((ref) => (
+                  <span
+                    key={ref.name}
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${
+                      ref.refType === "head"
+                        ? "bg-primary/20 text-primary border border-primary/30"
+                        : ref.refType === "tag"
+                          ? "bg-warning/20 text-warning border border-warning/30"
+                          : ref.refType === "remoteBranch"
+                            ? "border border-dashed border-text-muted/30 text-text-muted"
+                            : "bg-white/[0.08] text-text-secondary"
+                    }`}
+                  >
+                    {ref.name}
+                  </span>
+                ))}
+                <span className="ml-auto shrink-0 text-[11px] text-text-muted">
+                  {formatRelativeDate(node.commit.date)}
+                </span>
+              </button>
             );
           })}
-        </g>
-      </svg>
 
-      {/* Commit message list */}
-      <div className="flex-1 min-w-0">
-        {layout.nodes.map((node) => {
-          const isDimmed = isHighlighting && node.color !== highlightColor;
-          const branch = colorToBranch.get(node.color) ?? null;
-
-          return (
-            <button
-              key={node.commit.hash}
-              type="button"
-              className={`flex w-full items-center gap-3 px-3 text-left transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
-                selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
-              }`}
+          {/* Loading indicator at bottom */}
+          {isFetchingMore && (
+            <div
               style={{
-                height: ROW_HEIGHT,
-                opacity: isDimmed ? 0.4 : 1,
+                position: "absolute",
+                top: totalHeight,
+                width: "100%",
               }}
-              onClick={() => selectCommit(node.commit.hash)}
-              onMouseEnter={() => branch && onHoverBranch?.(branch)}
-              onMouseLeave={() => onLeaveBranch?.()}
+              className="flex justify-center py-4"
             >
-              <span className="shrink-0 font-mono text-[11px] text-text-muted">
-                {node.commit.shortHash}
-              </span>
-              <span className="truncate text-sm text-text-secondary">
-                {node.commit.message}
-              </span>
-              {node.commit.isAgentCommit && (
-                <span
-                  className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
-                    text-[10px] font-bold leading-none
-                    bg-purple-500/10 text-purple-300 border border-purple-400/20
-                    shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
-                  aria-label="AI Agent commit"
-                >
-                  <Sparkles className="h-2.5 w-2.5" />
-                  AI
-                </span>
-              )}
-              {/* Ref badges */}
-              {node.commit.refs.map((ref) => (
-                <span
-                  key={ref.name}
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${
-                    ref.refType === "head"
-                      ? "bg-primary/20 text-primary border border-primary/30"
-                      : ref.refType === "tag"
-                        ? "bg-warning/20 text-warning border border-warning/30"
-                        : ref.refType === "remoteBranch"
-                          ? "border border-dashed border-text-muted/30 text-text-muted"
-                          : "bg-white/[0.08] text-text-secondary"
-                  }`}
-                >
-                  {ref.name}
-                </span>
-              ))}
-              <span className="ml-auto shrink-0 text-[11px] text-text-muted">
-                {formatRelativeDate(node.commit.date)}
-              </span>
-            </button>
-          );
-        })}
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-primary" />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

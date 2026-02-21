@@ -1,5 +1,4 @@
 import { linkVertical } from "d3-shape";
-import { motion } from "motion/react";
 import type { GraphEdge } from "../types";
 import { COLUMN_WIDTH, ROW_HEIGHT } from "../types";
 
@@ -34,12 +33,12 @@ export function BranchLine({ edge, isDimmed, isHighlighted }: BranchLineProps) {
 
   const highlightStyle: React.CSSProperties = {
     filter,
-    transition: "stroke-width 200ms ease-in-out, filter 200ms ease-in-out",
+    transition: "stroke-width 200ms ease-in-out, filter 200ms ease-in-out, opacity 200ms ease-in-out",
   };
 
   if (edge.type === "straight") {
     return (
-      <motion.line
+      <line
         x1={x1}
         y1={y1}
         x2={x2}
@@ -47,9 +46,7 @@ export function BranchLine({ edge, isDimmed, isHighlighted }: BranchLineProps) {
         stroke={edge.color}
         strokeWidth={width}
         strokeLinecap="round"
-        initial={{ pathLength: 0, opacity: 0 }}
-        animate={{ pathLength: 1, opacity: baseOpacity }}
-        transition={{ duration: 0.3, delay: edge.fromY * 0.01 }}
+        opacity={baseOpacity}
         style={highlightStyle}
       />
     );
@@ -62,19 +59,13 @@ export function BranchLine({ edge, isDimmed, isHighlighted }: BranchLineProps) {
   });
 
   return (
-    <motion.path
+    <path
       d={pathData ?? ""}
       fill="none"
       stroke={edge.color}
       strokeWidth={width}
       strokeLinecap="round"
       opacity={baseOpacity}
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={{ pathLength: 1, opacity: baseOpacity }}
-      transition={{
-        pathLength: { type: "spring", stiffness: 300, damping: 30 },
-        opacity: { duration: 0.3 },
-      }}
       style={highlightStyle}
     />
   );

@@ -12,6 +12,7 @@ export type {
   FileDiff,
   FileStatus,
   WorkingChanges,
+  GitCommitsPage,
 } from "../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------

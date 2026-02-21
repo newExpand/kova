@@ -182,6 +182,11 @@ export interface WorkingChanges {
   stats: DiffStats;
 }
 
+export interface GitCommitsPage {
+  commits: GitCommit[];
+  hasMore: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // PTY commands (plugin:pty)
 // ---------------------------------------------------------------------------
@@ -407,6 +412,14 @@ export async function getGitGraph(
   limit?: number,
 ): Promise<GitGraphData> {
   return invoke<GitGraphData>("get_git_graph", { path, limit });
+}
+
+export async function getGitCommitsPage(
+  path: string,
+  skip: number,
+  limit?: number,
+): Promise<GitCommitsPage> {
+  return invoke<GitCommitsPage>("get_git_commits_page", { path, skip, limit });
 }
 
 export async function getGitStatus(path: string): Promise<GitStatus> {

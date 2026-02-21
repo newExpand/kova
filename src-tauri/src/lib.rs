@@ -251,6 +251,7 @@ pub fn run() {
             commands::settings::list_settings,
             // Git commands
             commands::git::get_git_graph,
+            commands::git::get_git_commits_page,
             commands::git::get_git_status,
             commands::git::get_commit_detail,
             commands::git::get_working_changes,

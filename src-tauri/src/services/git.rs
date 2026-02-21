@@ -93,28 +93,16 @@ fn detect_agent_commit(body: &str) -> bool {
 }
 
 /// Parse git log output using NUL-byte separated fields.
-/// Format: %H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D%x00%b
-/// Each commit record is separated by ASCII RS (\x1e).
-pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError> {
-    let limit_str = limit.to_string();
-    let output = run_git(
-        repo_path,
-        &[
-            "log",
-            "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D%x00%b%x1e",
-            "--topo-order",
-            "-n",
-            &limit_str,
-            "--all",
-        ],
-    )?;
-
-    let commits: Vec<GitCommit> = output
-        .split('\x1e')
-        .map(|record| record.trim())
-        .filter(|record| !record.is_empty())
-        .filter_map(|record| {
-            let fields: Vec<&str> = record.split('\0').collect();
+/// Format: %H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D
+/// Each commit is separated by a newline.
+/// Parse NUL-byte separated git log output into GitCommit structs.
+/// Shared by `get_log()` and `get_log_page()` to avoid duplication.
+fn parse_log_output(output: &str) -> Vec<GitCommit> {
+    output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\0').collect();
             if fields.len() < 7 {
                 warn!("Skipping malformed git log record: {} fields", fields.len());
                 return None;
@@ -147,9 +135,46 @@ pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError>
                 is_agent_commit,
             })
         })
-        .collect();
+        .collect()
+}
 
-    Ok(commits)
+const GIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D";
+
+pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError> {
+    let limit_str = limit.to_string();
+    let output = run_git(
+        repo_path,
+        &["log", GIT_LOG_FORMAT, "--topo-order", "-n", &limit_str, "--all"],
+    )?;
+    Ok(parse_log_output(&output))
+}
+
+/// Paginated commit fetching with skip/limit for infinite scroll.
+pub fn get_log_page(repo_path: &Path, skip: u32, limit: u32) -> Result<GitCommitsPage, AppError> {
+    let skip_str = skip.to_string();
+    let fetch_limit = limit + 1; // fetch one extra to detect has_more
+    let fetch_str = fetch_limit.to_string();
+    let output = run_git(
+        repo_path,
+        &[
+            "log",
+            GIT_LOG_FORMAT,
+            "--topo-order",
+            "--skip",
+            &skip_str,
+            "-n",
+            &fetch_str,
+            "--all",
+        ],
+    )?;
+
+    let mut commits = parse_log_output(&output);
+    let has_more = commits.len() > limit as usize;
+    if has_more {
+        commits.truncate(limit as usize);
+    }
+
+    Ok(GitCommitsPage { commits, has_more })
 }
 
 fn parse_refs(decorations: &str) -> Vec<GitRef> {

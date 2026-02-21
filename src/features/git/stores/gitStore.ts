@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { CommitDetail, GitGraphData, GitStatus, WorkingChanges } from "../../../lib/tauri/commands";
 import {
-  getCommitDetail, getGitGraph, getGitStatus, getWorkingChanges,
+  getCommitDetail, getGitGraph, getGitCommitsPage, getGitStatus, getWorkingChanges,
   gitStageFiles, gitStageAll, gitUnstageFiles, gitUnstageAll,
   gitDiscardFile, gitCreateCommit,
 } from "../../../lib/tauri/commands";
@@ -9,6 +9,12 @@ import {
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
+
+interface PaginationState {
+  offset: number;
+  hasMore: boolean;
+  isFetchingMore: boolean;
+}
 
 interface GitState {
   graphData: Record<string, GitGraphData>; // keyed by projectId
@@ -29,11 +35,14 @@ interface GitState {
   isStagingInProgress: boolean;
   commitError: string | null;
   lastCommitHash: string | null;
+  paginationByProject: Record<string, PaginationState>;
 }
 
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
+
+const DEFAULT_PAGE_SIZE = 200;
 
 interface GitActions {
   fetchGraphData: (
@@ -41,6 +50,7 @@ interface GitActions {
     projectPath: string,
     limit?: number,
   ) => Promise<void>;
+  fetchMoreCommits: (projectId: string, projectPath: string) => Promise<void>;
   refreshStatus: (projectPath: string) => Promise<GitStatus | null>;
   selectCommit: (hash: string | null) => void;
   fetchCommitDetail: (projectPath: string, hash: string) => Promise<void>;
@@ -62,6 +72,7 @@ interface GitActions {
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
   getProjectError: (projectId: string) => string | null;
+  getPagination: (projectId: string) => PaginationState | null;
   reset: () => void;
 }
 
@@ -86,6 +97,7 @@ const initialState: GitState = {
   isStagingInProgress: false,
   commitError: null,
   lastCommitHash: null,
+  paginationByProject: {},
 };
 
 // Commit-related state to clear on worktree switch
@@ -137,9 +149,10 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   getGraphForProject: (projectId: string) => get().graphData[projectId],
   isProjectLoading: (projectId: string) => get().loadingProjects[projectId] ?? false,
   getProjectError: (projectId: string) => get().errorByProject[projectId] ?? null,
+  getPagination: (projectId: string) => get().paginationByProject[projectId] ?? null,
 
   // Actions
-  fetchGraphData: async (projectId, projectPath, limit) => {
+  fetchGraphData: async (projectId, projectPath, limit = DEFAULT_PAGE_SIZE) => {
     set((state) => ({
       loadingProjects: { ...state.loadingProjects, [projectId]: true },
       errorByProject: { ...state.errorByProject, [projectId]: undefined as unknown as string },
@@ -149,12 +162,68 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       set((state) => ({
         graphData: { ...state.graphData, [projectId]: data },
         loadingProjects: { ...state.loadingProjects, [projectId]: false },
+        paginationByProject: {
+          ...state.paginationByProject,
+          [projectId]: {
+            offset: data.commits.length,
+            hasMore: data.commits.length >= limit,
+            isFetchingMore: false,
+          },
+        },
       }));
     } catch (e) {
       console.error("[gitStore] fetchGraphData failed:", e);
       set((state) => ({
         errorByProject: { ...state.errorByProject, [projectId]: toErrorMessage(e) },
         loadingProjects: { ...state.loadingProjects, [projectId]: false },
+      }));
+    }
+  },
+
+  fetchMoreCommits: async (projectId, projectPath) => {
+    const pagination = get().paginationByProject[projectId];
+    if (!pagination || !pagination.hasMore || pagination.isFetchingMore) return;
+
+    set((state) => ({
+      paginationByProject: {
+        ...state.paginationByProject,
+        [projectId]: { ...pagination, isFetchingMore: true },
+      },
+    }));
+
+    try {
+      const page = await getGitCommitsPage(projectPath, pagination.offset, DEFAULT_PAGE_SIZE);
+      const existing = get().graphData[projectId];
+      if (!existing) return;
+
+      // Deduplicate by hash
+      const existingHashes = new Set(existing.commits.map((c) => c.hash));
+      const newCommits = page.commits.filter((c) => !existingHashes.has(c.hash));
+
+      set((state) => ({
+        graphData: {
+          ...state.graphData,
+          [projectId]: {
+            ...existing,
+            commits: [...existing.commits, ...newCommits],
+          },
+        },
+        paginationByProject: {
+          ...state.paginationByProject,
+          [projectId]: {
+            offset: pagination.offset + newCommits.length,
+            hasMore: page.hasMore,
+            isFetchingMore: false,
+          },
+        },
+      }));
+    } catch (e) {
+      console.error("[gitStore] fetchMoreCommits failed:", e);
+      set((state) => ({
+        paginationByProject: {
+          ...state.paginationByProject,
+          [projectId]: { ...pagination, isFetchingMore: false },
+        },
       }));
     }
   },

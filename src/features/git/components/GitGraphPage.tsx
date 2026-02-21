@@ -28,6 +28,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const selectCommit = useGitStore((s) => s.selectCommit);
   const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
   const selectWorktree = useGitStore((s) => s.selectWorktree);
+  const fetchMoreCommits = useGitStore((s) => s.fetchMoreCommits);
+  const pagination = useGitStore((s) => s.getPagination(projectId));
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
   const [panelMaximized, setPanelMaximized] = useState(false);
@@ -44,6 +46,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   }, [selectWorktree]);
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleHoverBranch = useCallback((branch: string) => {
     if (leaveTimerRef.current) {
@@ -71,6 +74,10 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
 
   // Compute layout
   const layout = useGitGraph(graphData);
+
+  const handleLoadMore = useCallback(() => {
+    fetchMoreCommits(projectId, project?.path ?? "");
+  }, [fetchMoreCommits, projectId, project?.path]);
 
   // Empty state — not a git repo
   if (error && error.includes("not a git repository")) {
@@ -114,13 +121,17 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
     <div className="flex h-full overflow-hidden">
       {/* Main graph area + detail panel */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className={panelMaximized ? "hidden" : "flex-1 min-h-0 overflow-y-auto"}>
+        <div className={panelMaximized ? "hidden" : "flex-1 min-h-0"}>
           {layout.nodes.length > 0 ? (
             <BranchGraph
               layout={layout}
               highlightBranch={hoveredBranch}
               onHoverBranch={handleHoverBranch}
               onLeaveBranch={handleLeaveBranch}
+              scrollContainerRef={scrollContainerRef}
+              onLoadMore={handleLoadMore}
+              hasMore={pagination?.hasMore ?? false}
+              isFetchingMore={pagination?.isFetchingMore ?? false}
             />
           ) : (
             <div className="flex h-full items-center justify-center">

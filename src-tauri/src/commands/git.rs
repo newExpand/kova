@@ -1,11 +1,21 @@
 use crate::errors::AppError;
-use crate::models::git::{CommitDetail, CommitResult, GitGraphData, GitStatus, WorkingChanges};
+use crate::models::git::{CommitDetail, CommitResult, GitCommitsPage, GitGraphData, GitStatus, WorkingChanges};
 use crate::services;
 
 #[tauri::command]
 pub async fn get_git_graph(path: String, limit: Option<u32>) -> Result<GitGraphData, AppError> {
     let repo_path = std::path::Path::new(&path);
     services::git::get_graph_data(repo_path, limit.unwrap_or(200).min(10_000))
+}
+
+#[tauri::command]
+pub async fn get_git_commits_page(
+    path: String,
+    skip: u32,
+    limit: Option<u32>,
+) -> Result<GitCommitsPage, AppError> {
+    let repo_path = std::path::Path::new(&path);
+    services::git::get_log_page(repo_path, skip, limit.unwrap_or(200).min(10_000))
 }
 
 #[tauri::command]

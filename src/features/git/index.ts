@@ -13,6 +13,7 @@ export type {
   FileDiff,
   FileStatus,
   WorkingChanges,
+  GitCommitsPage,
   GraphNode,
   GraphEdge,
   GraphLayout,

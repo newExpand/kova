@@ -24,8 +24,8 @@ export function useGitPolling(
   useEffect(() => {
     if (!isActive || !projectPath) return;
 
-    // Initial fetch
-    fetchGraphData(projectId, projectPath).catch((e) => {
+    // Initial fetch with explicit limit for pagination state initialization
+    fetchGraphData(projectId, projectPath, 200).catch((e) => {
       console.error("[useGitPolling] Initial fetch failed:", e);
     });
 
@@ -38,7 +38,7 @@ export function useGitPolling(
       lastFingerprintRef.current = fp;
 
       if (changed) {
-        fetchGraphData(projectId, projectPath).catch((e) => {
+        fetchGraphData(projectId, projectPath, 200).catch((e) => {
           console.error("[useGitPolling] Graph refresh failed:", e);
         });
       }

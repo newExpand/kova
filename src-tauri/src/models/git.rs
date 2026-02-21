@@ -143,3 +143,10 @@ pub struct GitGraphData {
     pub worktrees: Vec<GitWorktree>,
     pub status: GitStatus,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitsPage {
+    pub commits: Vec<GitCommit>,
+    pub has_more: bool,
+}
