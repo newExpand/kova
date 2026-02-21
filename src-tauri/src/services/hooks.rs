@@ -11,13 +11,12 @@ pub fn read_settings_local_json(project_path: &Path) -> Result<Value, AppError> 
     let settings_path = project_path.join(".claude/settings.local.json");
 
     if !settings_path.exists() {
-        // Create default settings.local.json with empty hooks
-        let default_settings = json!({
-            "hooks": {
-                "Stop": [],
-                "PermissionRequest": []
-            }
-        });
+        // Create default settings.local.json with empty hooks for all types
+        let mut default_hooks = serde_json::Map::new();
+        for hook_type in HOOK_TYPES {
+            default_hooks.insert(hook_type.to_string(), json!([]));
+        }
+        let default_settings = json!({ "hooks": default_hooks });
         fs::create_dir_all(project_path.join(".claude"))?;
         fs::write(
             &settings_path,
@@ -32,43 +31,43 @@ pub fn read_settings_local_json(project_path: &Path) -> Result<Value, AppError> 
     Ok(settings)
 }
 
+/// All hook types that flow-orche installs for Claude Code integration.
+const HOOK_TYPES: &[&str] = &[
+    "Stop",
+    "PermissionRequest",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "TaskCompleted",
+    "TeammateIdle",
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+];
+
 /// Generate hook commands for flow-orche event server
 pub fn generate_hook_commands(project_path: &str, port: u16) -> HashMap<String, Value> {
     let encoded_path: String = form_urlencoded::byte_serialize(project_path.as_bytes()).collect();
 
     let mut hooks = HashMap::new();
 
-    // Stop hook
-    hooks.insert(
-        "Stop".to_string(),
-        json!({
-            "matcher": "",
-            "hooks": [{
-                "type": "command",
-                "command": format!(
-                    "curl -s -X POST 'http://127.0.0.1:{}/hook?project={}&type=Stop' \
-                     -H 'Content-Type: application/json' --data-binary @-",
-                    port, encoded_path
-                )
-            }]
-        }),
-    );
-
-    // PermissionRequest hook
-    hooks.insert(
-        "PermissionRequest".to_string(),
-        json!({
-            "matcher": "",
-            "hooks": [{
-                "type": "command",
-                "command": format!(
-                    "curl -s -X POST 'http://127.0.0.1:{}/hook?project={}&type=PermissionRequest' \
-                     -H 'Content-Type: application/json' --data-binary @-",
-                    port, encoded_path
-                )
-            }]
-        }),
-    );
+    for hook_type in HOOK_TYPES {
+        hooks.insert(
+            hook_type.to_string(),
+            json!({
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": format!(
+                        "curl -s -X POST 'http://127.0.0.1:{}/hook?project={}&type={}' \
+                         -H 'Content-Type: application/json' --data-binary @-",
+                        port, encoded_path, hook_type
+                    )
+                }]
+            }),
+        );
+    }
 
     hooks
 }
@@ -141,8 +140,8 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
         .as_object_mut()
         .ok_or_else(|| AppError::Hook("hooks is not an object".into()))?;
 
-    for hook_type in ["Stop", "PermissionRequest"] {
-        if let Some(existing) = hooks_obj.get_mut(hook_type) {
+    for hook_type in HOOK_TYPES {
+        if let Some(existing) = hooks_obj.get_mut(*hook_type) {
             if let Some(existing_array) = existing.as_array_mut() {
                 // Remove flow-orche hooks
                 existing_array.retain(|h| {
@@ -205,10 +204,18 @@ mod tests {
     fn test_generate_hook_commands() {
         let hooks = generate_hook_commands("/test/path", 8080);
 
-        assert!(!hooks.contains_key("Notification"));
         assert!(hooks.contains_key("Stop"));
         assert!(hooks.contains_key("PermissionRequest"));
-        assert_eq!(hooks.len(), 2);
+        assert!(hooks.contains_key("PostToolUse"));
+        assert!(hooks.contains_key("PostToolUseFailure"));
+        assert!(hooks.contains_key("UserPromptSubmit"));
+        assert!(hooks.contains_key("SubagentStart"));
+        assert!(hooks.contains_key("SubagentStop"));
+        assert!(hooks.contains_key("TaskCompleted"));
+        assert!(hooks.contains_key("TeammateIdle"));
+        assert!(hooks.contains_key("SessionStart"));
+        assert!(hooks.contains_key("SessionEnd"));
+        assert_eq!(hooks.len(), 11);
 
         let permission_cmd = hooks["PermissionRequest"]["hooks"][0]["command"]
             .as_str()

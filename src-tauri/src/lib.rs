@@ -239,6 +239,11 @@ pub fn run() {
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::settings::list_settings,
+            // Git commands
+            commands::git::get_git_graph,
+            commands::git::get_git_status,
+            // Agent activity commands
+            commands::agent_activity::list_agent_activities,
             // Environment commands
             commands::environment::check_environment,
         ])

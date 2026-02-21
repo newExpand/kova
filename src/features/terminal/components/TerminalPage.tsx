@@ -77,7 +77,11 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     setAutoConnectDone(true);
 
     const slug =
-      project?.name.toLowerCase().replace(/\s+/g, "-") ?? "default";
+      (project?.name ?? "default")
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9\-_.]/g, "")
+        .replace(/^-+|-+$/g, "") || "default";
     const firstSession = projectSessions[0];
     const name = firstSession ? firstSession.name : slug;
 

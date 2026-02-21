@@ -97,6 +97,58 @@ export interface EnvironmentCheck {
 }
 
 // ---------------------------------------------------------------------------
+// Git types
+// ---------------------------------------------------------------------------
+
+export type GitRefType = "localBranch" | "remoteBranch" | "tag" | "head";
+
+export interface GitRef {
+  name: string;
+  refType: GitRefType;
+}
+
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  message: string;
+  authorName: string;
+  authorEmail: string;
+  date: string;
+  parents: string[];
+  refs: GitRef[];
+}
+
+export interface GitBranch {
+  name: string;
+  isRemote: boolean;
+  isHead: boolean;
+  commitHash: string;
+  trackingBranch: string | null;
+}
+
+export interface GitWorktree {
+  path: string;
+  branch: string | null;
+  commitHash: string;
+  isBare: boolean;
+  isMain: boolean;
+}
+
+export interface GitStatus {
+  isDirty: boolean;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+}
+
+export interface GitGraphData {
+  commits: GitCommit[];
+  branches: GitBranch[];
+  worktrees: GitWorktree[];
+  status: GitStatus;
+}
+
+// ---------------------------------------------------------------------------
 // PTY commands (plugin:pty)
 // ---------------------------------------------------------------------------
 
@@ -310,5 +362,45 @@ export async function listSettings(): Promise<AppSetting[]> {
 
 export async function checkEnvironment(): Promise<EnvironmentCheck> {
   return invoke<EnvironmentCheck>("check_environment");
+}
+
+// ---------------------------------------------------------------------------
+// Git commands
+// ---------------------------------------------------------------------------
+
+export async function getGitGraph(
+  path: string,
+  limit?: number,
+): Promise<GitGraphData> {
+  return invoke<GitGraphData>("get_git_graph", { path, limit });
+}
+
+export async function getGitStatus(path: string): Promise<GitStatus> {
+  return invoke<GitStatus>("get_git_status", { path });
+}
+
+// ---------------------------------------------------------------------------
+// Agent activity commands
+// ---------------------------------------------------------------------------
+
+export interface AgentActivityRecord {
+  id: string;
+  projectId: string;
+  eventType: string;
+  sessionId: string | null;
+  worktreePath: string | null;
+  summary: string | null;
+  payload: string | null;
+  createdAt: string;
+}
+
+export async function listAgentActivities(
+  projectId: string,
+  limit?: number,
+): Promise<AgentActivityRecord[]> {
+  return invoke<AgentActivityRecord[]>("list_agent_activities", {
+    projectId,
+    limit,
+  });
 }
 

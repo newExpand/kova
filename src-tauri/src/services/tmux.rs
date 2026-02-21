@@ -1313,23 +1313,35 @@ mod tests {
         let project_id = Uuid::new_v4().to_string();
         insert_test_project(&conn, &project_id);
 
-        // Register a session (tmux won't actually have it, but kill_session handles that gracefully)
         register_session(&conn, &project_id, "test-bulk-kill").unwrap();
 
         let result = kill_all_app_sessions(&conn).unwrap();
-        // kill_session returns Ok even for non-existent sessions, so killed_count should be 1
-        assert_eq!(result.killed_count, 1);
-        assert!(result.failed.is_empty());
 
-        // Verify DB record was cleaned up
-        let count: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM project_tmux_sessions WHERE session_name = ?1",
-                ["test-bulk-kill"],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 0);
+        // When tmux is installed: kill_session returns Ok (graceful "no server"/"can't find")
+        //   → killed_count=1, failed=[], DB record cleaned up
+        // When tmux is NOT installed: kill_session returns Err(io::Error)
+        //   → killed_count=0, failed=[1], DB record remains
+        let tmux_available = std::process::Command::new("tmux")
+            .arg("-V")
+            .output()
+            .is_ok();
+
+        if tmux_available {
+            assert_eq!(result.killed_count, 1);
+            assert!(result.failed.is_empty());
+
+            let count: i32 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM project_tmux_sessions WHERE session_name = ?1",
+                    ["test-bulk-kill"],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "DB record should be cleaned up when tmux is available");
+        } else {
+            assert_eq!(result.killed_count, 0);
+            assert_eq!(result.failed.len(), 1);
+        }
     }
 
     #[test]

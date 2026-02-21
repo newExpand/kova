@@ -1,6 +1,7 @@
 use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
@@ -130,13 +131,19 @@ fn handle_requests(server: Server, shutdown_rx: mpsc::Receiver<()>, app_handle: 
         if throttle.should_prune() {
             let db_state = app_handle.state::<StdMutex<DbConnection>>();
             if let Ok(db) = db_state.lock() {
-                let retention_days: i64 = crate::services::settings::get_with_default(
+                let retention_days: i64 = match crate::services::settings::get_with_default(
                     &db.conn,
                     "notification_retention_days",
                     "7",
                 )
                 .parse()
-                .unwrap_or(7);
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Invalid notification_retention_days setting, using default 7: {}", e);
+                        7
+                    }
+                };
 
                 if let Err(e) =
                     crate::services::notification::prune_old_notifications(&db.conn, retention_days)
@@ -222,7 +229,8 @@ fn process_request(
     };
 
     // Guard against oversized payloads (1MB limit)
-    if request.body_length().is_some_and(|len| len > 1_048_576) {
+    const MAX_BODY_SIZE: usize = 1_048_576;
+    if request.body_length().is_some_and(|len| len > MAX_BODY_SIZE) {
         let _ = request.respond(
             Response::from_string(r#"{"error":"Request body too large"}"#)
                 .with_status_code(StatusCode(413)),
@@ -230,14 +238,24 @@ fn process_request(
         return Ok(());
     }
 
-    // Read and parse JSON body
+    // Read body with enforced size limit via take() — prevents bypass when Content-Length is absent
     let mut body = String::new();
-    if let Err(e) = request.as_reader().read_to_string(&mut body) {
-        let _ = request.respond(
-            Response::from_string(format!(r#"{{"error":"Failed to read body: {}"}}"#, e))
-                .with_status_code(StatusCode(400)),
-        );
-        return Ok(());
+    match request.as_reader().take((MAX_BODY_SIZE + 1) as u64).read_to_string(&mut body) {
+        Err(e) => {
+            let _ = request.respond(
+                Response::from_string(format!(r#"{{"error":"Failed to read body: {}"}}"#, e))
+                    .with_status_code(StatusCode(400)),
+            );
+            return Ok(());
+        }
+        Ok(_) if body.len() > MAX_BODY_SIZE => {
+            let _ = request.respond(
+                Response::from_string(r#"{"error":"Request body too large"}"#)
+                    .with_status_code(StatusCode(413)),
+            );
+            return Ok(());
+        }
+        Ok(_) => {}
     }
 
     let payload: serde_json::Value = if body.is_empty() {
@@ -271,9 +289,13 @@ fn process_request(
     info!("Hook event emitted: type={}", hook_event.event_type);
 
     // DB persistence + Native notification (best-effort)
+    // Single project lookup shared by both notification and agent activity logic.
     let db_state = app_handle.state::<StdMutex<DbConnection>>();
     if let Ok(db) = db_state.lock() {
-        match crate::services::project::get_by_path(&db.conn, &hook_event.project_path) {
+        let project_result =
+            crate::services::project::get_by_path(&db.conn, &hook_event.project_path);
+
+        match &project_result {
             Ok(Some(project)) => {
                 let title = project.name.clone();
                 let body = hook_event
@@ -299,15 +321,27 @@ fn process_request(
                 // macOS 네이티브 알림 (throttled)
                 let throttle_key =
                     format!("{}:{}", hook_event.project_path, hook_event.event_type);
-                let cooldown_secs: u64 = crate::services::settings::get_with_default(
+                let cooldown_secs: u64 = match crate::services::settings::get_with_default(
                     &db.conn,
                     "notification_cooldown_secs",
                     "5",
                 )
                 .parse()
-                .unwrap_or(5);
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Invalid notification_cooldown_secs setting, using default 5: {}", e);
+                        5
+                    }
+                };
 
-                if throttle.should_send_native(&throttle_key, cooldown_secs) {
+                // Only Stop and PermissionRequest trigger native macOS alerts;
+                // other hook types (PostToolUse, SubagentStart, etc.) are stored
+                // in DB and forwarded to frontend but don't create OS-level popups.
+                const NOTIFY_TYPES: &[&str] = &["Stop", "PermissionRequest"];
+                if NOTIFY_TYPES.contains(&hook_event.event_type.as_str())
+                    && throttle.should_send_native(&throttle_key, cooldown_secs)
+                {
                     let notification_style = crate::services::settings::get_with_default(
                         &db.conn,
                         "notification_style",
@@ -325,12 +359,52 @@ fn process_request(
                         warn!("Failed to send native notification: {}", e);
                     }
                 }
+
+                // Store agent activity events in dedicated table
+                // Subset of HOOK_TYPES — only event types relevant for agent activity tracking.
+                const AGENT_ACTIVITY_TYPES: &[&str] = &[
+                    "PostToolUse",
+                    "PostToolUseFailure",
+                    "Notification",
+                    "SubagentStart",
+                    "SubagentStop",
+                    "TaskCompleted",
+                    "TeammateIdle",
+                    "SessionStart",
+                    "SessionEnd",
+                ];
+                if AGENT_ACTIVITY_TYPES.contains(&hook_event.event_type.as_str()) {
+                    let session_id = hook_event
+                        .payload
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let summary = hook_event
+                        .payload
+                        .get("message")
+                        .or_else(|| hook_event.payload.get("tool_name"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+
+                    if let Err(e) = crate::services::agent_activity::store_activity(
+                        &db.conn,
+                        &project.id,
+                        &hook_event.event_type,
+                        session_id.as_deref(),
+                        None,
+                        summary.as_deref(),
+                        Some(&hook_event.payload.to_string()),
+                    ) {
+                        warn!("Failed to store agent activity: {}", e);
+                    }
+                }
             }
             Ok(None) => warn!("No active project for path: {}", hook_event.project_path),
             Err(e) => warn!("Project lookup failed: {}", e),
         }
+
     } else {
-        warn!("Failed to acquire DB lock for notification");
+        warn!("Failed to acquire DB lock for hook processing (notification + agent activity)");
     }
 
     let _ = request.respond(

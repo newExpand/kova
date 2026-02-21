@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
       output: {
         manualChunks: {
           xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-unicode11"],
+          "git-viz": ["d3-shape", "motion"],
         },
       },
     },

@@ -9,7 +9,13 @@ const TerminalPage = lazy(
   () => import("../features/terminal/components/TerminalPage"),
 );
 
+// Lazy-load GitGraphPage (d3-shape + motion in git-viz chunk)
+const GitGraphPage = lazy(
+  () => import("../features/git/components/GitGraphPage"),
+);
+
 const TERMINAL_ROUTE_PATTERN = /^\/projects\/([^/]+)\/terminal$/;
+const GIT_ROUTE_PATTERN = /^\/projects\/([^/]+)\/git$/;
 
 function useTerminalRouteMatch(): {
   isTerminalRoute: boolean;
@@ -19,6 +25,18 @@ function useTerminalRouteMatch(): {
   const match = location.pathname.match(TERMINAL_ROUTE_PATTERN);
   return {
     isTerminalRoute: !!match,
+    activeProjectId: match?.[1] ?? null,
+  };
+}
+
+function useGitRouteMatch(): {
+  isGitRoute: boolean;
+  activeProjectId: string | null;
+} {
+  const location = useLocation();
+  const match = location.pathname.match(GIT_ROUTE_PATTERN);
+  return {
+    isGitRoute: !!match,
     activeProjectId: match?.[1] ?? null,
   };
 }
@@ -121,14 +139,62 @@ function TerminalPool() {
   );
 }
 
+/** Layout-level git graph pool — survives route navigation (mirrors TerminalPool) */
+function GitGraphPool() {
+  const { isGitRoute, activeProjectId } = useGitRouteMatch();
+  const [visitedProjects, setVisitedProjects] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (activeProjectId) {
+      setVisitedProjects((prev) =>
+        prev.includes(activeProjectId) ? prev : [...prev, activeProjectId],
+      );
+    }
+  }, [activeProjectId]);
+
+  return (
+    <div
+      className="flex flex-1 min-w-0 flex-col overflow-hidden"
+      style={isGitRoute ? undefined : { display: "none" }}
+    >
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-text-muted">Loading git graph...</p>
+          </div>
+        }
+      >
+        {visitedProjects.map((pid) => (
+          <div
+            key={pid}
+            style={{
+              display: pid === activeProjectId ? "flex" : "none",
+              flex: 1,
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <GitGraphPage
+              projectId={pid}
+              isActive={pid === activeProjectId}
+            />
+          </div>
+        ))}
+      </Suspense>
+    </div>
+  );
+}
+
 function AppRoutes() {
   const { isTerminalRoute } = useTerminalRouteMatch();
+  const { isGitRoute } = useGitRouteMatch();
+  const isPoolRoute = isTerminalRoute || isGitRoute;
 
   return (
     <>
       <main
         className="flex flex-1 min-w-0 flex-col overflow-hidden"
-        style={isTerminalRoute ? { display: "none" } : undefined}
+        style={isPoolRoute ? { display: "none" } : undefined}
       >
         <Routes>
           <Route path="/" element={<WelcomePage />} />
@@ -136,10 +202,12 @@ function AppRoutes() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
           <Route path="/projects/:projectId/terminal" element={<></>} />
+          <Route path="/projects/:projectId/git" element={<></>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <TerminalPool />
+      <GitGraphPool />
     </>
   );
 }

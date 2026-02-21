@@ -1,4 +1,6 @@
+pub mod agent_activity;
 pub mod environment;
+pub mod git;
 pub mod hooks;
 pub mod notification;
 pub mod project;

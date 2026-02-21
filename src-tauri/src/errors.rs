@@ -23,6 +23,9 @@ pub enum AppError {
     #[error("Event server error: {0}")]
     EventServer(String),
 
+    #[error("Git command failed: {0}")]
+    Git(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 

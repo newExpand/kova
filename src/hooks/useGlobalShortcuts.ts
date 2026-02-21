@@ -33,6 +33,12 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent("flow-orche:new-project"));
     }
+
+    // Cmd+Shift+G — Toggle Terminal ↔ Git Graph
+    if (e.metaKey && e.shiftKey && e.key === "g") {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent("flow-orche:toggle-git"));
+    }
   }, []);
 
   useEffect(() => {

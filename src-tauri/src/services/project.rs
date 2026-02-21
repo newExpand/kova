@@ -106,7 +106,7 @@ pub fn get_by_path(conn: &Connection, path: &str) -> Result<Option<Project>, App
 
 /// Get a single project by ID
 pub fn get(conn: &Connection, id: &str) -> Result<Project, AppError> {
-    conn.query_row(
+    match conn.query_row(
         "SELECT id, name, path, color_index, is_active, created_at, updated_at
          FROM projects WHERE id = ?1",
         [id],
@@ -121,8 +121,13 @@ pub fn get(conn: &Connection, id: &str) -> Result<Project, AppError> {
                 updated_at: row.get(6)?,
             })
         },
-    )
-    .map_err(|_| AppError::NotFound(format!("Project not found: {}", id)))
+    ) {
+        Ok(project) => Ok(project),
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            Err(AppError::NotFound(format!("Project not found: {}", id)))
+        }
+        Err(e) => Err(AppError::Database(e)),
+    }
 }
 
 /// Update a project

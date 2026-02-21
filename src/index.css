@@ -300,6 +300,18 @@ body {
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* ---------- Git graph ---------- */
+
+@keyframes agent-breathing {
+  0%   { box-shadow: 0 0 0 0px var(--breath-color, oklch(0.65 0.18 250 / 0.4)); }
+  70%  { box-shadow: 0 0 0 6px var(--breath-color, oklch(0.65 0.18 250 / 0)); }
+  100% { box-shadow: 0 0 0 0px var(--breath-color, oklch(0.65 0.18 250 / 0)); }
+}
+
+.agent-breathing {
+  animation: agent-breathing 2s ease-in-out infinite;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -308,7 +320,8 @@ body {
   .sidebar-list-enter-sessions,
   .sidebar-item-stagger,
   .sidebar-item-hover,
-  .sidebar-context-menu {
+  .sidebar-context-menu,
+  .agent-breathing {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }
