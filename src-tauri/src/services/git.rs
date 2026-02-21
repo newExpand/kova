@@ -370,10 +370,7 @@ fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
         let mut result = Vec::new();
         let mut rest = raw;
         while let Some(pos) = rest.find("diff --git ") {
-            if pos > 0 && !result.is_empty() {
-                // The text before this "diff --git" belongs to the previous section
-                // We need to handle this differently
-            }
+            // Text before the first "diff --git" (commit metadata) is intentionally skipped
             rest = &rest[pos..];
             // Find the next "diff --git " after the current one
             let next = rest[1..].find("diff --git ").map(|p| p + 1);
@@ -394,13 +391,25 @@ fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
     sections
         .iter()
         .filter_map(|section| {
-            let first_line = section.lines().next()?;
+            let first_line = match section.lines().next() {
+                Some(l) => l,
+                None => {
+                    warn!("Skipping empty diff section");
+                    return None;
+                }
+            };
             // Extract path from "diff --git a/PATH b/PATH"
-            let path = first_line
-                .strip_prefix("diff --git ")?
-                .split(" b/")
-                .nth(1)
-                .map(|p| p.to_string())?;
+            let path = match first_line
+                .strip_prefix("diff --git ")
+                .and_then(|s| s.rsplit_once(" b/"))
+                .map(|(_, p)| p.to_string())
+            {
+                Some(p) => p,
+                None => {
+                    warn!("Failed to parse file path from diff header: {:?}", first_line);
+                    return None;
+                }
+            };
 
             // Check for binary files
             if section.contains("Binary files") {

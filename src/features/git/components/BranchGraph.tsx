@@ -4,6 +4,7 @@ import { COLUMN_WIDTH, ROW_HEIGHT } from "../types";
 import { BranchLine } from "./BranchLine";
 import { CommitNode } from "./CommitNode";
 import { useGitStore } from "../stores/gitStore";
+import { Sparkles } from "lucide-react";
 
 interface BranchGraphProps {
   layout: GraphLayout;
@@ -107,6 +108,18 @@ export function BranchGraph({ layout, highlightBranch, onHoverBranch, onLeaveBra
               <span className="truncate text-xs text-text-secondary">
                 {node.commit.message}
               </span>
+              {node.commit.isAgentCommit && (
+                <span
+                  className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                    text-[9px] font-bold leading-none
+                    bg-purple-500/10 text-purple-300 border border-purple-400/20
+                    shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
+                  aria-label="AI Agent commit"
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  AI
+                </span>
+              )}
               {/* Ref badges */}
               {node.commit.refs.map((ref) => (
                 <span

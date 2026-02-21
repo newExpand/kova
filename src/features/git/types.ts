@@ -6,6 +6,10 @@ export type {
   GitWorktree,
   GitStatus,
   GitGraphData,
+  CommitDetail,
+  DiffStats,
+  FileDiff,
+  FileStatus,
 } from "../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------

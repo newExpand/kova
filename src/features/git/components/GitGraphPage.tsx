@@ -2,6 +2,7 @@ import { useGitStore } from "../stores/gitStore";
 import { useGitPolling } from "../hooks/useGitPolling";
 import { useGitGraph } from "../hooks/useGitGraph";
 import { BranchGraph } from "./BranchGraph";
+import { CommitDetailPanel } from "./CommitDetailPanel";
 import { WorktreePanel } from "./WorktreePanel";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
@@ -22,6 +23,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const graphData = useGitStore((s) => s.graphData[projectId]);
   const isLoading = useGitStore((s) => s.isProjectLoading(projectId));
   const error = useGitStore((s) => s.getProjectError(projectId));
+  const selectedCommitHash = useGitStore((s) => s.selectedCommitHash);
+  const selectCommit = useGitStore((s) => s.selectCommit);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
@@ -94,19 +97,27 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Main graph area */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
-        {layout.nodes.length > 0 ? (
-          <BranchGraph
-            layout={layout}
-            highlightBranch={hoveredBranch}
-            onHoverBranch={handleHoverBranch}
-            onLeaveBranch={handleLeaveBranch}
+      {/* Main graph area + detail panel */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {layout.nodes.length > 0 ? (
+            <BranchGraph
+              layout={layout}
+              highlightBranch={hoveredBranch}
+              onHoverBranch={handleHoverBranch}
+              onLeaveBranch={handleLeaveBranch}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <p className="text-sm text-text-muted">No commits yet</p>
+            </div>
+          )}
+        </div>
+        {selectedCommitHash && project?.path && (
+          <CommitDetailPanel
+            projectPath={project.path}
+            onClose={() => selectCommit(null)}
           />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-text-muted">No commits yet</p>
-          </div>
         )}
       </div>
 

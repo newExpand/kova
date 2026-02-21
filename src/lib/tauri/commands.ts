@@ -116,6 +116,7 @@ export interface GitCommit {
   date: string;
   parents: string[];
   refs: GitRef[];
+  isAgentCommit: boolean;
 }
 
 export interface GitBranch {
@@ -146,6 +147,30 @@ export interface GitGraphData {
   branches: GitBranch[];
   worktrees: GitWorktree[];
   status: GitStatus;
+}
+
+export type FileStatus = "added" | "modified" | "deleted" | "renamed";
+
+export interface DiffStats {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+}
+
+export interface FileDiff {
+  path: string;
+  status: FileStatus;
+  insertions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface CommitDetail {
+  hash: string;
+  fullMessage: string;
+  isAgentCommit: boolean;
+  stats: DiffStats;
+  files: FileDiff[];
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +402,13 @@ export async function getGitGraph(
 
 export async function getGitStatus(path: string): Promise<GitStatus> {
   return invoke<GitStatus>("get_git_status", { path });
+}
+
+export async function getCommitDetail(
+  path: string,
+  hash: string,
+): Promise<CommitDetail> {
+  return invoke<CommitDetail>("get_commit_detail", { path, hash });
 }
 
 // ---------------------------------------------------------------------------
