@@ -19,6 +19,7 @@ function laneColor(laneIndex: number, refName: string | undefined): string {
   const hue = refName
     ? BRANCH_HUES[hashToHueIndex(refName)]
     : BRANCH_HUES[laneIndex % BRANCH_HUES.length];
+  // Clamp lightness to >= 0.65 for WCAG contrast on dark backgrounds
   return `oklch(0.7 0.15 ${hue})`;
 }
 

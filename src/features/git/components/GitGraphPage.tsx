@@ -4,7 +4,7 @@ import { useGitGraph } from "../hooks/useGitGraph";
 import { BranchGraph } from "./BranchGraph";
 import { WorktreePanel } from "./WorktreePanel";
 import { useProjectStore } from "../../project/stores/projectStore";
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { GitBranch } from "lucide-react";
 
 interface GitGraphPageProps {
@@ -20,6 +20,30 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const isLoading = useGitStore((s) => s.isProjectLoading(projectId));
   const error = useGitStore((s) => s.getProjectError(projectId));
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
+  const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleHoverBranch = useCallback((branch: string) => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    setHoveredBranch(branch);
+  }, []);
+
+  const handleLeaveBranch = useCallback(() => {
+    leaveTimerRef.current = setTimeout(() => {
+      setHoveredBranch(null);
+      leaveTimerRef.current = null;
+    }, 50);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    };
+  }, []);
 
   // Poll for git updates
   useGitPolling(projectId, project?.path ?? "", isActive);
@@ -70,7 +94,12 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
       {/* Main graph area */}
       <div className="flex-1 min-w-0 overflow-y-auto">
         {layout.nodes.length > 0 ? (
-          <BranchGraph layout={layout} />
+          <BranchGraph
+            layout={layout}
+            highlightBranch={hoveredBranch}
+            onHoverBranch={handleHoverBranch}
+            onLeaveBranch={handleLeaveBranch}
+          />
         ) : (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-text-muted">No commits yet</p>
@@ -83,7 +112,11 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         worktrees={graphData?.worktrees ?? []}
         status={graphData?.status}
         collapsed={panelCollapsed}
-        onToggle={() => setPanelCollapsed((p) => !p)}
+        onToggle={togglePanel}
+        projectId={projectId}
+        hoveredBranch={hoveredBranch}
+        onHoverBranch={handleHoverBranch}
+        onLeaveBranch={handleLeaveBranch}
       />
     </div>
   );

@@ -6,9 +6,10 @@ interface CommitNodeProps {
   node: GraphNode;
   isSelected: boolean;
   onSelect: () => void;
+  isDimmed?: boolean;
 }
 
-export function CommitNode({ node, isSelected, onSelect }: CommitNodeProps) {
+export function CommitNode({ node, isSelected, onSelect, isDimmed }: CommitNodeProps) {
   const cx = node.x * COLUMN_WIDTH;
   const cy = node.y * ROW_HEIGHT + ROW_HEIGHT / 2;
   const baseR = node.isHead ? 6 : 5;
@@ -22,6 +23,10 @@ export function CommitNode({ node, isSelected, onSelect }: CommitNodeProps) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className="cursor-pointer"
+      style={{
+        opacity: isDimmed ? 0.3 : 1,
+        transition: "opacity 200ms ease-in-out",
+      }}
     >
       {/* Head glow */}
       {node.isHead && (
