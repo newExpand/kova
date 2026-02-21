@@ -1,14 +1,16 @@
 import { useEffect } from "react";
 import { motion } from "motion/react";
-import { X, AlertCircle, FolderGit2 } from "lucide-react";
+import { X, AlertCircle, FolderGit2, Maximize2, Minimize2 } from "lucide-react";
 import { useGitStore } from "../stores/gitStore";
 import { DiffFileList } from "./DiffViewer";
 
 interface WorkingChangesPanelProps {
   onClose: () => void;
+  maximized: boolean;
+  onToggleMaximize: () => void;
 }
 
-export function WorkingChangesPanel({ onClose }: WorkingChangesPanelProps) {
+export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: WorkingChangesPanelProps) {
   const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
   const workingChanges = useGitStore((s) => s.workingChanges);
   const isLoading = useGitStore((s) => s.isWorkingChangesLoading);
@@ -45,10 +47,15 @@ export function WorkingChangesPanel({ onClose }: WorkingChangesPanelProps) {
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="border-t border-white/[0.06] bg-white/[0.02] flex flex-col max-h-[50vh]"
+      className={`border-t border-white/[0.06] bg-white/[0.02] flex flex-col overflow-hidden ${
+        maximized ? "flex-1" : "max-h-[50vh]"
+      }`}
     >
       {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-white/[0.03] border-b border-white/[0.04]">
+      <div
+        className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-white/[0.03] border-b border-white/[0.04] cursor-pointer select-none"
+        onDoubleClick={onToggleMaximize}
+      >
         <FolderGit2 className="h-3.5 w-3.5 text-text-muted" />
         <span className="text-xs font-medium text-text-secondary">
           Working Changes
@@ -57,6 +64,14 @@ export function WorkingChangesPanel({ onClose }: WorkingChangesPanelProps) {
           {shortPath}
         </span>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onToggleMaximize}
+          className="rounded p-1 text-text-muted hover:bg-white/[0.08] hover:text-text-secondary transition-colors"
+          aria-label={maximized ? "Restore panel" : "Maximize panel"}
+        >
+          {maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
         <button
           type="button"
           onClick={onClose}

@@ -1,22 +1,23 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "motion/react";
-import { Sparkles, X, Copy, Check, AlertCircle } from "lucide-react";
+import { Sparkles, X, Copy, Check, AlertCircle, Maximize2, Minimize2 } from "lucide-react";
 import { useGitStore } from "../stores/gitStore";
 import { FileDiffRow } from "./DiffViewer";
 
 interface CommitDetailPanelProps {
   projectPath: string;
   onClose: () => void;
+  maximized: boolean;
+  onToggleMaximize: () => void;
 }
 
-export function CommitDetailPanel({ projectPath, onClose }: CommitDetailPanelProps) {
+export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMaximize }: CommitDetailPanelProps) {
   const selectedHash = useGitStore((s) => s.selectedCommitHash);
   const commitDetail = useGitStore((s) => s.commitDetail);
   const isDetailLoading = useGitStore((s) => s.isDetailLoading);
   const detailError = useGitStore((s) => s.detailError);
   const fetchCommitDetail = useGitStore((s) => s.fetchCommitDetail);
 
-  const [expanded, setExpanded] = useState(false);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -94,9 +95,6 @@ export function CommitDetailPanel({ projectPath, onClose }: CommitDetailPanelPro
     });
   }, []);
 
-  const toggleExpanded = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
 
   // Split message into subject and body
   const { subject, body } = useMemo(() => {
@@ -115,14 +113,14 @@ export function CommitDetailPanel({ projectPath, onClose }: CommitDetailPanelPro
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className={`border-t border-white/[0.06] bg-white/[0.02] flex flex-col ${
-        expanded ? "max-h-[80vh]" : "max-h-[50vh]"
+      className={`border-t border-white/[0.06] bg-white/[0.02] flex flex-col overflow-hidden ${
+        maximized ? "flex-1" : "max-h-[50vh]"
       }`}
     >
       {/* Header */}
       <div
         className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 bg-white/[0.03] border-b border-white/[0.04] cursor-pointer select-none"
-        onDoubleClick={toggleExpanded}
+        onDoubleClick={onToggleMaximize}
       >
         {/* Hash + copy button */}
         <button
@@ -157,6 +155,16 @@ export function CommitDetailPanel({ projectPath, onClose }: CommitDetailPanelPro
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Maximize/Minimize button */}
+        <button
+          type="button"
+          onClick={onToggleMaximize}
+          className="rounded p-1 text-text-muted hover:bg-white/[0.08] hover:text-text-secondary transition-colors"
+          aria-label={maximized ? "Restore panel" : "Maximize panel"}
+        >
+          {maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
 
         {/* Close button */}
         <button

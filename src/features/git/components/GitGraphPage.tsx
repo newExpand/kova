@@ -30,6 +30,18 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const selectWorktree = useGitStore((s) => s.selectWorktree);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
+  const [panelMaximized, setPanelMaximized] = useState(false);
+  const togglePanelMaximize = useCallback(() => setPanelMaximized((p) => !p), []);
+
+  const handleCloseCommit = useCallback(() => {
+    selectCommit(null);
+    setPanelMaximized(false);
+  }, [selectCommit]);
+
+  const handleCloseWorktree = useCallback(() => {
+    selectWorktree(null);
+    setPanelMaximized(false);
+  }, [selectWorktree]);
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,7 +114,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
     <div className="flex h-full overflow-hidden">
       {/* Main graph area + detail panel */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className={panelMaximized ? "hidden" : "flex-1 min-h-0 overflow-y-auto"}>
           {layout.nodes.length > 0 ? (
             <BranchGraph
               layout={layout}
@@ -119,12 +131,16 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         {selectedCommitHash && project?.path && (
           <CommitDetailPanel
             projectPath={project.path}
-            onClose={() => selectCommit(null)}
+            onClose={handleCloseCommit}
+            maximized={panelMaximized}
+            onToggleMaximize={togglePanelMaximize}
           />
         )}
         {selectedWorktreePath && (
           <WorkingChangesPanel
-            onClose={() => selectWorktree(null)}
+            onClose={handleCloseWorktree}
+            maximized={panelMaximized}
+            onToggleMaximize={togglePanelMaximize}
           />
         )}
       </div>
