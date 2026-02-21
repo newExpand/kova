@@ -12,7 +12,7 @@ export const tokyonightStorm: TerminalTheme = {
     cursorAccent: "#24283b",
     selectionBackground: "#33467c",
     selectionForeground: "#c0caf5",
-    black: "#1d202f",
+    black: "#414868",
     red: "#f7768e",
     green: "#9ece6a",
     yellow: "#e0af68",

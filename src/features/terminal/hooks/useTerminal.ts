@@ -181,6 +181,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           allowTransparency: true,
           scrollback: 0,
           macOptionClickForcesSelection: true,
+          minimumContrastRatio: 3,
         });
 
         // Load addons

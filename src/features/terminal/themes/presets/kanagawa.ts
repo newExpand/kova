@@ -12,7 +12,7 @@ export const kanagawa: TerminalTheme = {
     cursorAccent: "#1f1f28",
     selectionBackground: "#2d4f67",
     selectionForeground: "#c8c093",
-    black: "#090618",
+    black: "#54546d",
     red: "#c34043",
     green: "#76946a",
     yellow: "#c0a36e",
