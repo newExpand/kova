@@ -289,6 +289,7 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
             sessionName={activeConfig.sessionName}
             disabled={status !== "connected"}
             isActive={isActive}
+            projectId={projectId}
             onRequestAction={handleRequestAction}
           />
           <PaneToolbar

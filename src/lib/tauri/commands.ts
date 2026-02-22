@@ -662,3 +662,105 @@ export async function checkRebaseStatus(
   return invoke<RebaseStatusResult>("check_rebase_status", { worktreePath });
 }
 
+// ---------------------------------------------------------------------------
+// SSH types
+// ---------------------------------------------------------------------------
+
+export type SshAuthType = "key" | "agent";
+
+export interface SshConnection {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: SshAuthType;
+  keyPath: string | null;
+  projectId: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSshConnectionInput {
+  name: string;
+  host: string;
+  port?: number;
+  username: string;
+  authType?: SshAuthType;
+  keyPath?: string;
+  projectId?: string;
+  isDefault?: boolean;
+}
+
+export interface UpdateSshConnectionInput {
+  name?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  authType?: SshAuthType;
+  keyPath?: string | null;
+  projectId?: string | null;
+  isDefault?: boolean;
+}
+
+export interface SshConnectResult {
+  connectionId: string;
+  connectionName: string;
+  windowName: string;
+  sessionName: string;
+}
+
+export interface SshTestResult {
+  success: boolean;
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
+// SSH commands
+// ---------------------------------------------------------------------------
+
+export async function createSshConnection(
+  input: CreateSshConnectionInput,
+): Promise<SshConnection> {
+  return invoke<SshConnection>("create_ssh_connection", { input });
+}
+
+export async function listSshConnections(): Promise<SshConnection[]> {
+  return invoke<SshConnection[]>("list_ssh_connections");
+}
+
+export async function listSshConnectionsByProject(
+  projectId: string,
+): Promise<SshConnection[]> {
+  return invoke<SshConnection[]>("list_ssh_connections_by_project", {
+    projectId,
+  });
+}
+
+export async function getSshConnection(id: string): Promise<SshConnection> {
+  return invoke<SshConnection>("get_ssh_connection", { id });
+}
+
+export async function updateSshConnection(
+  id: string,
+  input: UpdateSshConnectionInput,
+): Promise<SshConnection> {
+  return invoke<SshConnection>("update_ssh_connection", { id, input });
+}
+
+export async function deleteSshConnection(id: string): Promise<void> {
+  return invoke<void>("delete_ssh_connection", { id });
+}
+
+export async function connectSsh(
+  id: string,
+  sessionName: string,
+): Promise<SshConnectResult> {
+  return invoke<SshConnectResult>("connect_ssh", { id, sessionName });
+}
+
+export async function testSshConnection(id: string): Promise<SshTestResult> {
+  return invoke<SshTestResult>("test_ssh_connection", { id });
+}
+

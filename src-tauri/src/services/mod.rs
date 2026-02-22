@@ -6,4 +6,5 @@ pub mod hooks;
 pub mod notification;
 pub mod project;
 pub mod settings;
+pub mod ssh;
 pub mod tmux;

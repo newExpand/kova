@@ -8,11 +8,13 @@ import {
 } from "../../../lib/tauri/commands";
 import type { TmuxWindow } from "../../../lib/tauri/commands";
 import type { PaneAction } from "../types";
+import { SshQuickConnect } from "../../ssh";
 
 interface WindowToolbarProps {
   sessionName: string;
   disabled: boolean;
   isActive: boolean;
+  projectId?: string | null;
   onRequestAction: (action: PaneAction) => void;
 }
 
@@ -20,6 +22,7 @@ export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
   isActive,
+  projectId,
   onRequestAction,
 }: WindowToolbarProps) {
   const [windows, setWindows] = useState<TmuxWindow[]>([]);
@@ -126,6 +129,14 @@ export const WindowToolbar = memo(function WindowToolbar({
       >
         + <span className="ml-0.5 opacity-60">⌘T</span>
       </Button>
+
+      {/* SSH Quick Connect */}
+      <SshQuickConnect
+        sessionName={sessionName}
+        projectId={projectId ?? null}
+        disabled={disabled}
+      />
+
       <Button
         variant="ghost"
         size="sm"

@@ -4,6 +4,11 @@ import { TerminalSquare, Command } from "lucide-react";
 import { SessionManagerPage, useTmuxStore } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
 
+// Lazy-load SshConnectionList
+const SshConnectionList = lazy(
+  () => import("../features/ssh/components/SshConnectionList"),
+);
+
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
   () => import("../features/terminal/components/TerminalPage"),
@@ -200,6 +205,20 @@ function AppRoutes() {
           <Route path="/" element={<WelcomePage />} />
           <Route path="/sessions" element={<SessionManagerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/ssh"
+            element={
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-sm text-text-muted">Loading SSH...</p>
+                  </div>
+                }
+              >
+                <SshConnectionList />
+              </Suspense>
+            }
+          />
           <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
           <Route path="/projects/:projectId/terminal" element={<></>} />
           <Route path="/projects/:projectId/git" element={<></>} />

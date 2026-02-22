@@ -124,6 +124,24 @@ impl DbConnection {
             info!("Migration 004 already applied, skipping");
         }
 
+        // Check if migration 005 has been applied
+        let version_5: Option<i32> = conn
+            .query_row(
+                "SELECT version FROM _migrations WHERE version = 5",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if version_5.is_none() {
+            info!("Running migration 005_ssh_connections.sql");
+            let migration_sql = include_str!("migrations/005_ssh_connections.sql");
+            conn.execute_batch(migration_sql)?;
+            info!("Migration 005 applied successfully");
+        } else {
+            info!("Migration 005 already applied, skipping");
+        }
+
         Ok(())
     }
 }

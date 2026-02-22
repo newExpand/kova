@@ -276,6 +276,15 @@ pub fn run() {
             commands::agent::check_rebase_status,
             // Agent activity commands
             commands::agent_activity::list_agent_activities,
+            // SSH commands
+            commands::ssh::create_ssh_connection,
+            commands::ssh::list_ssh_connections,
+            commands::ssh::list_ssh_connections_by_project,
+            commands::ssh::get_ssh_connection,
+            commands::ssh::update_ssh_connection,
+            commands::ssh::delete_ssh_connection,
+            commands::ssh::connect_ssh,
+            commands::ssh::test_ssh_connection,
             // Environment commands
             commands::environment::check_environment,
         ])
