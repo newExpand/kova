@@ -34,3 +34,6 @@ src-tauri/gen/
 *.db
 *.db-journal
 *.db-wal
+
+# Claude Code
+.claude/

@@ -8,6 +8,7 @@ export type {
   GitStatus,
   GitGraphData,
   CommitDetail,
+  CommitResult,
   DiffStats,
   FileDiff,
   FileStatus,
@@ -34,3 +35,4 @@ export { useGitPolling } from "./hooks/useGitPolling";
 export { ProjectTabSwitcher } from "./components/ProjectTabSwitcher";
 export { NewAgentTaskDialog } from "./components/NewAgentTaskDialog";
 export { WorktreeContextMenu } from "./components/WorktreeContextMenu";
+export { CommitBox } from "./components/CommitBox";

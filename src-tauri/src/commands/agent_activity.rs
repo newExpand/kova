@@ -14,5 +14,5 @@ pub fn list_agent_activities(
     let db = state
         .lock()
         .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    services::agent_activity::list_activities(&db.conn, &project_id, limit.unwrap_or(100).min(10_000))
+    services::agent_activity::list_activities(&db.conn, &project_id, limit.unwrap_or(100).clamp(0, 10_000))
 }

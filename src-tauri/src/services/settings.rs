@@ -32,7 +32,7 @@ pub fn set(conn: &Connection, key: &str, value: &str) -> Result<(), AppError> {
         params![key, value],
     )?;
 
-    info!("Setting stored: {}={}", key, value);
+    info!("Setting updated: {}", key);
     Ok(())
 }
 

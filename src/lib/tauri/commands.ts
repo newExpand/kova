@@ -426,6 +426,48 @@ export async function getWorkingChanges(
   return invoke<WorkingChanges>("get_working_changes", { worktreePath });
 }
 
+export interface CommitResult {
+  shortHash: string;
+}
+
+export async function gitStageFiles(
+  worktreePath: string,
+  filePaths: string[],
+): Promise<void> {
+  return invoke<void>("git_stage_files", { worktreePath, filePaths });
+}
+
+export async function gitStageAll(worktreePath: string): Promise<void> {
+  return invoke<void>("git_stage_all", { worktreePath });
+}
+
+export async function gitUnstageFiles(
+  worktreePath: string,
+  filePaths: string[],
+): Promise<void> {
+  return invoke<void>("git_unstage_files", { worktreePath, filePaths });
+}
+
+export async function gitUnstageAll(worktreePath: string): Promise<void> {
+  return invoke<void>("git_unstage_all", { worktreePath });
+}
+
+export async function gitDiscardFile(
+  worktreePath: string,
+  filePath: string,
+  isUntracked: boolean,
+): Promise<void> {
+  return invoke<void>("git_discard_file", { worktreePath, filePath, isUntracked });
+}
+
+export async function gitCreateCommit(
+  worktreePath: string,
+  message: string,
+): Promise<CommitResult> {
+  return invoke<CommitResult>("git_create_commit", { worktreePath, message });
+}
+
+
 // ---------------------------------------------------------------------------
 // Agent activity commands
 // ---------------------------------------------------------------------------

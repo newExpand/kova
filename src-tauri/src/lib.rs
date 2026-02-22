@@ -244,6 +244,12 @@ pub fn run() {
             commands::git::get_git_status,
             commands::git::get_commit_detail,
             commands::git::get_working_changes,
+            commands::git::git_stage_files,
+            commands::git::git_stage_all,
+            commands::git::git_unstage_files,
+            commands::git::git_unstage_all,
+            commands::git::git_discard_file,
+            commands::git::git_create_commit,
             // Agent worktree commands
             commands::agent::start_worktree_task,
             commands::agent::restore_worktree_windows,

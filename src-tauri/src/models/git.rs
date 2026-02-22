@@ -131,6 +131,12 @@ impl WorkingChanges {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitResult {
+    pub short_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitGraphData {
     pub commits: Vec<GitCommit>,
     pub branches: Vec<GitBranch>,

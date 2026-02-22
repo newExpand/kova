@@ -7,6 +7,7 @@ export type {
   GitStatus,
   GitGraphData,
   CommitDetail,
+  CommitResult,
   DiffStats,
   FileDiff,
   FileStatus,

@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect, memo } from "react";
+import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Plus, Minus, X } from "lucide-react";
 import type { FileDiff, FileStatus } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
@@ -36,12 +36,20 @@ interface FileDiffRowProps {
   file: FileDiff;
   isExpanded: boolean;
   onToggle: (path: string) => void;
+  onStageFile?: (path: string) => void;
+  onUnstageFile?: (path: string) => void;
+  onDiscardFile?: (path: string, isUntracked: boolean) => void;
+  disabled?: boolean;
 }
 
 export const FileDiffRow = memo(function FileDiffRow({
   file,
   isExpanded,
   onToggle,
+  onStageFile,
+  onUnstageFile,
+  onDiscardFile,
+  disabled,
 }: FileDiffRowProps) {
   const badge = STATUS_BADGES[file.status] ?? {
     label: "?",
@@ -52,37 +60,108 @@ export const FileDiffRow = memo(function FileDiffRow({
     onToggle(file.path);
   }, [onToggle, file.path]);
 
+  // Discard confirmation: first click shows warning, second click within 3s executes
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const discardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDiscard = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onDiscardFile) return;
+    if (confirmDiscard) {
+      if (discardTimerRef.current) clearTimeout(discardTimerRef.current);
+      setConfirmDiscard(false);
+      onDiscardFile(file.path, file.status === "untracked");
+    } else {
+      setConfirmDiscard(true);
+      discardTimerRef.current = setTimeout(() => setConfirmDiscard(false), 3000);
+    }
+  }, [onDiscardFile, confirmDiscard, file.path, file.status]);
+
+  useEffect(() => {
+    return () => {
+      if (discardTimerRef.current) clearTimeout(discardTimerRef.current);
+    };
+  }, []);
+
   return (
     <div className="rounded border border-white/[0.04]">
-      <button
-        type="button"
-        onClick={handleToggle}
-        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.04] transition-colors"
-      >
-        <motion.span
-          animate={{ rotate: isExpanded ? 90 : 0 }}
-          transition={{ duration: 0.15 }}
-          className="shrink-0 text-text-muted"
+      <div className="flex w-full items-center gap-2 px-2 py-1.5 hover:bg-white/[0.04] transition-colors">
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="flex flex-1 min-w-0 items-center gap-2 text-left"
         >
-          <ChevronRight className="h-3 w-3" />
-        </motion.span>
+          <motion.span
+            animate={{ rotate: isExpanded ? 90 : 0 }}
+            transition={{ duration: 0.15 }}
+            className="shrink-0 text-text-muted"
+          >
+            <ChevronRight className="h-3 w-3" />
+          </motion.span>
 
-        <span
-          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none ${badge.className}`}
-        >
-          {badge.label}
-        </span>
+          <span
+            className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none ${badge.className}`}
+          >
+            {badge.label}
+          </span>
 
-        <span className="flex-1 min-w-0 truncate font-mono text-sm text-text-secondary">
-          {file.path}
-        </span>
+          <span className="flex-1 min-w-0 truncate font-mono text-sm text-text-secondary">
+            {file.path}
+          </span>
 
-        <span className="shrink-0 text-xs">
-          <span className="text-green-400">+{file.insertions}</span>
-          {" "}
-          <span className="text-red-400">-{file.deletions}</span>
-        </span>
-      </button>
+          <span className="shrink-0 text-xs">
+            <span className="text-green-400">+{file.insertions}</span>
+            {" "}
+            <span className="text-red-400">-{file.deletions}</span>
+          </span>
+        </button>
+
+        {/* Action buttons (only rendered when callbacks provided) */}
+        {(onStageFile || onUnstageFile || onDiscardFile) && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onStageFile && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onStageFile(file.path); }}
+                disabled={disabled}
+                className="rounded p-0.5 text-text-muted hover:text-green-400 hover:bg-green-500/10 transition-colors disabled:opacity-30"
+                aria-label={`Stage ${file.path}`}
+                title="Stage"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onUnstageFile && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onUnstageFile(file.path); }}
+                disabled={disabled}
+                className="rounded p-0.5 text-text-muted hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors disabled:opacity-30"
+                aria-label={`Unstage ${file.path}`}
+                title="Unstage"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {onDiscardFile && (
+              <button
+                type="button"
+                onClick={handleDiscard}
+                disabled={disabled}
+                className={`rounded p-0.5 transition-colors disabled:opacity-30 ${
+                  confirmDiscard
+                    ? "text-red-400 bg-red-500/20"
+                    : "text-text-muted hover:text-red-400 hover:bg-red-500/10"
+                }`}
+                aria-label={confirmDiscard ? `Confirm discard ${file.path}` : `Discard ${file.path}`}
+                title={confirmDiscard ? "Click again to confirm" : "Discard"}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       <AnimatePresence>
         {isExpanded && file.patch && (
@@ -111,16 +190,32 @@ export const FileDiffRow = memo(function FileDiffRow({
 // DiffFileList — section with label + expand/collapse all
 // ---------------------------------------------------------------------------
 
+interface BulkAction {
+  onAction: () => void;
+  label: string;
+}
+
 interface DiffFileListProps {
   files: FileDiff[];
   sectionLabel?: string;
   defaultExpanded?: boolean;
+  // Optional staging action callbacks
+  onStageFile?: (path: string) => void;
+  onUnstageFile?: (path: string) => void;
+  onDiscardFile?: (path: string, isUntracked: boolean) => void;
+  bulkAction?: BulkAction;
+  disabled?: boolean;
 }
 
 export function DiffFileList({
   files,
   sectionLabel,
   defaultExpanded = true,
+  onStageFile,
+  onUnstageFile,
+  onDiscardFile,
+  bulkAction,
+  disabled,
 }: DiffFileListProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
     () => defaultExpanded ? new Set(files.map((f) => f.path)) : new Set(),
@@ -149,19 +244,31 @@ export function DiffFileList({
           <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
             {sectionLabel} ({files.length})
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (expandedFiles.size === files.length) {
-                setExpandedFiles(new Set());
-              } else {
-                setExpandedFiles(new Set(files.map((f) => f.path)));
-              }
-            }}
-            className="shrink-0 text-xs text-text-muted hover:text-text-secondary transition-colors"
-          >
-            {expandedFiles.size === files.length ? "Collapse all" : "Expand all"}
-          </button>
+          <div className="flex items-center gap-2">
+            {bulkAction && (
+              <button
+                type="button"
+                onClick={bulkAction.onAction}
+                disabled={disabled}
+                className="shrink-0 text-xs text-primary/80 hover:text-primary transition-colors disabled:opacity-30"
+              >
+                {bulkAction.label}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (expandedFiles.size === files.length) {
+                  setExpandedFiles(new Set());
+                } else {
+                  setExpandedFiles(new Set(files.map((f) => f.path)));
+                }
+              }}
+              className="shrink-0 text-xs text-text-muted hover:text-text-secondary transition-colors"
+            >
+              {expandedFiles.size === files.length ? "Collapse all" : "Expand all"}
+            </button>
+          </div>
         </div>
       )}
       <div className="space-y-0.5">
@@ -171,6 +278,10 @@ export function DiffFileList({
             file={file}
             isExpanded={expandedFiles.has(file.path)}
             onToggle={toggleFile}
+            onStageFile={onStageFile}
+            onUnstageFile={onUnstageFile}
+            onDiscardFile={onDiscardFile}
+            disabled={disabled}
           />
         ))}
       </div>

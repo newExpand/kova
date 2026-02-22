@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::git::{CommitDetail, GitGraphData, GitStatus, WorkingChanges};
+use crate::models::git::{CommitDetail, CommitResult, GitGraphData, GitStatus, WorkingChanges};
 use crate::services;
 
 #[tauri::command]
@@ -30,3 +30,35 @@ pub async fn get_working_changes(worktree_path: String) -> Result<WorkingChanges
     }
     services::git::get_working_changes(path)
 }
+
+#[tauri::command]
+pub async fn git_stage_files(worktree_path: String, file_paths: Vec<String>) -> Result<(), AppError> {
+    services::git::stage_files(std::path::Path::new(&worktree_path), &file_paths)
+}
+
+#[tauri::command]
+pub async fn git_stage_all(worktree_path: String) -> Result<(), AppError> {
+    services::git::stage_all(std::path::Path::new(&worktree_path))
+}
+
+#[tauri::command]
+pub async fn git_unstage_files(worktree_path: String, file_paths: Vec<String>) -> Result<(), AppError> {
+    services::git::unstage_files(std::path::Path::new(&worktree_path), &file_paths)
+}
+
+#[tauri::command]
+pub async fn git_unstage_all(worktree_path: String) -> Result<(), AppError> {
+    services::git::unstage_all(std::path::Path::new(&worktree_path))
+}
+
+#[tauri::command]
+pub async fn git_discard_file(worktree_path: String, file_path: String, is_untracked: bool) -> Result<(), AppError> {
+    services::git::discard_file(std::path::Path::new(&worktree_path), &file_path, is_untracked)
+}
+
+#[tauri::command]
+pub async fn git_create_commit(worktree_path: String, message: String) -> Result<CommitResult, AppError> {
+    let short_hash = services::git::create_commit(std::path::Path::new(&worktree_path), &message)?;
+    Ok(CommitResult { short_hash })
+}
+

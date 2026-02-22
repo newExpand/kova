@@ -114,7 +114,7 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className={`border-t border-white/[0.06] bg-white/[0.02] flex flex-col overflow-hidden ${
-        maximized ? "flex-1" : "max-h-[50vh]"
+        maximized ? "flex-1" : "min-h-[50vh] max-h-[50vh]"
       }`}
     >
       {/* Header */}

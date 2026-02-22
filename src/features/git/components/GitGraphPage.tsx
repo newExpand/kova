@@ -141,6 +141,9 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
             onClose={handleCloseWorktree}
             maximized={panelMaximized}
             onToggleMaximize={togglePanelMaximize}
+            projectId={projectId}
+            projectPath={project?.path ?? ""}
+            sessionName={sessionName}
           />
         )}
       </div>

@@ -1,21 +1,31 @@
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { motion } from "motion/react";
-import { X, AlertCircle, FolderGit2, Maximize2, Minimize2 } from "lucide-react";
+import { X, AlertCircle, FolderGit2, Maximize2, Minimize2, RefreshCw } from "lucide-react";
 import { useGitStore } from "../stores/gitStore";
 import { DiffFileList } from "./DiffViewer";
+import { CommitBox } from "./CommitBox";
 
 interface WorkingChangesPanelProps {
   onClose: () => void;
   maximized: boolean;
   onToggleMaximize: () => void;
+  projectId: string;
+  projectPath: string;
+  sessionName: string | null;
 }
 
-export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: WorkingChangesPanelProps) {
+export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize, projectId, projectPath, sessionName }: WorkingChangesPanelProps) {
   const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
   const workingChanges = useGitStore((s) => s.workingChanges);
   const isLoading = useGitStore((s) => s.isWorkingChangesLoading);
   const error = useGitStore((s) => s.workingChangesError);
   const fetchWorkingChanges = useGitStore((s) => s.fetchWorkingChanges);
+  const stageFiles = useGitStore((s) => s.stageFiles);
+  const unstageFiles = useGitStore((s) => s.unstageFiles);
+  const unstageAll = useGitStore((s) => s.unstageAll);
+  const discardFile = useGitStore((s) => s.discardFile);
+  const isCommitting = useGitStore((s) => s.isCommitting);
+  const isStagingInProgress = useGitStore((s) => s.isStagingInProgress);
 
   // Fetch when selected worktree changes
   useEffect(() => {
@@ -37,10 +47,39 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Staging callbacks
+  const handleStageFile = useCallback((path: string) => {
+    if (selectedWorktreePath) stageFiles(selectedWorktreePath, [path]);
+  }, [selectedWorktreePath, stageFiles]);
+
+  const handleUnstageFile = useCallback((path: string) => {
+    if (selectedWorktreePath) unstageFiles(selectedWorktreePath, [path]);
+  }, [selectedWorktreePath, unstageFiles]);
+
+  const handleDiscardFile = useCallback((path: string, isUntracked: boolean) => {
+    if (selectedWorktreePath) discardFile(selectedWorktreePath, path, isUntracked);
+  }, [selectedWorktreePath, discardFile]);
+
+  const stageAllFromSection = useCallback((section: "unstaged" | "untracked") => {
+    if (!selectedWorktreePath || !workingChanges) return;
+    const paths = workingChanges[section].map((f) => f.path);
+    if (paths.length > 0) stageFiles(selectedWorktreePath, paths);
+  }, [selectedWorktreePath, workingChanges, stageFiles]);
+
+  const handleStageAllUnstaged = useCallback(() => stageAllFromSection("unstaged"), [stageAllFromSection]);
+  const handleStageAllUntracked = useCallback(() => stageAllFromSection("untracked"), [stageAllFromSection]);
+
+  const handleUnstageAll = useCallback(() => {
+    if (selectedWorktreePath) unstageAll(selectedWorktreePath);
+  }, [selectedWorktreePath, unstageAll]);
+
   if (!selectedWorktreePath) return null;
 
   // Short label from path (last 2 segments)
   const shortPath = selectedWorktreePath.split("/").slice(-2).join("/");
+  const stagedCount = workingChanges?.staged.length ?? 0;
+  const totalChanges = (workingChanges?.unstaged.length ?? 0) + (workingChanges?.untracked.length ?? 0);
+  const isOperationInProgress = isCommitting || isStagingInProgress;
 
   return (
     <motion.div
@@ -48,7 +87,7 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className={`border-t border-white/[0.06] bg-white/[0.02] flex flex-col overflow-hidden ${
-        maximized ? "flex-1" : "max-h-[50vh]"
+        maximized ? "flex-1" : "min-h-[50vh] max-h-[50vh]"
       }`}
     >
       {/* Header */}
@@ -64,6 +103,16 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
           {shortPath}
         </span>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => selectedWorktreePath && fetchWorkingChanges(selectedWorktreePath)}
+          disabled={isLoading}
+          className="rounded p-1 text-text-muted hover:bg-white/[0.08] hover:text-text-secondary transition-colors disabled:opacity-30"
+          aria-label="Refresh changes"
+          title="Refresh"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+        </button>
         <button
           type="button"
           onClick={onToggleMaximize}
@@ -100,7 +149,17 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
               <span className="text-sm text-text-muted">No uncommitted changes</span>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
+              {/* Commit box */}
+              <CommitBox
+                worktreePath={selectedWorktreePath}
+                projectId={projectId}
+                projectPath={projectPath}
+                stagedCount={stagedCount}
+                totalChanges={totalChanges}
+                sessionName={sessionName}
+              />
+
               {/* Stats summary */}
               <div className="text-sm text-text-muted">
                 {workingChanges.stats.filesChanged} files changed,{" "}
@@ -110,11 +169,14 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
                 {" deletions"}
               </div>
 
-              {/* Staged section */}
+              {/* Staged section — no discard (git restore without --staged has no effect on staged files) */}
               <DiffFileList
                 files={workingChanges.staged}
                 sectionLabel="Staged"
                 defaultExpanded={true}
+                onUnstageFile={handleUnstageFile}
+                bulkAction={{ onAction: handleUnstageAll, label: "Unstage All" }}
+                disabled={isOperationInProgress}
               />
 
               {/* Unstaged section */}
@@ -122,6 +184,10 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
                 files={workingChanges.unstaged}
                 sectionLabel="Unstaged"
                 defaultExpanded={true}
+                onStageFile={handleStageFile}
+                onDiscardFile={handleDiscardFile}
+                bulkAction={{ onAction: handleStageAllUnstaged, label: "Stage All" }}
+                disabled={isOperationInProgress}
               />
 
               {/* Untracked section */}
@@ -129,6 +195,10 @@ export function WorkingChangesPanel({ onClose, maximized, onToggleMaximize }: Wo
                 files={workingChanges.untracked}
                 sectionLabel="Untracked"
                 defaultExpanded={false}
+                onStageFile={handleStageFile}
+                onDiscardFile={handleDiscardFile}
+                bulkAction={{ onAction: handleStageAllUntracked, label: "Stage All" }}
+                disabled={isOperationInProgress}
               />
             </div>
           )

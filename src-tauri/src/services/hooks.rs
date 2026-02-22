@@ -108,7 +108,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
                 !hooks_arr.iter().any(|hook| {
                     hook.get("command")
                         .and_then(|c| c.as_str())
-                        .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook"))
+                        .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook") && cmd.contains("&type="))
                         .unwrap_or(false)
                 })
             } else {
@@ -149,7 +149,7 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
                         !hooks_arr.iter().any(|hook| {
                             hook.get("command")
                                 .and_then(|c| c.as_str())
-                                .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook"))
+                                .map(|cmd| cmd.contains("127.0.0.1") && cmd.contains("/hook") && cmd.contains("&type="))
                                 .unwrap_or(false)
                         })
                     } else {

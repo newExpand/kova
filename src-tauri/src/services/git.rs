@@ -3,32 +3,36 @@ use crate::models::git::*;
 use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-const GIT_SEARCH_PATHS: &[&str] = &[
-    "/opt/homebrew/bin/git",
-    "/usr/local/bin/git",
-    "/usr/bin/git",
-];
-
-static GIT_PATH: OnceLock<String> = OnceLock::new();
-
-fn resolve_git_path() -> Result<&'static str, AppError> {
-    let path = GIT_PATH.get_or_init(|| {
-        // First try PATH-based lookup
-        if let Ok(output) = Command::new("which").arg("git").output() {
-            if output.status.success() {
+/// Resolve a CLI binary path using `which` first, then falling back to known locations.
+/// Results are cached in the provided `OnceLock` for the lifetime of the process.
+fn resolve_cli_path(
+    name: &str,
+    search_paths: &[&str],
+    cache: &'static OnceLock<String>,
+    not_found_msg: &str,
+) -> Result<&'static str, AppError> {
+    let path = cache.get_or_init(|| {
+        match Command::new("which").arg(name).output() {
+            Ok(output) if output.status.success() => {
                 let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !p.is_empty() {
-                    info!("Found git via PATH: {}", p);
+                    info!("Found {} via PATH: {}", name, p);
                     return p;
                 }
+                warn!("'which {}' returned empty output", name);
+            }
+            Ok(output) => {
+                warn!("'which {}' exited with status {}", name, output.status);
+            }
+            Err(e) => {
+                warn!("Failed to run 'which {}': {}", name, e);
             }
         }
-        // Fallback to known locations
-        for candidate in GIT_SEARCH_PATHS {
+        for candidate in search_paths {
             if Path::new(candidate).exists() {
-                info!("Found git at: {}", candidate);
+                info!("Found {} at: {}", name, candidate);
                 return candidate.to_string();
             }
         }
@@ -36,12 +40,27 @@ fn resolve_git_path() -> Result<&'static str, AppError> {
     });
 
     if path.is_empty() {
-        Err(AppError::Git(
-            "git not found. Install git via Homebrew: brew install git".into(),
-        ))
+        warn!("{} not found in PATH or known locations", name);
+        Err(AppError::NotFound(not_found_msg.into()))
     } else {
         Ok(path.as_str())
     }
+}
+
+static GIT_PATH: OnceLock<String> = OnceLock::new();
+const GIT_SEARCH_PATHS: &[&str] = &[
+    "/opt/homebrew/bin/git",
+    "/usr/local/bin/git",
+    "/usr/bin/git",
+];
+
+fn resolve_git_path() -> Result<&'static str, AppError> {
+    resolve_cli_path(
+        "git",
+        GIT_SEARCH_PATHS,
+        &GIT_PATH,
+        "git not found. Install git via Homebrew: brew install git",
+    )
 }
 
 fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, AppError> {
@@ -374,6 +393,136 @@ pub fn delete_branch(repo_path: &Path, branch_name: &str, force: bool) -> Result
     run_git(repo_path, &["branch", flag, branch_name])?;
     info!("Deleted branch: {}", branch_name);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Staging & Commit operations
+// ---------------------------------------------------------------------------
+
+/// Validate that a path is a directory.
+fn validate_worktree(worktree_path: &Path) -> Result<(), AppError> {
+    if !worktree_path.is_dir() {
+        let err = AppError::NotFound(format!(
+            "Worktree path not found: {}",
+            worktree_path.display()
+        ));
+        error!("{}", err);
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// Validate a relative file path for path traversal, with optional canonicalize check.
+fn validate_file_path(worktree_path: &Path, file_path: &str) -> Result<(), AppError> {
+    if file_path.starts_with('/') || file_path.starts_with('\\') || file_path.contains("..") {
+        let err = AppError::InvalidInput(format!("Invalid file path: '{}'", file_path));
+        error!("{}", err);
+        return Err(err);
+    }
+    // Extra safety: if the file exists, verify it stays within worktree via canonicalize
+    let resolved = worktree_path.join(file_path);
+    if let Ok(canonical) = resolved.canonicalize() {
+        let worktree_canonical = worktree_path.canonicalize()
+            .unwrap_or_else(|_| worktree_path.to_path_buf());
+        if !canonical.starts_with(&worktree_canonical) {
+            let err = AppError::InvalidInput(format!(
+                "Path escapes worktree boundary: '{}'", file_path
+            ));
+            error!("{}", err);
+            return Err(err);
+        }
+    }
+    // If canonicalize fails (file doesn't exist yet for staging), string checks above suffice
+    Ok(())
+}
+
+/// Validate file paths, build a git args vector, run the command, and log.
+/// Shared by `stage_files` and `unstage_files` which differ only in their git
+/// sub-command prefix (e.g. `["add", "--"]` vs `["restore", "--staged", "--"]`).
+fn run_git_with_file_paths(
+    worktree_path: &Path,
+    prefix_args: &[&str],
+    file_paths: &[String],
+    action_label: &str,
+) -> Result<(), AppError> {
+    if file_paths.is_empty() {
+        let err = AppError::InvalidInput(format!("No files specified for {}", action_label));
+        error!("{}", err);
+        return Err(err);
+    }
+    validate_worktree(worktree_path)?;
+    for fp in file_paths {
+        validate_file_path(worktree_path, fp)?;
+    }
+    let mut args: Vec<&str> = prefix_args.to_vec();
+    for fp in file_paths {
+        args.push(fp.as_str());
+    }
+    run_git(worktree_path, &args)?;
+    info!("{} {} file(s) in {}", action_label, file_paths.len(), worktree_path.display());
+    Ok(())
+}
+
+/// Stage specific files.
+pub fn stage_files(worktree_path: &Path, file_paths: &[String]) -> Result<(), AppError> {
+    run_git_with_file_paths(worktree_path, &["add", "--"], file_paths, "Staged")
+}
+
+/// Stage all changes (tracked + untracked).
+pub fn stage_all(worktree_path: &Path) -> Result<(), AppError> {
+    validate_worktree(worktree_path)?;
+    run_git(worktree_path, &["add", "-A"])?;
+    info!("Staged all changes in {}", worktree_path.display());
+    Ok(())
+}
+
+/// Unstage specific files (git restore --staged, git 2.23+).
+pub fn unstage_files(worktree_path: &Path, file_paths: &[String]) -> Result<(), AppError> {
+    run_git_with_file_paths(worktree_path, &["restore", "--staged", "--"], file_paths, "Unstaged")
+}
+
+/// Unstage all files (git restore --staged ., git 2.23+).
+pub fn unstage_all(worktree_path: &Path) -> Result<(), AppError> {
+    validate_worktree(worktree_path)?;
+    run_git(worktree_path, &["restore", "--staged", "."])?;
+    info!("Unstaged all changes in {}", worktree_path.display());
+    Ok(())
+}
+
+/// Discard changes in a specific file.
+/// For untracked files, removes with `git clean`.
+/// For tracked files, restores with `git restore` (git 2.23+).
+pub fn discard_file(worktree_path: &Path, file_path: &str, is_untracked: bool) -> Result<(), AppError> {
+    validate_worktree(worktree_path)?;
+    validate_file_path(worktree_path, file_path)?;
+    if is_untracked {
+        run_git(worktree_path, &["clean", "-f", "--", file_path])?;
+    } else {
+        run_git(worktree_path, &["restore", "--", file_path])?;
+    }
+    info!("Discarded changes to '{}' in {}", file_path, worktree_path.display());
+    Ok(())
+}
+
+/// Create a commit with the given message. Returns the new commit's short hash.
+pub fn create_commit(worktree_path: &Path, message: &str) -> Result<String, AppError> {
+    validate_worktree(worktree_path)?;
+    if message.trim().is_empty() {
+        let err = AppError::InvalidInput("Commit message cannot be empty".into());
+        error!("{}", err);
+        return Err(err);
+    }
+    let status = get_status(worktree_path)?;
+    if status.staged_count == 0 {
+        let err = AppError::InvalidInput("No staged changes to commit".into());
+        error!("{}", err);
+        return Err(err);
+    }
+    run_git(worktree_path, &["commit", "-m", message])?;
+    let hash = run_git(worktree_path, &["rev-parse", "--short", "HEAD"])?;
+    let short_hash = hash.trim().to_string();
+    info!("Created commit {} in {}", short_hash, worktree_path.display());
+    Ok(short_hash)
 }
 
 // ---------------------------------------------------------------------------
@@ -865,6 +1014,129 @@ mod tests {
         assert!(!detail.is_agent_commit);
         // The initial commit adds README.md
         assert!(detail.stats.files_changed >= 1);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // -----------------------------------------------------------------------
+    // Staging & Commit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_stage_files() {
+        let repo = create_test_repo();
+        fs::write(repo.join("new.txt"), "hello").unwrap();
+        stage_files(&repo, &["new.txt".to_string()]).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.staged_count, 1);
+        assert_eq!(status.untracked_count, 0);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_stage_all() {
+        let repo = create_test_repo();
+        fs::write(repo.join("a.txt"), "a").unwrap();
+        fs::write(repo.join("b.txt"), "b").unwrap();
+        stage_all(&repo).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.staged_count, 2);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_unstage_files() {
+        let repo = create_test_repo();
+        fs::write(repo.join("new.txt"), "hello").unwrap();
+        stage_files(&repo, &["new.txt".to_string()]).unwrap();
+        unstage_files(&repo, &["new.txt".to_string()]).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.staged_count, 0);
+        assert_eq!(status.untracked_count, 1);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_unstage_all() {
+        let repo = create_test_repo();
+        fs::write(repo.join("a.txt"), "a").unwrap();
+        fs::write(repo.join("b.txt"), "b").unwrap();
+        stage_all(&repo).unwrap();
+        unstage_all(&repo).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.staged_count, 0);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_create_commit() {
+        let repo = create_test_repo();
+        fs::write(repo.join("feat.txt"), "feature").unwrap();
+        stage_all(&repo).unwrap();
+        let hash = create_commit(&repo, "feat: add feature").unwrap();
+        assert!(!hash.is_empty());
+        let status = get_status(&repo).unwrap();
+        assert!(!status.is_dirty);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_create_commit_empty_message() {
+        let repo = create_test_repo();
+        fs::write(repo.join("x.txt"), "x").unwrap();
+        stage_all(&repo).unwrap();
+        let result = create_commit(&repo, "  ");
+        assert!(result.is_err());
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_create_commit_nothing_staged() {
+        let repo = create_test_repo();
+        let result = create_commit(&repo, "empty commit");
+        assert!(result.is_err());
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_discard_file_tracked() {
+        let repo = create_test_repo();
+        fs::write(repo.join("README.md"), "modified").unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.unstaged_count, 1);
+        discard_file(&repo, "README.md", false).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert!(!status.is_dirty);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_discard_file_untracked() {
+        let repo = create_test_repo();
+        fs::write(repo.join("temp.txt"), "temp").unwrap();
+        let status = get_status(&repo).unwrap();
+        assert_eq!(status.untracked_count, 1);
+        discard_file(&repo, "temp.txt", true).unwrap();
+        let status = get_status(&repo).unwrap();
+        assert!(!status.is_dirty);
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_stage_files_empty_list() {
+        let repo = create_test_repo();
+        let result = stage_files(&repo, &[]);
+        assert!(result.is_err());
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn test_validate_file_path_traversal() {
+        let repo = create_test_repo();
+        assert!(validate_file_path(&repo, "../../../etc/passwd").is_err());
+        assert!(validate_file_path(&repo, "/absolute/path").is_err());
+        assert!(validate_file_path(&repo, "\\windows\\path").is_err());
+        assert!(validate_file_path(&repo, "normal/path/file.rs").is_ok());
+        assert!(validate_file_path(&repo, "src/main.rs").is_ok());
         fs::remove_dir_all(&repo).ok();
     }
 

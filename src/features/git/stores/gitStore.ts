@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { CommitDetail, GitGraphData, GitStatus, WorkingChanges } from "../../../lib/tauri/commands";
-import { getCommitDetail, getGitGraph, getGitStatus, getWorkingChanges } from "../../../lib/tauri/commands";
+import {
+  getCommitDetail, getGitGraph, getGitStatus, getWorkingChanges,
+  gitStageFiles, gitStageAll, gitUnstageFiles, gitUnstageAll,
+  gitDiscardFile, gitCreateCommit,
+} from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
 // State
@@ -19,6 +23,12 @@ interface GitState {
   workingChanges: WorkingChanges | null;
   isWorkingChangesLoading: boolean;
   workingChangesError: string | null;
+  // Commit & staging
+  commitMessage: string;
+  isCommitting: boolean;
+  isStagingInProgress: boolean;
+  commitError: string | null;
+  lastCommitHash: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,6 +49,15 @@ interface GitActions {
   selectWorktree: (worktreePath: string | null) => void;
   fetchWorkingChanges: (worktreePath: string) => Promise<void>;
   clearWorkingChanges: () => void;
+  // Staging & commit
+  stageFiles: (worktreePath: string, filePaths: string[]) => Promise<void>;
+  stageAll: (worktreePath: string) => Promise<void>;
+  unstageFiles: (worktreePath: string, filePaths: string[]) => Promise<void>;
+  unstageAll: (worktreePath: string) => Promise<void>;
+  discardFile: (worktreePath: string, filePath: string, isUntracked: boolean) => Promise<void>;
+  commitChanges: (worktreePath: string, message: string, projectId: string, projectPath: string) => Promise<void>;
+  setCommitMessage: (message: string) => void;
+  clearCommitError: () => void;
   // Computed
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
@@ -62,7 +81,50 @@ const initialState: GitState = {
   workingChanges: null,
   isWorkingChangesLoading: false,
   workingChangesError: null,
+  commitMessage: "",
+  isCommitting: false,
+  isStagingInProgress: false,
+  commitError: null,
+  lastCommitHash: null,
 };
+
+// Commit-related state to clear on worktree switch
+const commitInitialState = {
+  commitMessage: "",
+  isCommitting: false,
+  isStagingInProgress: false,
+  commitError: null,
+  lastCommitHash: null,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function toErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Run a git staging command then refresh working changes for the given worktree. */
+async function runAndRefresh(
+  get: () => GitState & GitActions,
+  set: (partial: Partial<GitState>) => void,
+  worktreePath: string,
+  action: () => Promise<void>,
+): Promise<void> {
+  set({ isStagingInProgress: true, commitError: null });
+  try {
+    await action();
+    if (get().selectedWorktreePath === worktreePath) {
+      await get().fetchWorkingChanges(worktreePath);
+    }
+  } catch (e) {
+    console.error("[gitStore] action failed:", e);
+    set({ commitError: toErrorMessage(e) });
+  } finally {
+    set({ isStagingInProgress: false });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -89,10 +151,9 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         loadingProjects: { ...state.loadingProjects, [projectId]: false },
       }));
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       console.error("[gitStore] fetchGraphData failed:", e);
       set((state) => ({
-        errorByProject: { ...state.errorByProject, [projectId]: message },
+        errorByProject: { ...state.errorByProject, [projectId]: toErrorMessage(e) },
         loadingProjects: { ...state.loadingProjects, [projectId]: false },
       }));
     }
@@ -114,11 +175,12 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       set({
         selectedCommitHash: hash,
         detailError: null,
-        // Mutual exclusion: clear working changes
+        // Mutual exclusion: clear working changes + commit state
         selectedWorktreePath: null,
         workingChanges: null,
         isWorkingChangesLoading: false,
         workingChangesError: null,
+        ...commitInitialState,
       });
     }
   },
@@ -131,11 +193,10 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       if (get().selectedCommitHash !== hash) return;
       set({ commitDetail: detail, isDetailLoading: false });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       console.error("[gitStore] fetchCommitDetail failed:", e);
       // Guard against stale error if user selected a different commit
       if (get().selectedCommitHash !== hash) return;
-      set({ commitDetail: null, isDetailLoading: false, detailError: message });
+      set({ commitDetail: null, isDetailLoading: false, detailError: toErrorMessage(e) });
     }
   },
 
@@ -149,6 +210,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         workingChanges: null,
         isWorkingChangesLoading: false,
         workingChangesError: null,
+        ...commitInitialState,
       });
     } else {
       set({
@@ -160,6 +222,8 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         commitDetail: null,
         isDetailLoading: false,
         detailError: null,
+        // Reset commit state for new worktree
+        ...commitInitialState,
       });
     }
   },
@@ -172,10 +236,9 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       if (get().selectedWorktreePath !== worktreePath) return;
       set({ workingChanges: changes, isWorkingChangesLoading: false });
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
       console.error("[gitStore] fetchWorkingChanges failed:", e);
       if (get().selectedWorktreePath !== worktreePath) return;
-      set({ workingChanges: null, isWorkingChangesLoading: false, workingChangesError: message });
+      set({ workingChanges: null, isWorkingChangesLoading: false, workingChangesError: toErrorMessage(e) });
     }
   },
 
@@ -185,6 +248,56 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
     isWorkingChangesLoading: false,
     workingChangesError: null,
   }),
+
+  // Staging & commit actions
+
+  stageFiles: async (worktreePath, filePaths) => {
+    await runAndRefresh(get, set, worktreePath, () => gitStageFiles(worktreePath, filePaths));
+  },
+
+  stageAll: async (worktreePath) => {
+    await runAndRefresh(get, set, worktreePath, () => gitStageAll(worktreePath));
+  },
+
+  unstageFiles: async (worktreePath, filePaths) => {
+    await runAndRefresh(get, set, worktreePath, () => gitUnstageFiles(worktreePath, filePaths));
+  },
+
+  unstageAll: async (worktreePath) => {
+    await runAndRefresh(get, set, worktreePath, () => gitUnstageAll(worktreePath));
+  },
+
+  discardFile: async (worktreePath, filePath, isUntracked) => {
+    await runAndRefresh(get, set, worktreePath, () => gitDiscardFile(worktreePath, filePath, isUntracked));
+  },
+
+  // Critical fix: separate commit from post-commit refresh
+  commitChanges: async (worktreePath, message, projectId, projectPath) => {
+    set({ isCommitting: true, commitError: null, lastCommitHash: null });
+    try {
+      const result = await gitCreateCommit(worktreePath, message);
+      set({ lastCommitHash: result.shortHash, commitMessage: "" });
+    } catch (e) {
+      console.error("[gitStore] commitChanges failed:", e);
+      set({ commitError: toErrorMessage(e) });
+      return; // Do not attempt refresh if commit failed
+    } finally {
+      set({ isCommitting: false });
+    }
+    // Post-commit refresh — errors here should not confuse the user
+    try {
+      if (get().selectedWorktreePath === worktreePath) {
+        await get().fetchWorkingChanges(worktreePath);
+      }
+      await get().fetchGraphData(projectId, projectPath);
+    } catch (e) {
+      console.error("[gitStore] post-commit refresh failed (commit succeeded):", e);
+    }
+  },
+
+  setCommitMessage: (message) => set({ commitMessage: message }),
+
+  clearCommitError: () => set({ commitError: null }),
 
   reset: () => set(initialState),
 }));
