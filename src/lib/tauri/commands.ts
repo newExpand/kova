@@ -590,3 +590,75 @@ export async function sendKeysToTmuxWindow(
   });
 }
 
+export async function sendKeysToTmuxWindowDelayed(
+  sessionName: string,
+  windowName: string,
+  keys: string,
+): Promise<void> {
+  return invoke<void>("send_keys_to_tmux_window_delayed", {
+    sessionName,
+    windowName,
+    keys,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Merge to Main types & commands
+// ---------------------------------------------------------------------------
+
+export type MergeToMainStatus = "success" | "conflictsDetected";
+
+export interface MergeToMainResult {
+  status: MergeToMainStatus;
+  mergeHash: string | null;
+  branchName: string;
+  conflictDetails: string | null;
+  worktreeRemoved: boolean;
+  branchDeleted: boolean;
+}
+
+export interface RebaseStatusResult {
+  inProgress: boolean;
+  hasConflicts: boolean;
+}
+
+export async function mergeWorktreeToMain(
+  repoPath: string,
+  worktreePath: string,
+  branchName: string,
+  sessionName: string | null,
+): Promise<MergeToMainResult> {
+  return invoke<MergeToMainResult>("merge_worktree_to_main", {
+    repoPath,
+    worktreePath,
+    branchName,
+    sessionName,
+  });
+}
+
+export async function completeMergeToMain(
+  repoPath: string,
+  worktreePath: string,
+  branchName: string,
+  sessionName: string | null,
+): Promise<MergeToMainResult> {
+  return invoke<MergeToMainResult>("complete_merge_to_main", {
+    repoPath,
+    worktreePath,
+    branchName,
+    sessionName,
+  });
+}
+
+export async function abortMergeRebase(
+  worktreePath: string,
+): Promise<void> {
+  return invoke<void>("abort_merge_rebase", { worktreePath });
+}
+
+export async function checkRebaseStatus(
+  worktreePath: string,
+): Promise<RebaseStatusResult> {
+  return invoke<RebaseStatusResult>("check_rebase_status", { worktreePath });
+}
+

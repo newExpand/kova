@@ -68,6 +68,7 @@ fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, AppError> {
     let output = Command::new(git)
         .args(args)
         .current_dir(repo_path)
+        .env("LC_ALL", "C")
         .output()
         .map_err(|e| AppError::Git(format!("Failed to execute git: {}", e)))?;
 
@@ -418,6 +419,232 @@ pub fn delete_branch(repo_path: &Path, branch_name: &str, force: bool) -> Result
     run_git(repo_path, &["branch", flag, branch_name])?;
     info!("Deleted branch: {}", branch_name);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Merge to Main operations
+// ---------------------------------------------------------------------------
+
+/// Output from a git command that may fail without being a hard error.
+struct GitCommandOutput {
+    success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+/// Run a git command, returning structured output instead of erroring on failure.
+fn run_git_raw(repo_path: &Path, args: &[&str]) -> Result<GitCommandOutput, AppError> {
+    let git = resolve_git_path()?;
+    let output = Command::new(git)
+        .args(args)
+        .current_dir(repo_path)
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|e| AppError::Git(format!("Failed to execute git: {}", e)))?;
+
+    Ok(GitCommandOutput {
+        success: output.status.success(),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    })
+}
+
+/// Detect the default branch name (main, master, or HEAD branch of main worktree).
+pub fn get_main_branch_name(repo_path: &Path) -> Result<String, AppError> {
+    for name in &["main", "master"] {
+        let result = run_git_raw(repo_path, &["rev-parse", "--verify", name])?;
+        if result.success {
+            return Ok(name.to_string());
+        }
+    }
+    let branches = get_branches(repo_path)?;
+    branches
+        .iter()
+        .find(|b| b.is_head && !b.is_remote)
+        .map(|b| b.name.clone())
+        .ok_or_else(|| AppError::Git("Cannot determine main branch name".into()))
+}
+
+/// Extract the worktree task name from a `.claude/worktrees/<name>` path.
+fn extract_worktree_task_name(worktree_path: &str) -> Option<String> {
+    if worktree_path.contains(".claude/worktrees/") {
+        Path::new(worktree_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+/// Perform the full merge-to-main flow for a worktree branch.
+///
+/// Steps: fetch → rebase --autostash onto main → FF merge → cleanup.
+/// Returns `ConflictsDetected` (not an error) when rebase hits conflicts.
+pub fn merge_worktree_to_main(
+    repo_path: &Path,
+    worktree_path: &Path,
+    feature_branch: &str,
+    session_name: Option<&str>,
+) -> Result<MergeToMainResult, AppError> {
+    validate_worktree(worktree_path)?;
+
+    let main_branch = get_main_branch_name(repo_path)?;
+    info!(
+        "Merge to main: {} -> {} (main: {})",
+        feature_branch, main_branch, main_branch
+    );
+
+    // 1. Fetch from origin (non-fatal if no remote)
+    match run_git_raw(repo_path, &["fetch", "origin"]) {
+        Ok(r) if r.success => info!("Fetched from origin"),
+        Ok(r) => warn!("git fetch origin failed (continuing): {}", r.stderr.trim()),
+        Err(e) => warn!("git fetch failed (continuing): {}", e),
+    }
+
+    // 2. Rebase onto main with autostash
+    let result = run_git_raw(worktree_path, &["rebase", "--autostash", &main_branch])?;
+
+    if !result.success {
+        let lower = result.stderr.to_lowercase();
+        if lower.contains("conflict") || lower.contains("could not apply") {
+            info!("Rebase conflicts detected for branch '{}'", feature_branch);
+            return Ok(MergeToMainResult::conflicts(
+                feature_branch.to_string(),
+                result.stderr.trim().to_string(),
+            ));
+        }
+        // Not a conflict — abort any partial rebase and return error
+        if let Err(abort_err) = run_git_raw(worktree_path, &["rebase", "--abort"]) {
+            warn!("Failed to abort partial rebase: {}", abort_err);
+            return Err(AppError::Git(format!(
+                "Rebase failed: {}. Automatic abort also failed: {}. Manual 'git rebase --abort' may be needed.",
+                result.stderr.trim(),
+                abort_err
+            )));
+        }
+        return Err(AppError::Git(format!(
+            "Rebase failed: {}",
+            result.stderr.trim()
+        )));
+    }
+
+    info!("Rebase successful for '{}'", feature_branch);
+
+    // 3. Ensure main worktree is on the main branch, then FF merge
+    run_git(repo_path, &["checkout", &main_branch])?;
+    run_git(repo_path, &["merge", "--ff-only", feature_branch])?;
+    let hash = run_git(repo_path, &["rev-parse", "--short", "HEAD"])?;
+    let merge_hash = hash.trim().to_string();
+    info!(
+        "FF merged '{}' into '{}' at {}",
+        feature_branch, main_branch, merge_hash
+    );
+
+    // 4. Cleanup
+    let (worktree_removed, branch_deleted) =
+        cleanup_worktree(repo_path, worktree_path, feature_branch, session_name);
+
+    Ok(MergeToMainResult::success(
+        merge_hash,
+        feature_branch.to_string(),
+        worktree_removed,
+        branch_deleted,
+    ))
+}
+
+/// Complete the merge after conflicts have been resolved externally.
+pub fn complete_merge_to_main(
+    repo_path: &Path,
+    worktree_path: &Path,
+    feature_branch: &str,
+    session_name: Option<&str>,
+) -> Result<MergeToMainResult, AppError> {
+    validate_worktree(repo_path)?;
+    let status = check_rebase_status(worktree_path)?;
+    if status.in_progress {
+        return Err(AppError::Git(
+            "Rebase is still in progress. Resolve conflicts and run 'git rebase --continue' first."
+                .into(),
+        ));
+    }
+
+    let main_branch = get_main_branch_name(repo_path)?;
+    run_git(repo_path, &["checkout", &main_branch])?;
+    run_git(repo_path, &["merge", "--ff-only", feature_branch])?;
+    let hash = run_git(repo_path, &["rev-parse", "--short", "HEAD"])?;
+    let merge_hash = hash.trim().to_string();
+    info!("FF merged '{}' at {}", feature_branch, merge_hash);
+
+    let (worktree_removed, branch_deleted) =
+        cleanup_worktree(repo_path, worktree_path, feature_branch, session_name);
+
+    Ok(MergeToMainResult::success(
+        merge_hash,
+        feature_branch.to_string(),
+        worktree_removed,
+        branch_deleted,
+    ))
+}
+
+/// Check if a rebase is in progress in the given worktree.
+pub fn check_rebase_status(worktree_path: &Path) -> Result<RebaseStatusResult, AppError> {
+    validate_worktree(worktree_path)?;
+    let result = run_git_raw(worktree_path, &["status"])?;
+    let stdout = &result.stdout;
+    let in_progress = stdout.contains("rebase in progress")
+        || stdout.contains("interactive rebase in progress")
+        || stdout.contains("currently rebasing");
+    let has_conflicts = stdout.contains("Unmerged paths") || stdout.contains("both modified");
+    Ok(RebaseStatusResult {
+        in_progress,
+        has_conflicts,
+    })
+}
+
+/// Abort an in-progress rebase.
+pub fn abort_rebase(worktree_path: &Path) -> Result<(), AppError> {
+    validate_worktree(worktree_path)?;
+    run_git(worktree_path, &["rebase", "--abort"])?;
+    info!("Aborted rebase in {}", worktree_path.display());
+    Ok(())
+}
+
+/// Shared cleanup: close tmux window, remove worktree, delete branch.
+fn cleanup_worktree(
+    repo_path: &Path,
+    worktree_path: &Path,
+    branch_name: &str,
+    session_name: Option<&str>,
+) -> (bool, bool) {
+    let mut worktree_removed = false;
+    let mut branch_deleted = false;
+
+    // Close tmux window (non-fatal)
+    if let Some(session) = session_name {
+        if let Some(task_name) =
+            extract_worktree_task_name(&worktree_path.to_string_lossy())
+        {
+            if let Err(e) =
+                crate::services::tmux::close_window_by_name(session, &task_name)
+            {
+                warn!("Failed to close tmux window '{}': {}", task_name, e);
+            }
+        }
+    }
+
+    // Remove worktree
+    match remove_worktree(repo_path, &worktree_path.to_string_lossy(), false) {
+        Ok(()) => worktree_removed = true,
+        Err(e) => warn!("Worktree removal failed: {}", e),
+    }
+
+    // Delete feature branch
+    match delete_branch(repo_path, branch_name, false) {
+        Ok(()) => branch_deleted = true,
+        Err(e) => warn!("Branch deletion failed: {}", e),
+    }
+
+    (worktree_removed, branch_deleted)
 }
 
 // ---------------------------------------------------------------------------

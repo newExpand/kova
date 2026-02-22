@@ -150,3 +150,61 @@ pub struct GitCommitsPage {
     pub commits: Vec<GitCommit>,
     pub has_more: bool,
 }
+
+// ---------------------------------------------------------------------------
+// Merge to Main types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MergeToMainStatus {
+    Success,
+    ConflictsDetected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeToMainResult {
+    pub status: MergeToMainStatus,
+    pub merge_hash: Option<String>,
+    pub branch_name: String,
+    pub conflict_details: Option<String>,
+    pub worktree_removed: bool,
+    pub branch_deleted: bool,
+}
+
+impl MergeToMainResult {
+    pub fn success(
+        merge_hash: String,
+        branch_name: String,
+        worktree_removed: bool,
+        branch_deleted: bool,
+    ) -> Self {
+        Self {
+            status: MergeToMainStatus::Success,
+            merge_hash: Some(merge_hash),
+            branch_name,
+            conflict_details: None,
+            worktree_removed,
+            branch_deleted,
+        }
+    }
+
+    pub fn conflicts(branch_name: String, details: String) -> Self {
+        Self {
+            status: MergeToMainStatus::ConflictsDetected,
+            merge_hash: None,
+            branch_name,
+            conflict_details: Some(details),
+            worktree_removed: false,
+            branch_deleted: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseStatusResult {
+    pub in_progress: bool,
+    pub has_conflicts: bool,
+}

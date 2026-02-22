@@ -27,6 +27,8 @@ export {
   normalizePathKey,
 } from "./stores/agentActivityStore";
 export type { AgentStatus, AgentSessionState } from "./stores/agentActivityStore";
+export { useMergeStore } from "./stores/mergeStore";
+export type { MergeStatus } from "./stores/mergeStore";
 
 // Hooks
 export { useGitGraph } from "./hooks/useGitGraph";

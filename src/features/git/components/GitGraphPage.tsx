@@ -5,6 +5,7 @@ import { BranchGraph } from "./BranchGraph";
 import { CommitDetailPanel } from "./CommitDetailPanel";
 import { WorkingChangesPanel } from "./WorkingChangesPanel";
 import { WorktreePanel } from "./WorktreePanel";
+import { MergeProgressDialog } from "./MergeProgressDialog";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -173,6 +174,9 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         onLeaveBranch={handleLeaveBranch}
         onSelectWorktreeChanges={selectWorktree}
       />
+
+      {/* Merge to main dialog (single instance) */}
+      <MergeProgressDialog projectId={projectId} />
     </div>
   );
 }

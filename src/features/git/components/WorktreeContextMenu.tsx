@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Terminal, GitBranchPlus, Trash2 } from "lucide-react";
+import { Terminal, GitBranchPlus, GitMerge, Trash2 } from "lucide-react";
 import type { GitWorktree } from "../../../lib/tauri/commands";
 import {
   selectTmuxWindow,
@@ -8,6 +8,7 @@ import {
   removeAgentWorktree,
 } from "../../../lib/tauri/commands";
 import { useNavigate } from "react-router-dom";
+import { useMergeStore } from "../stores/mergeStore";
 import {
   Dialog,
   DialogContent,
@@ -104,6 +105,17 @@ export function WorktreeContextMenu({
     }
   }, [closeMenu, projectPath, worktree.branch]);
 
+  const handleMergeToMain = useCallback(() => {
+    closeMenu();
+    if (!worktree.branch) return;
+    useMergeStore.getState().requestMerge({
+      repoPath: projectPath,
+      worktreePath: worktree.path,
+      branchName: worktree.branch,
+      agent: sessionName && taskName ? { sessionName, taskName } : null,
+    });
+  }, [closeMenu, projectPath, worktree.path, worktree.branch, sessionName, taskName]);
+
   const handleDeleteWorktree = useCallback(async () => {
     setConfirmDelete(false);
     try {
@@ -145,6 +157,13 @@ export function WorktreeContextMenu({
               icon={<GitBranchPlus className="h-3.5 w-3.5" />}
               label="Push Branch"
               onClick={handlePushBranch}
+            />
+          )}
+          {worktree.branch && !worktree.isMain && (
+            <MenuItem
+              icon={<GitMerge className="h-3.5 w-3.5" />}
+              label="Merge to Main"
+              onClick={handleMergeToMain}
             />
           )}
           {!worktree.isMain && (
@@ -200,6 +219,7 @@ export function WorktreeContextMenu({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </>
   );
 }

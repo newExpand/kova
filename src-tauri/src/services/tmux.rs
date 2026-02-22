@@ -638,6 +638,112 @@ pub fn send_keys_to_window(
     Ok(())
 }
 
+/// Find the tmux pane target where Claude Code is running in a given window.
+///
+/// Strategy (triple fallback):
+/// 1. Search for a pane whose `pane_current_command` contains "claude"
+/// 2. If not found (Claude may be executing a tool), target pane 0
+///    (Claude is always launched in pane 0 by `start_worktree_task`)
+/// 3. If pane query fails entirely, fall back to `session:window` (active pane)
+fn find_claude_pane_target(session_name: &str, window_name: &str) -> String {
+    let base = format!("{}:{}", session_name, window_name);
+
+    let output = tmux_cmd()
+        .args([
+            "list-panes",
+            "-t",
+            &base,
+            "-F",
+            "#{pane_index}|#{pane_current_command}",
+        ])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+
+            // 1st: find the pane running "claude"
+            for line in &lines {
+                if let Some((idx, cmd)) = line.split_once('|') {
+                    if cmd.contains("claude") {
+                        info!("Found Claude pane at {}.{}", base, idx);
+                        return format!("{}.{}", base, idx);
+                    }
+                }
+            }
+
+            // 2nd: multiple panes but no "claude" found → target pane 0
+            if lines.len() > 1 {
+                info!("Claude not detected by command; targeting pane 0 in {}", base);
+                return format!("{}.0", base);
+            }
+        }
+    }
+
+    // 3rd: single pane or query failed → active pane
+    base
+}
+
+/// Send keys to a named window with a delay before Enter to prevent race conditions.
+/// This is the recommended pattern for sending prompts to interactive REPLs (e.g. Claude Code).
+/// Automatically finds the Claude Code pane even when multiple panes exist.
+pub fn send_keys_to_window_with_delay(
+    session_name: &str,
+    window_name: &str,
+    keys: &str,
+) -> Result<(), AppError> {
+    validate_session_name(session_name)?;
+    validate_session_name(window_name)?;
+    if keys.is_empty() {
+        return Err(AppError::InvalidInput("Keys cannot be empty".into()));
+    }
+
+    let target = find_claude_pane_target(session_name, window_name);
+
+    // Step 1: Send the text (without Enter)
+    let output = tmux_cmd()
+        .args(["send-keys", "-t", &target, "-l", keys])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux send-keys: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux send-keys (text) failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    // Step 2: Brief delay to let the REPL process the input.
+    // Safe: this is a sync Tauri command, runs on the IPC threadpool (not main thread).
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    // Step 3: Send Enter separately
+    let output = tmux_cmd()
+        .args(["send-keys", "-t", &target, "Enter"])
+        .output()
+        .map_err(|e| {
+            AppError::TmuxCommand(format!("Failed to execute tmux send-keys Enter: {}", e))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::TmuxCommand(format!(
+            "tmux send-keys (enter) failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    info!(
+        "Sent keys with delay to window '{}' in session '{}'",
+        window_name, session_name
+    );
+    Ok(())
+}
+
 /// Close a specific named window. Silently succeeds if window not found.
 pub fn close_window_by_name(session_name: &str, window_name: &str) -> Result<(), AppError> {
     validate_session_name(session_name)?;

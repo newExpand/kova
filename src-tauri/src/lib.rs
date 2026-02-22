@@ -268,6 +268,12 @@ pub fn run() {
             commands::agent::push_git_branch,
             commands::agent::select_tmux_window,
             commands::agent::send_keys_to_tmux_window,
+            commands::agent::send_keys_to_tmux_window_delayed,
+            // Merge to main commands
+            commands::agent::merge_worktree_to_main,
+            commands::agent::complete_merge_to_main,
+            commands::agent::abort_merge_rebase,
+            commands::agent::check_rebase_status,
             // Agent activity commands
             commands::agent_activity::list_agent_activities,
             // Environment commands

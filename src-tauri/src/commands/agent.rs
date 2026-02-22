@@ -1,5 +1,6 @@
 use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
+use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
 
 #[tauri::command]
@@ -61,4 +62,53 @@ pub fn send_keys_to_tmux_window(
     keys: String,
 ) -> Result<(), AppError> {
     services::tmux::send_keys_to_window(&session_name, &window_name, &keys)
+}
+
+#[tauri::command]
+pub fn send_keys_to_tmux_window_delayed(
+    session_name: String,
+    window_name: String,
+    keys: String,
+) -> Result<(), AppError> {
+    services::tmux::send_keys_to_window_with_delay(&session_name, &window_name, &keys)
+}
+
+#[tauri::command]
+pub fn merge_worktree_to_main(
+    repo_path: String,
+    worktree_path: String,
+    branch_name: String,
+    session_name: Option<String>,
+) -> Result<MergeToMainResult, AppError> {
+    services::git::merge_worktree_to_main(
+        std::path::Path::new(&repo_path),
+        std::path::Path::new(&worktree_path),
+        &branch_name,
+        session_name.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn complete_merge_to_main(
+    repo_path: String,
+    worktree_path: String,
+    branch_name: String,
+    session_name: Option<String>,
+) -> Result<MergeToMainResult, AppError> {
+    services::git::complete_merge_to_main(
+        std::path::Path::new(&repo_path),
+        std::path::Path::new(&worktree_path),
+        &branch_name,
+        session_name.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub fn abort_merge_rebase(worktree_path: String) -> Result<(), AppError> {
+    services::git::abort_rebase(std::path::Path::new(&worktree_path))
+}
+
+#[tauri::command]
+pub fn check_rebase_status(worktree_path: String) -> Result<RebaseStatusResult, AppError> {
+    services::git::check_rebase_status(std::path::Path::new(&worktree_path))
 }
