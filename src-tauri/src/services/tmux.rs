@@ -638,6 +638,13 @@ pub fn send_keys_to_window(
     Ok(())
 }
 
+/// Check if a string looks like a semver version (e.g. "2.1.50", "3.0.0").
+/// Claude Code's native binary reports its version as `pane_current_command`.
+fn is_semver_like(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() >= 2 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// Find the tmux pane target where Claude Code is running in a given window.
 ///
 /// Strategy (triple fallback):
@@ -662,26 +669,37 @@ fn find_claude_pane_target(session_name: &str, window_name: &str) -> String {
         if out.status.success() {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+            info!("find_claude_pane_target: base='{}', panes={:?}", base, lines);
 
-            // 1st: find the pane running "claude"
+            // 1st: find the pane running "claude" or Claude Code version pattern (e.g. "2.1.50")
             for line in &lines {
                 if let Some((idx, cmd)) = line.split_once('|') {
-                    if cmd.contains("claude") {
-                        info!("Found Claude pane at {}.{}", base, idx);
-                        return format!("{}.{}", base, idx);
+                    // Claude Code shows as "claude" (binary name) or its version
+                    // string e.g. "2.1.50" (semver pattern: digit.digit+.digit+)
+                    let is_claude = cmd.contains("claude")
+                        || is_semver_like(cmd);
+                    if is_claude {
+                        let target = format!("{}.{}", base, idx);
+                        info!("Found Claude pane: target='{}', cmd='{}'", target, cmd);
+                        return target;
                     }
                 }
             }
 
             // 2nd: multiple panes but no "claude" found → target pane 0
             if lines.len() > 1 {
-                info!("Claude not detected by command; targeting pane 0 in {}", base);
-                return format!("{}.0", base);
+                let target = format!("{}.0", base);
+                info!("Claude not detected by command; targeting pane 0: '{}'", target);
+                return target;
             }
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            warn!("find_claude_pane_target: list-panes failed for '{}': {}", base, stderr.trim());
         }
     }
 
     // 3rd: single pane or query failed → active pane
+    info!("find_claude_pane_target: using fallback target '{}'", base);
     base
 }
 
@@ -693,6 +711,10 @@ pub fn send_keys_to_window_with_delay(
     window_name: &str,
     keys: &str,
 ) -> Result<(), AppError> {
+    info!(
+        "send_keys_to_window_with_delay: session='{}', window='{}', keys_len={}",
+        session_name, window_name, keys.len()
+    );
     validate_session_name(session_name)?;
     validate_session_name(window_name)?;
     if keys.is_empty() {
@@ -700,6 +722,7 @@ pub fn send_keys_to_window_with_delay(
     }
 
     let target = find_claude_pane_target(session_name, window_name);
+    info!("send_keys_to_window_with_delay: final target='{}'", target);
 
     // Step 1: Send the text (without Enter)
     let output = tmux_cmd()

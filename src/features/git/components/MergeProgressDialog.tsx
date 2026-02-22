@@ -69,13 +69,14 @@ export function MergeProgressDialog({
   }, [status, context?.worktreePath, onAgentStopDetected]);
 
   const handleOpenTerminal = useCallback(() => {
+    dismiss();
     navigate(`/projects/${projectId}/terminal`);
     if (context?.agent) {
       selectTmuxWindow(context.agent.sessionName, context.agent.taskName).catch((e) => {
         console.warn("[MergeProgressDialog] Failed to select tmux window:", e);
       });
     }
-  }, [navigate, projectId, context?.agent]);
+  }, [dismiss, navigate, projectId, context?.agent]);
 
   const isOpen = status !== "idle";
 
@@ -83,9 +84,7 @@ export function MergeProgressDialog({
     <Dialog
       open={isOpen}
       onOpenChange={(open) => {
-        if (!open && (status === "confirming" || status === "success" || status === "error")) {
-          dismiss();
-        }
+        if (!open) dismiss();
       }}
     >
       <DialogContent className="max-w-md">

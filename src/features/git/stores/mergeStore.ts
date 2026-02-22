@@ -136,11 +136,18 @@ export const useMergeStore = create<MergeState & MergeActions>()((set, get) => (
   sendConflictPromptToClaude: async () => {
     const { context } = get();
     if (!context?.agent) {
+      console.warn("[mergeStore] No agent in context:", context);
       set({ errorMessage: "No Claude session found for this worktree. Use the terminal to resolve manually." });
       return false;
     }
 
     const agentState = isAgentIdle(context.worktreePath);
+    console.log("[mergeStore] sendConflictPromptToClaude:", {
+      sessionName: context.agent.sessionName,
+      taskName: context.agent.taskName,
+      worktreePath: context.worktreePath,
+      agentState,
+    });
 
     if (agentState === "busy") {
       // Agent is actively working — wait for Stop event, then auto-send
