@@ -142,17 +142,13 @@ export const useMergeStore = create<MergeState & MergeActions>()((set, get) => (
 
     const agentState = isAgentIdle(context.worktreePath);
 
-    if (agentState === "none") {
-      set({ errorMessage: "No Claude agent found for this worktree. Use the terminal to resolve manually." });
-      return false;
-    }
-
     if (agentState === "busy") {
+      // Agent is actively working — wait for Stop event, then auto-send
       set({ status: "waitingForAgent", errorMessage: null });
       return true;
     }
 
-    // Agent is idle — send immediately
+    // "idle" or "none" (no tracking data, but Claude may still be running) — send optimistically
     try {
       await sendKeysToTmuxWindowDelayed(
         context.agent.sessionName,
