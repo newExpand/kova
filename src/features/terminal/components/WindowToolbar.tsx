@@ -18,6 +18,8 @@ interface WindowToolbarProps {
   onRequestAction: (action: PaneAction) => void;
 }
 
+const TOOLBAR_BTN = "h-[26px] px-1.5 text-xs text-text-muted";
+
 export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
@@ -79,7 +81,7 @@ export const WindowToolbar = memo(function WindowToolbar({
 
   return (
     <div
-      style={{ height: 28, flexShrink: 0 }}
+      style={{ height: 32, flexShrink: 0 }}
       className="flex items-center gap-1 border-b border-white/[0.06] glass-toolbar px-2"
     >
       {/* Window tabs */}
@@ -105,7 +107,7 @@ export const WindowToolbar = memo(function WindowToolbar({
         disabled={disabled}
         onClick={handlePrev}
         title="Previous window (⌘⇧[)"
-        className="h-6 px-1.5 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         ← <span className="ml-0.5 opacity-60">⌘⇧[</span>
       </Button>
@@ -115,7 +117,7 @@ export const WindowToolbar = memo(function WindowToolbar({
         disabled={disabled}
         onClick={handleNext}
         title="Next window (⌘⇧])"
-        className="h-6 px-1.5 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         → <span className="ml-0.5 opacity-60">⌘⇧]</span>
       </Button>
@@ -125,17 +127,10 @@ export const WindowToolbar = memo(function WindowToolbar({
         disabled={disabled}
         onClick={handleNew}
         title="New window (⌘T)"
-        className="h-6 px-1.5 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         + <span className="ml-0.5 opacity-60">⌘T</span>
       </Button>
-
-      {/* SSH Quick Connect */}
-      <SshQuickConnect
-        sessionName={sessionName}
-        projectId={projectId ?? null}
-        disabled={disabled}
-      />
 
       <Button
         variant="ghost"
@@ -143,10 +138,20 @@ export const WindowToolbar = memo(function WindowToolbar({
         disabled={disabled}
         onClick={handleClose}
         title="Close window (⌘⇧W)"
-        className="h-6 px-1.5 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         ✕ <span className="ml-0.5 opacity-60">⌘⇧W</span>
       </Button>
+
+      {/* Separator between tmux controls and SSH */}
+      <div className="h-3.5 w-px bg-white/[0.08] mx-1" />
+
+      {/* SSH Quick Connect */}
+      <SshQuickConnect
+        sessionName={sessionName}
+        projectId={projectId ?? null}
+        disabled={disabled}
+      />
     </div>
   );
 });

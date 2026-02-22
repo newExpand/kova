@@ -11,6 +11,8 @@ interface PaneToolbarProps {
   onToggleThemePicker?: () => void;
 }
 
+const TOOLBAR_BTN = "h-[26px] px-2 text-xs text-text-muted";
+
 export const PaneToolbar = memo(function PaneToolbar({
   sessionName,
   disabled,
@@ -35,7 +37,7 @@ export const PaneToolbar = memo(function PaneToolbar({
 
   return (
     <div
-      style={{ height: 28, flexShrink: 0 }}
+      style={{ height: 32, flexShrink: 0 }}
       className="flex items-center gap-1 border-b border-white/[0.06] glass-toolbar px-2"
     >
       <Button
@@ -44,7 +46,7 @@ export const PaneToolbar = memo(function PaneToolbar({
         disabled={disabled}
         onClick={handleSplitVertical}
         title="Split pane left/right (⌘D)"
-        className="h-6 px-2 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         ⏐ <span className="ml-1 opacity-60">⌘D</span>
       </Button>
@@ -54,7 +56,7 @@ export const PaneToolbar = memo(function PaneToolbar({
         disabled={disabled}
         onClick={handleSplitHorizontal}
         title="Split pane top/bottom (⌘⇧D)"
-        className="h-6 px-2 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         ⎯ <span className="ml-1 opacity-60">⌘⇧D</span>
       </Button>
@@ -64,7 +66,7 @@ export const PaneToolbar = memo(function PaneToolbar({
         disabled={disabled}
         onClick={handleClosePane}
         title="Close active pane (⌘W)"
-        className="h-6 px-2 text-xs text-text-muted"
+        className={TOOLBAR_BTN}
       >
         ✕ <span className="ml-1 opacity-60">⌘W</span>
       </Button>
@@ -74,7 +76,7 @@ export const PaneToolbar = memo(function PaneToolbar({
           size="sm"
           onClick={onToggleThemePicker}
           title="Change terminal theme"
-          className="ml-auto h-6 px-2 text-xs text-text-muted"
+          className={`ml-auto ${TOOLBAR_BTN}`}
         >
           <Palette className="h-3.5 w-3.5" />
         </Button>

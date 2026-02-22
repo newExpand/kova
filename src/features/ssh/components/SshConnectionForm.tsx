@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { AlertCircle, FolderOpen } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +12,18 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { cn } from "../../../lib/utils";
 import { useSshStore } from "../stores/sshStore";
 import type {
   SshConnection,
   CreateSshConnectionInput,
   UpdateSshConnectionInput,
 } from "../../../lib/tauri/commands";
+
+const AUTH_OPTIONS = [
+  { value: "key" as const, label: "SSH Key" },
+  { value: "agent" as const, label: "SSH Agent" },
+];
 
 interface SshConnectionFormProps {
   open: boolean;
@@ -39,7 +46,7 @@ export function SshConnectionForm({
   const [port, setPort] = useState(String(editConnection?.port ?? 22));
   const [username, setUsername] = useState(editConnection?.username ?? "");
   const [authType, setAuthType] = useState<"key" | "agent">(
-    (editConnection?.authType as "key" | "agent") ?? "key",
+    editConnection?.authType ?? "key",
   );
   const [keyPath, setKeyPath] = useState(editConnection?.keyPath ?? "");
   const [saving, setSaving] = useState(false);
@@ -65,7 +72,7 @@ export function SshConnectionForm({
     setHost(editConnection?.host ?? "");
     setPort(String(editConnection?.port ?? 22));
     setUsername(editConnection?.username ?? "");
-    setAuthType((editConnection?.authType as "key" | "agent") ?? "key");
+    setAuthType(editConnection?.authType ?? "key");
     setKeyPath(editConnection?.keyPath ?? "");
     setError(null);
   }, [editConnection]);
@@ -199,59 +206,61 @@ export function SshConnectionForm({
             />
           </div>
 
+          {/* Segmented Control for Auth Type */}
           <div className="grid gap-1.5">
             <Label>Auth Type</Label>
-            <div className="flex gap-3">
-              <label className="flex items-center gap-1.5 text-sm text-text-secondary cursor-pointer">
-                <input
-                  type="radio"
-                  name="authType"
-                  value="key"
-                  checked={authType === "key"}
-                  onChange={() => setAuthType("key")}
-                  className="accent-primary"
-                />
-                SSH Key
-              </label>
-              <label className="flex items-center gap-1.5 text-sm text-text-secondary cursor-pointer">
-                <input
-                  type="radio"
-                  name="authType"
-                  value="agent"
-                  checked={authType === "agent"}
-                  onChange={() => setAuthType("agent")}
-                  className="accent-primary"
-                />
-                SSH Agent
-              </label>
+            <div
+              role="group"
+              aria-label="Authentication type"
+              className="flex rounded-lg border border-white/[0.08] bg-black/20 p-0.5"
+            >
+              {AUTH_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={authType === opt.value}
+                  onClick={() => setAuthType(opt.value)}
+                  className={cn(
+                    "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150",
+                    authType === opt.value
+                      ? "bg-white/[0.10] text-text shadow-sm"
+                      : "text-text-muted hover:text-text-secondary",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 
           {authType === "key" && (
             <div className="grid gap-1.5">
               <Label htmlFor="ssh-keypath">Key Path</Label>
-              <div className="flex gap-2">
+              <div className="relative">
                 <Input
                   id="ssh-keypath"
                   placeholder="~/.ssh/id_rsa"
                   value={keyPath}
                   onChange={(e) => setKeyPath(e.target.value)}
-                  className="flex-1"
+                  className="pr-9"
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 h-9"
+                <button
+                  type="button"
                   onClick={handleBrowseKey}
+                  title="Browse for SSH key"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
                 >
-                  Browse
-                </Button>
+                  <FolderOpen className="h-4 w-4" />
+                </button>
               </div>
             </div>
           )}
 
           {error && (
-            <p className="text-xs text-red-400">{error}</p>
+            <div className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <p>{error}</p>
+            </div>
           )}
         </div>
 

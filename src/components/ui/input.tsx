@@ -12,7 +12,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           "flex h-9 w-full rounded-lg border border-white/[0.08] bg-black/20 backdrop-blur-[12px] px-3 py-1 text-sm text-text shadow-inner shadow-black/20 transition-all duration-200",
           "file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-text",
           "placeholder:text-text-muted",
-          "focus-visible:outline-none focus-visible:border-primary/60 focus-visible:shadow-[0_0_0_3px_rgba(100,140,255,0.15)]",
+          "focus-visible:outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
           "disabled:cursor-not-allowed disabled:opacity-50",
           className,
         )}

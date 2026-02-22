@@ -19,6 +19,7 @@ import {
 interface SshState {
   // 1. State
   connections: SshConnection[];
+  activeConnectionId: string | null;
   isLoading: boolean;
   error: string | null;
 
@@ -38,6 +39,7 @@ interface SshState {
   ) => Promise<SshConnection>;
   deleteConnection: (id: string) => Promise<void>;
   connect: (id: string, sessionName: string) => Promise<SshConnectResult>;
+  disconnect: () => void;
   testConnection: (id: string) => Promise<SshTestResult>;
 
   // 4. Reset
@@ -46,6 +48,7 @@ interface SshState {
 
 const initialState = {
   connections: [] as SshConnection[],
+  activeConnectionId: null as string | null,
   isLoading: false,
   error: null as string | null,
 };
@@ -63,9 +66,20 @@ export const useSshStore = create<SshState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const connections = await listSshConnections();
-      set({ connections });
+      // Clear stale activeConnectionId if the connection no longer exists
+      set((state) => {
+        const ids = new Set(connections.map((c) => c.id));
+        return {
+          connections,
+          activeConnectionId:
+            state.activeConnectionId && ids.has(state.activeConnectionId)
+              ? state.activeConnectionId
+              : null,
+        };
+      });
     } catch (e) {
       set({ error: String(e) });
+      throw e;
     } finally {
       set({ isLoading: false });
     }
@@ -84,6 +98,7 @@ export const useSshStore = create<SshState>((set, get) => ({
       });
     } catch (e) {
       set({ error: String(e) });
+      throw e;
     } finally {
       set({ isLoading: false });
     }
@@ -129,6 +144,8 @@ export const useSshStore = create<SshState>((set, get) => ({
       await deleteSshConnection(id);
       set((state) => ({
         connections: state.connections.filter((c) => c.id !== id),
+        activeConnectionId:
+          state.activeConnectionId === id ? null : state.activeConnectionId,
       }));
     } catch (e) {
       set({ error: String(e) });
@@ -141,11 +158,17 @@ export const useSshStore = create<SshState>((set, get) => ({
   connect: async (id, sessionName) => {
     set({ error: null });
     try {
-      return await connectSsh(id, sessionName);
+      const result = await connectSsh(id, sessionName);
+      set({ activeConnectionId: id });
+      return result;
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: String(e), activeConnectionId: null });
       throw e;
     }
+  },
+
+  disconnect: () => {
+    set({ activeConnectionId: null });
   },
 
   testConnection: async (id) => {

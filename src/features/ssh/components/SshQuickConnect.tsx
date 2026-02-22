@@ -1,6 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Globe, Plus, ChevronDown } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, memo } from "react";
+import { Globe, Plus, ChevronDown, AlertCircle } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "../../../components/ui/popover";
+import { cn } from "../../../lib/utils";
 import { useSshStore } from "../stores/sshStore";
 import { SshConnectionForm } from "./SshConnectionForm";
 import type { SshConnection } from "../../../lib/tauri/commands";
@@ -11,12 +17,13 @@ interface SshQuickConnectProps {
   disabled: boolean;
 }
 
-export function SshQuickConnect({
+export const SshQuickConnect = memo(function SshQuickConnect({
   sessionName,
   projectId,
   disabled,
 }: SshQuickConnectProps) {
   const connections = useSshStore((s) => s.connections);
+  const activeConnectionId = useSshStore((s) => s.activeConnectionId);
   const fetchConnections = useSshStore((s) => s.fetchConnections);
   const storeError = useSshStore((s) => s.error);
   const connect = useSshStore((s) => s.connect);
@@ -24,30 +31,16 @@ export function SshQuickConnect({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isActive = activeConnectionId !== null;
 
   // Fetch connections when dropdown opens
   useEffect(() => {
     if (dropdownOpen) {
       setConnectError(null);
-      fetchConnections();
+      fetchConnections().catch(() => {});
     }
   }, [dropdownOpen, fetchConnections]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [dropdownOpen]);
 
   const handleConnect = useCallback(
     async (conn: SshConnection) => {
@@ -63,31 +56,41 @@ export function SshQuickConnect({
   );
 
   // Sort: project connections first, then others
-  const sorted = [...connections].sort((a, b) => {
-    if (a.projectId === projectId && b.projectId !== projectId) return -1;
-    if (a.projectId !== projectId && b.projectId === projectId) return 1;
-    return 0;
-  });
+  const sorted = useMemo(
+    () =>
+      [...connections].sort((a, b) => {
+        if (a.projectId === projectId && b.projectId !== projectId) return -1;
+        if (a.projectId !== projectId && b.projectId === projectId) return 1;
+        return 0;
+      }),
+    [connections, projectId],
+  );
 
   const displayError = connectError || storeError;
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <Button
-        variant="ghost"
-        size="sm"
-        disabled={disabled}
-        onClick={() => setDropdownOpen((v) => !v)}
-        title="SSH Connect"
-        className="h-6 px-1.5 text-xs text-text-muted gap-0.5"
-      >
-        <Globe className="h-3 w-3" />
-        SSH
-        <ChevronDown className="h-2.5 w-2.5 opacity-60" />
-      </Button>
+    <>
+      <Popover open={dropdownOpen} onOpenChange={setDropdownOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            title="SSH Connect"
+            className={cn(
+              "h-[26px] px-1.5 text-xs gap-0.5",
+              isActive
+                ? "text-primary bg-primary/10 border border-primary/20"
+                : "text-text-muted",
+            )}
+          >
+            <Globe className="h-3 w-3" />
+            SSH
+            <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+          </Button>
+        </PopoverTrigger>
 
-      {dropdownOpen && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border border-white/[0.12] glass-elevated shadow-xl overflow-hidden">
+        <PopoverContent className="w-80">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
             <span className="text-xs font-medium text-text-secondary">
@@ -109,8 +112,9 @@ export function SshQuickConnect({
 
           {/* Error display */}
           {displayError && (
-            <div className="px-3 py-1.5 text-[10px] text-red-400 border-b border-white/[0.06]">
-              {displayError}
+            <div className="flex items-start gap-1.5 px-3 py-1.5 text-[10px] text-red-400 border-b border-white/[0.06]">
+              <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+              <span className="break-words" title={displayError}>{displayError}</span>
             </div>
           )}
 
@@ -124,10 +128,24 @@ export function SshQuickConnect({
               sorted.map((conn) => (
                 <button
                   key={conn.id}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-white/[0.06] transition-colors"
+                  disabled={conn.id === activeConnectionId}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                    conn.id === activeConnectionId
+                      ? "opacity-60 cursor-default"
+                      : "hover:bg-white/[0.08]",
+                  )}
                   onClick={() => handleConnect(conn)}
                 >
-                  <Globe className="h-3 w-3 text-text-muted shrink-0" />
+                  {/* Status dot */}
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full shrink-0",
+                      conn.id === activeConnectionId
+                        ? "bg-success shadow-[0_0_4px_var(--color-success)]"
+                        : "bg-white/20",
+                    )}
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-text truncate">
                       {conn.name}
@@ -138,7 +156,7 @@ export function SshQuickConnect({
                     </p>
                   </div>
                   {conn.projectId === projectId && projectId && (
-                    <span className="text-[9px] text-primary opacity-60">
+                    <span className="text-[9px] text-primary bg-primary/15 border border-primary/20 rounded px-1">
                       project
                     </span>
                   )}
@@ -146,15 +164,17 @@ export function SshQuickConnect({
               ))
             )}
           </div>
-        </div>
-      )}
+        </PopoverContent>
+      </Popover>
 
-      {/* New connection form */}
-      <SshConnectionForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        projectId={projectId}
-      />
-    </div>
+      {/* New connection form — unmount when closed to avoid idle hooks */}
+      {formOpen && (
+        <SshConnectionForm
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          projectId={projectId}
+        />
+      )}
+    </>
   );
-}
+});
