@@ -58,6 +58,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const tier1TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tier2TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Drag-distance tracking: prevent accidental clipboard copy on micro-drags (<5px).
+  // Shared between DOM listeners (mousedown/mousemove) and OSC 52 handler.
+  const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0 });
+  const dragListenersRef = useRef<{ cleanup: () => void } | null>(null);
 
   const cleanup = useCallback(() => {
     // Mark dead FIRST so callbacks stop writing
@@ -91,6 +95,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (themeUnsubRef.current) {
       themeUnsubRef.current();
       themeUnsubRef.current = null;
+    }
+
+    // Remove drag-distance tracking listeners
+    if (dragListenersRef.current) {
+      dragListenersRef.current.cleanup();
+      dragListenersRef.current = null;
     }
 
     // Unregister Tauri drag-drop listener
@@ -203,9 +213,14 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           const payload = data.slice(idx + 1);
           if (payload === "?") return true; // clipboard query — ignore
           try {
+            // Skip clipboard write if mouse drag distance was below threshold
+            // (user likely intended a click, not a selection).
+            if (!dragDistanceRef.current.exceeded) return true;
             // Decode base64 with proper UTF-8 handling (Korean/CJK/emoji)
             const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
             const text = new TextDecoder().decode(bytes);
+            // Skip empty/whitespace-only selections
+            if (!text.trim()) return true;
             writeText(text)
               .then(() => showClipboardToast())
               .catch((err) =>
@@ -251,6 +266,30 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         term.open(container);
         termRef.current = term;
         fitAddonRef.current = fitAddon;
+
+        // ── Drag-distance tracking for OSC 52 clipboard filter ──
+        // Prevents accidental copy on micro-drags (< 5px mouse movement).
+        const DRAG_THRESHOLD_PX = 5;
+        const DRAG_THRESHOLD_SQ = DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX;
+        const onDragMouseDown = (e: MouseEvent) => {
+          dragDistanceRef.current = { exceeded: false, startX: e.clientX, startY: e.clientY };
+        };
+        const onDragMouseMove = (e: MouseEvent) => {
+          if (dragDistanceRef.current.exceeded) return;
+          const dx = e.clientX - dragDistanceRef.current.startX;
+          const dy = e.clientY - dragDistanceRef.current.startY;
+          if (dx * dx + dy * dy >= DRAG_THRESHOLD_SQ) {
+            dragDistanceRef.current.exceeded = true;
+          }
+        };
+        container.addEventListener("mousedown", onDragMouseDown, { capture: true });
+        container.addEventListener("mousemove", onDragMouseMove, { capture: true });
+        dragListenersRef.current = {
+          cleanup: () => {
+            container.removeEventListener("mousedown", onDragMouseDown, { capture: true });
+            container.removeEventListener("mousemove", onDragMouseMove, { capture: true });
+          },
+        };
 
         // Grab textarea reference immediately after open() — used throughout
         // initialisation for IME warm-up and jamo detection
