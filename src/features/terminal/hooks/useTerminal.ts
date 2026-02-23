@@ -707,6 +707,32 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 return false;
               }
 
+              // ── Cursor navigation shortcuts ──
+
+              // ⌘← — Home (beginning of line)
+              if (event.key === "ArrowLeft" && !event.shiftKey) {
+                event.preventDefault();
+                if (aliveRef.current && ptyRef.current) {
+                  const seq = term.modes.applicationCursorKeysMode
+                    ? "\x1bOH"   // Application mode: SS3 H
+                    : "\x1b[H";  // Normal mode: CSI H
+                  ptyRef.current.write(seq);
+                }
+                return false;
+              }
+
+              // ⌘→ — End (end of line)
+              if (event.key === "ArrowRight" && !event.shiftKey) {
+                event.preventDefault();
+                if (aliveRef.current && ptyRef.current) {
+                  const seq = term.modes.applicationCursorKeysMode
+                    ? "\x1bOF"   // Application mode: SS3 F
+                    : "\x1b[F";  // Normal mode: CSI F
+                  ptyRef.current.write(seq);
+                }
+                return false;
+              }
+
               // ── Pane/window shortcuts ──
               const sName = config.sessionName;
               if (sName) {
