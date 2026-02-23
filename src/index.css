@@ -303,9 +303,9 @@ body {
 /* ---------- Git graph ---------- */
 
 @keyframes agent-breathing {
-  0%   { box-shadow: 0 0 0 0px var(--breath-color, oklch(0.65 0.18 250 / 0.4)); }
-  70%  { box-shadow: 0 0 0 6px var(--breath-color, oklch(0.65 0.18 250 / 0)); }
-  100% { box-shadow: 0 0 0 0px var(--breath-color, oklch(0.65 0.18 250 / 0)); }
+  0%   { box-shadow: 0 0 0 0 var(--breath-color, oklch(0.65 0.18 250 / 0.3)); }
+  70%  { box-shadow: 0 0 8px 1px var(--breath-color, oklch(0.65 0.18 250 / 0)); }
+  100% { box-shadow: 0 0 0 0 var(--breath-color, oklch(0.65 0.18 250 / 0)); }
 }
 
 .agent-breathing {

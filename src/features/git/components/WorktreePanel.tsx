@@ -222,7 +222,7 @@ export function WorktreePanel({
                   ? "worktree-card-exit-wrapper"
                   : "grid grid-rows-[1fr]"}
               >
-                <div className="overflow-hidden">
+                <div className={isExiting ? "overflow-hidden rounded-lg" : ""}>
                     <WorktreeContextMenu
                       worktree={wt}
                       projectId={projectId}
@@ -297,7 +297,7 @@ function WorktreeCollapsedDot({ worktree, onNavigate }: { worktree: GitWorktree;
         backgroundColor: isAlive || worktree.isMain
           ? "var(--color-success)"
           : "var(--color-primary)",
-        "--breath-color": "oklch(0.65 0.18 150 / 0.4)",
+        "--breath-color": "oklch(0.65 0.18 150 / 0.25)",
       } as React.CSSProperties}
       title={worktree.branch ?? "detached"}
       aria-label={`Open terminal for ${worktree.branch ?? "detached HEAD"}`}
@@ -363,7 +363,7 @@ function WorktreeCard({
         ${isHighlighted ? "scale-[1.02] " : ""}${borderClasses}${isEntering ? " worktree-card-enter" : ""}${isExiting ? " worktree-card-exit-inner" : ""}`}
       style={
         isAgentActive
-          ? ({ "--breath-color": "oklch(0.65 0.18 150 / 0.4)" } as React.CSSProperties)
+          ? ({ "--breath-color": "oklch(0.65 0.18 150 / 0.25)" } as React.CSSProperties)
           : undefined
       }
     >
