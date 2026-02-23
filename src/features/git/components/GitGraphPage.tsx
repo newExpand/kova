@@ -70,6 +70,15 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
     };
   }, []);
 
+  // Close detail panels when navigating away
+  useEffect(() => {
+    if (!isActive) {
+      selectCommit(null);
+      selectWorktree(null);
+      setPanelMaximized(false);
+    }
+  }, [isActive, selectCommit, selectWorktree]);
+
   // Poll for git updates
   useGitPolling(projectId, project?.path ?? "", isActive);
 
