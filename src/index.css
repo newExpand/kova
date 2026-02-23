@@ -133,7 +133,7 @@ body {
 
   /* Specular highlight — use as ::after pseudo overlay */
   .glass-specular {
-    overflow: hidden;
+    overflow: clip;
   }
   .glass-specular::after {
     content: "";

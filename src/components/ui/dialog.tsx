@@ -38,7 +38,7 @@ const DialogContent = forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "relative w-full max-w-lg grid gap-4 border border-white/[0.15] glass-elevated p-6 shadow-lg duration-200",
+          "relative w-full max-w-lg grid grid-cols-1 gap-4 border border-white/[0.15] glass-elevated p-6 shadow-lg duration-200",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           "rounded-xl glass-specular",
           className,
@@ -74,7 +74,7 @@ function DialogFooter({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+      className={cn("flex flex-row justify-end gap-2", className)}
       {...props}
     />
   );
