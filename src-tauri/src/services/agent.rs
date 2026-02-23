@@ -46,6 +46,7 @@ pub fn start_worktree_task(
     session_name: &str,
     task_name: &str,
     project_path: &str,
+    app_handle: Option<tauri::AppHandle>,
 ) -> Result<WorktreeTaskResult, AppError> {
     validate_task_name(task_name)?;
 
@@ -67,6 +68,7 @@ pub fn start_worktree_task(
     crate::services::hooks::inject_hooks_for_worktree_when_ready(
         project_path.to_string(),
         task_name.to_string(),
+        app_handle,
     );
 
     info!(

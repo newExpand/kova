@@ -24,6 +24,7 @@ interface WorktreeContextMenuProps {
   projectId: string;
   projectPath: string;
   sessionName: string | null;
+  onDeleted?: (worktreePath: string) => void;
   children: (props: {
     onContextMenu: (e: React.MouseEvent) => void;
   }) => React.ReactNode;
@@ -39,6 +40,7 @@ export function WorktreeContextMenu({
   projectId,
   projectPath,
   sessionName,
+  onDeleted,
   children,
 }: WorktreeContextMenuProps) {
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
@@ -129,10 +131,11 @@ export function WorktreeContextMenu({
       if (worktree.branch && !result.branchDeleted) {
         console.warn(`Worktree removed but branch '${worktree.branch}' was not deleted`);
       }
+      onDeleted?.(worktree.path);
     } catch (e) {
       console.error("Delete worktree failed:", e);
     }
-  }, [projectPath, worktree.path, worktree.branch, sessionName]);
+  }, [projectPath, worktree.path, worktree.branch, sessionName, onDeleted]);
 
   return (
     <>

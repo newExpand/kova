@@ -312,6 +312,60 @@ body {
   animation: agent-breathing 2s ease-in-out infinite;
 }
 
+/* ---------- Worktree card animations ---------- */
+
+@keyframes worktree-card-enter {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.worktree-card-enter {
+  animation: worktree-card-enter 300ms var(--ease-out-back) both;
+}
+
+/* Exit: (A) card — danger tint flash + fade out (applied directly on button) */
+@keyframes worktree-card-exit-flash {
+  0%   { opacity: 1; transform: scale(1) translateY(0); }
+  30%  { opacity: 1;
+         background-color: color-mix(in oklch, var(--color-danger) 25%, var(--glass-bg-subtle));
+         border-color: color-mix(in oklch, var(--color-danger) 50%, transparent);
+         transform: scale(0.97); }
+  100% { opacity: 0; transform: scale(0.95) translateY(-6px);
+         background-color: transparent; border-color: transparent; }
+}
+
+.worktree-card-exit-inner {
+  animation: worktree-card-exit-flash 280ms var(--ease-out-expo) forwards;
+  pointer-events: none;
+  transition: none !important;
+}
+
+/* Exit: (B) parent wrapper — height collapse via grid-template-rows */
+/* opacity is handled solely by the inner animation to avoid double-fade blink */
+.worktree-card-exit-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  transition: grid-template-rows 200ms var(--ease-out-quart) 100ms,
+              margin 200ms var(--ease-out-quart) 100ms;
+}
+
+/* Skeleton shimmer for loading placeholder */
+@keyframes shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.01) 25%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.01) 75%);
+  background-size: 200% 100%;
+  animation: shimmer-sweep 2s infinite linear;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -321,7 +375,11 @@ body {
   .sidebar-item-stagger,
   .sidebar-item-hover,
   .sidebar-context-menu,
-  .agent-breathing {
+  .agent-breathing,
+  .worktree-card-enter,
+  .worktree-card-exit-inner,
+  .worktree-card-exit-wrapper,
+  .skeleton-shimmer {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }

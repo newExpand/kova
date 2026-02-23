@@ -204,7 +204,14 @@ pub fn inject_hooks_for_worktrees(project_path: &Path, port: u16) -> Result<u32,
 ///
 /// Handles the timing gap where `start_worktree_task` sends `claude --worktree <name>`
 /// but Claude Code creates the worktree directory asynchronously.
-pub fn inject_hooks_for_worktree_when_ready(project_path: String, task_name: String) {
+///
+/// When `app_handle` is provided, emits a `worktree:ready` event to the frontend
+/// upon detecting the worktree directory, enabling immediate UI refresh.
+pub fn inject_hooks_for_worktree_when_ready(
+    project_path: String,
+    task_name: String,
+    app_handle: Option<tauri::AppHandle>,
+) {
     thread::spawn(move || {
         let worktree_path_str = format!("{}/.claude/worktrees/{}", project_path, task_name);
         let wt = Path::new(&worktree_path_str);
@@ -232,6 +239,22 @@ pub fn inject_hooks_for_worktree_when_ready(project_path: String, task_name: Str
                         task_name, e
                     ),
                 }
+
+                // Notify frontend that worktree is ready for immediate UI refresh
+                if let Some(ref app) = app_handle {
+                    use tauri::Emitter;
+                    if let Err(e) = app.emit(
+                        "worktree:ready",
+                        serde_json::json!({
+                            "projectPath": &project_path,
+                            "taskName": &task_name,
+                            "worktreePath": &worktree_path_str,
+                        }),
+                    ) {
+                        warn!("Failed to emit worktree:ready event: {}", e);
+                    }
+                }
+
                 return;
             }
             thread::sleep(Duration::from_secs(1));

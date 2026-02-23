@@ -2,14 +2,16 @@ use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
 use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
+use tauri::AppHandle;
 
 #[tauri::command]
 pub fn start_worktree_task(
+    app: AppHandle,
     session_name: String,
     task_name: String,
     project_path: String,
 ) -> Result<WorktreeTaskResult, AppError> {
-    services::agent::start_worktree_task(&session_name, &task_name, &project_path)
+    services::agent::start_worktree_task(&session_name, &task_name, &project_path, Some(app))
 }
 
 #[tauri::command]

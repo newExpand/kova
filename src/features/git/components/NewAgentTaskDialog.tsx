@@ -16,6 +16,7 @@ interface NewAgentTaskDialogProps {
   onOpenChange: (open: boolean) => void;
   sessionName: string | null;
   projectPath: string;
+  onCreated?: () => void;
 }
 
 const TASK_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
@@ -26,6 +27,7 @@ export function NewAgentTaskDialog({
   onOpenChange,
   sessionName,
   projectPath,
+  onCreated,
 }: NewAgentTaskDialogProps) {
   const [taskName, setTaskName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -53,13 +55,14 @@ export function NewAgentTaskDialog({
     try {
       await startWorktreeTask(sessionName, taskName, projectPath);
       setTaskName("");
+      onCreated?.();
       onOpenChange(false);
     } catch (e) {
       setError(String(e));
     } finally {
       setIsLoading(false);
     }
-  }, [isValid, sessionName, taskName, projectPath, onOpenChange]);
+  }, [isValid, sessionName, taskName, projectPath, onOpenChange, onCreated]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

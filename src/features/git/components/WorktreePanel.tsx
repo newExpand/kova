@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { GitWorktree } from "../../../lib/tauri/commands";
 import { selectTmuxWindow } from "../../../lib/tauri/commands";
 import { GitBranch, PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
@@ -10,6 +10,7 @@ import {
   useAgentActivityStore,
   normalizePathKey,
 } from "../stores/agentActivityStore";
+import { useGitStore } from "../stores/gitStore";
 
 interface WorktreePanelProps {
   worktrees: GitWorktree[];
@@ -38,6 +39,95 @@ export function WorktreePanel({
 }: WorktreePanelProps) {
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const fetchGraphData = useGitStore((s) => s.fetchGraphData);
+
+  // --- Animation tracking ---
+  const [isCreating, setIsCreating] = useState(false);
+  const knownPathsRef = useRef<Set<string> | null>(null);
+  const [enteringPaths, setEnteringPaths] = useState<Set<string>>(new Set());
+  const [exitingPaths, setExitingPaths] = useState<Set<string>>(new Set());
+  const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Detect new worktree paths for entrance animation
+  useEffect(() => {
+    const currentPaths = new Set(worktrees.map((w) => w.path));
+
+    if (knownPathsRef.current === null) {
+      // First render — seed known paths without triggering animation
+      knownPathsRef.current = currentPaths;
+      return;
+    }
+
+    const newPaths = new Set<string>();
+    for (const path of currentPaths) {
+      if (!knownPathsRef.current.has(path)) {
+        newPaths.add(path);
+      }
+    }
+
+    knownPathsRef.current = currentPaths;
+
+    if (newPaths.size > 0) {
+      setIsCreating(false);
+      // Clear safety timeout since worktree arrived
+      if (creatingTimeoutRef.current) {
+        clearTimeout(creatingTimeoutRef.current);
+        creatingTimeoutRef.current = null;
+      }
+      setEnteringPaths(newPaths);
+      const timer = setTimeout(() => setEnteringPaths(new Set()), 350);
+      return () => clearTimeout(timer);
+    }
+  }, [worktrees]);
+
+  // Cleanup exit timers + creating timeout on unmount
+  const creatingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of exitTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      if (creatingTimeoutRef.current) {
+        clearTimeout(creatingTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Callback: worktree created -> show skeleton, wait for worktree:ready event
+  const handleCreated = useCallback(() => {
+    setIsCreating(true);
+    // Safety timeout: force clear skeleton after 30s if event never arrives
+    if (creatingTimeoutRef.current) clearTimeout(creatingTimeoutRef.current);
+    creatingTimeoutRef.current = setTimeout(() => {
+      setIsCreating(false);
+      creatingTimeoutRef.current = null;
+      // Last-resort refresh in case event was missed
+      fetchGraphData(projectId, projectPath);
+    }, 30_000);
+  }, [fetchGraphData, projectId, projectPath]);
+
+  // Callback: worktree deleted -> exit animation then delayed refresh
+  // exitingPaths is only cleared AFTER fetchGraphData completes to prevent blink-back
+  const handleDeleted = useCallback(
+    (worktreePath: string) => {
+      setExitingPaths((prev) => new Set(prev).add(worktreePath));
+
+      const timer = setTimeout(() => {
+        exitTimersRef.current.delete(worktreePath);
+        fetchGraphData(projectId, projectPath).finally(() => {
+          setExitingPaths((prev) => {
+            const next = new Set(prev);
+            next.delete(worktreePath);
+            return next;
+          });
+        });
+      }, 300);
+
+      exitTimersRef.current.set(worktreePath, timer);
+    },
+    [fetchGraphData, projectId, projectPath],
+  );
 
   const handleNavigate = useCallback(
     (worktree?: GitWorktree) => {
@@ -117,34 +207,49 @@ export function WorktreePanel({
 
       {/* Worktree list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        {worktrees.length === 0 ? (
+        {worktrees.length === 0 && !isCreating ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <GitBranch className="h-8 w-8 text-text-muted opacity-40" strokeWidth={1} />
             <p className="text-xs text-text-muted">No worktrees</p>
           </div>
         ) : (
-          worktrees.map((wt) => (
-            <WorktreeContextMenu
-              key={wt.path}
-              worktree={wt}
-              projectId={projectId}
-              projectPath={projectPath}
-              sessionName={sessionName}
-            >
-              {({ onContextMenu }) => (
-                <WorktreeCard
-                  worktree={wt}
-                  onNavigate={() => handleNavigate(wt)}
-                  onContextMenu={onContextMenu}
-                  isHighlighted={hoveredBranch === wt.branch}
-                  onHoverBranch={onHoverBranch}
-                  onLeaveBranch={onLeaveBranch}
-                  onSelectWorktreeChanges={onSelectWorktreeChanges}
-                />
-              )}
-            </WorktreeContextMenu>
-          ))
+          worktrees.map((wt) => {
+            const isExiting = exitingPaths.has(wt.path);
+            return (
+              <div
+                key={wt.path}
+                className={isExiting
+                  ? "worktree-card-exit-wrapper"
+                  : "grid grid-rows-[1fr]"}
+              >
+                <div className="overflow-hidden">
+                    <WorktreeContextMenu
+                      worktree={wt}
+                      projectId={projectId}
+                      projectPath={projectPath}
+                      sessionName={sessionName}
+                      onDeleted={handleDeleted}
+                    >
+                      {({ onContextMenu }) => (
+                        <WorktreeCard
+                          worktree={wt}
+                          onNavigate={() => handleNavigate(wt)}
+                          onContextMenu={onContextMenu}
+                          isHighlighted={hoveredBranch === wt.branch}
+                          onHoverBranch={onHoverBranch}
+                          onLeaveBranch={onLeaveBranch}
+                          onSelectWorktreeChanges={onSelectWorktreeChanges}
+                          isEntering={enteringPaths.has(wt.path)}
+                          isExiting={isExiting}
+                        />
+                      )}
+                    </WorktreeContextMenu>
+                </div>
+              </div>
+            );
+          })
         )}
+        {isCreating && <WorktreeSkeletonCard />}
       </div>
 
       <NewAgentTaskDialog
@@ -152,7 +257,25 @@ export function WorktreePanel({
         onOpenChange={setDialogOpen}
         sessionName={sessionName}
         projectPath={projectPath}
+        onCreated={handleCreated}
       />
+    </div>
+  );
+}
+
+function WorktreeSkeletonCard() {
+  return (
+    <div className="w-full rounded-lg border border-primary/20 bg-primary/5 p-2.5 space-y-2.5 skeleton-shimmer worktree-card-enter">
+      <div className="flex items-center gap-1.5">
+        <div className="h-4 w-24 rounded bg-white/[0.08]" />
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="h-3 w-12 rounded bg-white/[0.06]" />
+        <div className="h-3 w-8 rounded bg-white/[0.04]" />
+      </div>
+      <div className="pt-1.5 border-t border-white/[0.04]">
+        <div className="h-1.5 w-16 rounded bg-primary/30" />
+      </div>
     </div>
   );
 }
@@ -190,6 +313,8 @@ function WorktreeCard({
   onHoverBranch,
   onLeaveBranch,
   onSelectWorktreeChanges,
+  isEntering,
+  isExiting,
 }: {
   worktree: GitWorktree;
   onNavigate: () => void;
@@ -198,6 +323,8 @@ function WorktreeCard({
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
   onSelectWorktreeChanges?: (worktreePath: string) => void;
+  isEntering?: boolean;
+  isExiting?: boolean;
 }) {
   const isClaudeWorktree = worktree.path.includes(".claude/worktrees/");
   const session = useAgentActivityStore(
@@ -233,7 +360,7 @@ function WorktreeCard({
         transition-all duration-150 ease-out
         hover:scale-[1.02] active:scale-[0.98]
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1a2e]
-        ${isHighlighted ? "scale-[1.02] " : ""}${borderClasses}`}
+        ${isHighlighted ? "scale-[1.02] " : ""}${borderClasses}${isEntering ? " worktree-card-enter" : ""}${isExiting ? " worktree-card-exit-inner" : ""}`}
       style={
         isAgentActive
           ? ({ "--breath-color": "oklch(0.65 0.18 150 / 0.4)" } as React.CSSProperties)

@@ -4,7 +4,8 @@ import type { HookEvent } from "./notification-events";
 import { setupNotificationClickEvents } from "./notification-events";
 import { useNotificationStore } from "../../features/notification";
 import { parseHookType } from "../../features/notification/types";
-import { useAgentActivityStore } from "../../features/git";
+import { useAgentActivityStore, useGitStore } from "../../features/git";
+import { useProjectStore } from "../../features/project";
 
 // Superset of Rust AGENT_ACTIVITY_TYPES in event_server.rs.
 // Includes UserPromptSubmit, PermissionRequest, Stop for frontend-only realtime UX.
@@ -46,9 +47,23 @@ export async function initEventBridge(): Promise<void> {
     },
   );
 
+  // worktree:ready — Rust 백그라운드 스레드에서 worktree 디렉토리 감지 시 emit
+  const worktreeReadyUnlisten = await listen<{
+    projectPath: string;
+    taskName: string;
+    worktreePath: string;
+  }>("worktree:ready", (event) => {
+    const { projectPath } = event.payload;
+    const projects = useProjectStore.getState().projects;
+    const match = projects.find((p) => p.path === projectPath);
+    if (match) {
+      useGitStore.getState().fetchGraphData(match.id, projectPath);
+    }
+  });
+
   // notification:clicked는 별도 리스너 유지
   const clickUnlisteners = await setupNotificationClickEvents();
-  unlisteners.push(hookUnlisten, ...clickUnlisteners);
+  unlisteners.push(hookUnlisten, worktreeReadyUnlisten, ...clickUnlisteners);
 }
 
 export function destroyEventBridge(): void {
