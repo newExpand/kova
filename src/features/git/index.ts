@@ -38,4 +38,6 @@ export { useGitPolling } from "./hooks/useGitPolling";
 export { ProjectTabSwitcher } from "./components/ProjectTabSwitcher";
 export { NewAgentTaskDialog } from "./components/NewAgentTaskDialog";
 export { WorktreeContextMenu } from "./components/WorktreeContextMenu";
+export { CommitContextMenu } from "./components/CommitContextMenu";
+export { CreateBranchDialog } from "./components/CreateBranchDialog";
 export { CommitBox } from "./components/CommitBox";

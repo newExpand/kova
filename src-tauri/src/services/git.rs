@@ -416,8 +416,49 @@ pub fn push_branch(repo_path: &Path, branch_name: &str, remote: &str) -> Result<
 /// Delete a local branch.
 pub fn delete_branch(repo_path: &Path, branch_name: &str, force: bool) -> Result<(), AppError> {
     let flag = if force { "-D" } else { "-d" };
-    run_git(repo_path, &["branch", flag, branch_name])?;
+    run_git(repo_path, &["branch", flag, "--", branch_name])?;
     info!("Deleted branch: {}", branch_name);
+    Ok(())
+}
+
+/// Validate a branch name using git's own rules.
+fn validate_branch_name(repo_path: &Path, name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::InvalidInput("Branch name cannot be empty".into()));
+    }
+    let result = run_git_raw(repo_path, &["check-ref-format", "--branch", name])?;
+    if !result.success {
+        return Err(AppError::InvalidInput(format!(
+            "Invalid branch name: '{}'",
+            name
+        )));
+    }
+    Ok(())
+}
+
+/// Create a new local branch at the given start point (commit hash or branch name).
+pub fn create_branch(
+    repo_path: &Path,
+    branch_name: &str,
+    start_point: &str,
+) -> Result<(), AppError> {
+    validate_branch_name(repo_path, branch_name)?;
+    run_git(repo_path, &["branch", branch_name, start_point])?;
+    info!(
+        "Created branch '{}' at '{}'",
+        branch_name, start_point
+    );
+    Ok(())
+}
+
+/// Switch the main worktree to the given branch.
+pub fn switch_branch(repo_path: &Path, branch_name: &str) -> Result<(), AppError> {
+    run_git(repo_path, &["switch", "--", branch_name])?;
+    info!(
+        "Switched to branch '{}' in {}",
+        branch_name,
+        repo_path.display()
+    );
     Ok(())
 }
 

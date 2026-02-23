@@ -127,6 +127,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
           {layout.nodes.length > 0 ? (
             <BranchGraph
               layout={layout}
+              projectId={projectId}
+              projectPath={project?.path ?? ""}
               highlightBranch={hoveredBranch}
               onHoverBranch={handleHoverBranch}
               onLeaveBranch={handleLeaveBranch}

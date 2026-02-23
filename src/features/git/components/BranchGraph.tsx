@@ -1,9 +1,12 @@
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { GitCommit } from "../../../lib/tauri/commands";
 import type { GraphLayout } from "../types";
 import { COLUMN_WIDTH, ROW_HEIGHT } from "../types";
 import { BranchLine } from "./BranchLine";
 import { CommitNode } from "./CommitNode";
+import { CommitContextMenu } from "./CommitContextMenu";
+import { CreateBranchDialog } from "./CreateBranchDialog";
 import { useGitStore } from "../stores/gitStore";
 import { Sparkles } from "lucide-react";
 
@@ -12,7 +15,9 @@ const EDGE_OVERSCAN = 20;
 
 interface BranchGraphProps {
   layout: GraphLayout;
-  highlightBranch?: string | null;
+  projectId: string;
+  projectPath: string;
+  highlightBranch: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -23,6 +28,8 @@ interface BranchGraphProps {
 
 export function BranchGraph({
   layout,
+  projectId,
+  projectPath,
   highlightBranch,
   onHoverBranch,
   onLeaveBranch,
@@ -33,6 +40,20 @@ export function BranchGraph({
 }: BranchGraphProps) {
   const selectedHash = useGitStore((s) => s.selectedCommitHash);
   const selectCommit = useGitStore((s) => s.selectCommit);
+
+  // CreateBranchDialog state
+  const [createBranchTarget, setCreateBranchTarget] = useState<{
+    hash: string;
+    shortHash: string;
+    message: string;
+  } | null>(null);
+
+  const handleCreateBranch = useCallback(
+    (c: GitCommit) => {
+      setCreateBranchTarget({ hash: c.hash, shortHash: c.shortHash, message: c.message });
+    },
+    [],
+  );
 
   // Virtualizer for fixed-height rows
   const rowVirtualizer = useVirtualizer({
@@ -99,129 +120,152 @@ export function BranchGraph({
   const totalHeight = rowVirtualizer.getTotalSize();
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className="h-full overflow-y-auto"
-    >
+    <>
       <div
-        style={{ height: totalHeight, position: "relative", display: "flex" }}
+        ref={scrollContainerRef}
+        className="h-full overflow-y-auto"
       >
-        {/* SVG graph lane */}
-        <svg
-          width={graphWidth}
-          height={totalHeight}
-          className="shrink-0"
-          style={{ minWidth: graphWidth }}
+        <div
+          style={{ height: totalHeight, position: "relative", display: "flex" }}
         >
-          <g transform="translate(16, 0)">
-            {/* Edges (behind nodes) */}
-            {visibleEdges.map((edge, i) => {
-              const isDimmed = isHighlighting && edge.color !== highlightColor;
-              return (
-                <BranchLine
-                  key={`e-${edge.fromY}-${edge.toY}-${edge.fromX}-${edge.toX}-${i}`}
-                  edge={edge}
-                  isDimmed={isDimmed}
-                  isHighlighted={isHighlighting && !isDimmed}
-                />
-              );
-            })}
-            {/* Nodes (only visible) */}
+          {/* SVG graph lane */}
+          <svg
+            width={graphWidth}
+            height={totalHeight}
+            className="shrink-0"
+            style={{ minWidth: graphWidth }}
+          >
+            <g transform="translate(16, 0)">
+              {/* Edges (behind nodes) */}
+              {visibleEdges.map((edge, i) => {
+                const isDimmed = isHighlighting && edge.color !== highlightColor;
+                return (
+                  <BranchLine
+                    key={`e-${edge.fromY}-${edge.toY}-${edge.fromX}-${edge.toX}-${i}`}
+                    edge={edge}
+                    isDimmed={isDimmed}
+                    isHighlighted={isHighlighting && !isDimmed}
+                  />
+                );
+              })}
+              {/* Nodes (only visible) */}
+              {virtualItems.map((virtualItem) => {
+                const node = layout.nodes[virtualItem.index];
+                if (!node) return null;
+                const isDimmed = isHighlighting && node.color !== highlightColor;
+                return (
+                  <CommitNode
+                    key={node.commit.hash}
+                    node={node}
+                    isSelected={selectedHash === node.commit.hash}
+                    onSelect={() => selectCommit(node.commit.hash)}
+                    isDimmed={isDimmed}
+                  />
+                );
+              })}
+            </g>
+          </svg>
+
+          {/* Commit message list (virtualized) */}
+          <div className="flex-1 min-w-0 relative">
             {virtualItems.map((virtualItem) => {
               const node = layout.nodes[virtualItem.index];
               if (!node) return null;
               const isDimmed = isHighlighting && node.color !== highlightColor;
+              const branch = colorToBranch.get(node.color) ?? null;
+
               return (
-                <CommitNode
+                <CommitContextMenu
                   key={node.commit.hash}
-                  node={node}
-                  isSelected={selectedHash === node.commit.hash}
-                  onSelect={() => selectCommit(node.commit.hash)}
-                  isDimmed={isDimmed}
-                />
+                  commit={node.commit}
+                  projectId={projectId}
+                  projectPath={projectPath}
+                  onCreateBranch={handleCreateBranch}
+                >
+                  {({ onContextMenu }) => (
+                    <button
+                      type="button"
+                      className={`flex w-full items-center gap-3 px-3 text-left select-none transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
+                        selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
+                      }`}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: ROW_HEIGHT,
+                        transform: `translateY(${virtualItem.start}px)`,
+                        opacity: isDimmed ? 0.4 : 1,
+                      }}
+                      onClick={() => selectCommit(node.commit.hash)}
+                      onContextMenu={onContextMenu}
+                      onMouseEnter={() => branch && onHoverBranch?.(branch)}
+                      onMouseLeave={() => onLeaveBranch?.()}
+                    >
+                      <span className="shrink-0 font-mono text-[11px] text-text-muted">
+                        {node.commit.shortHash}
+                      </span>
+                      <span className="truncate text-sm text-text-secondary">
+                        {node.commit.message}
+                      </span>
+                      {node.commit.isAgentCommit && (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                            text-[10px] font-bold leading-none
+                            bg-purple-500/10 text-purple-300 border border-purple-400/20
+                            shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
+                          aria-label="AI Agent commit"
+                        >
+                          <Sparkles className="h-2.5 w-2.5" />
+                          AI
+                        </span>
+                      )}
+                      {/* Ref badges */}
+                      {node.commit.refs.map((ref) => (
+                        <span
+                          key={ref.name}
+                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
+                        >
+                          {ref.name}
+                        </span>
+                      ))}
+                      <span className="ml-auto shrink-0 text-[11px] text-text-muted">
+                        {formatRelativeDate(node.commit.date)}
+                      </span>
+                    </button>
+                  )}
+                </CommitContextMenu>
               );
             })}
-          </g>
-        </svg>
 
-        {/* Commit message list (virtualized) */}
-        <div className="flex-1 min-w-0 relative">
-          {virtualItems.map((virtualItem) => {
-            const node = layout.nodes[virtualItem.index];
-            if (!node) return null;
-            const isDimmed = isHighlighting && node.color !== highlightColor;
-            const branch = colorToBranch.get(node.color) ?? null;
-
-            return (
-              <button
-                key={node.commit.hash}
-                type="button"
-                className={`flex w-full items-center gap-3 px-3 text-left transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
-                  selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
-                }`}
+            {/* Loading indicator at bottom */}
+            {isFetchingMore && (
+              <div
                 style={{
                   position: "absolute",
-                  top: 0,
-                  left: 0,
+                  top: totalHeight,
                   width: "100%",
-                  height: ROW_HEIGHT,
-                  transform: `translateY(${virtualItem.start}px)`,
-                  opacity: isDimmed ? 0.4 : 1,
                 }}
-                onClick={() => selectCommit(node.commit.hash)}
-                onMouseEnter={() => branch && onHoverBranch?.(branch)}
-                onMouseLeave={() => onLeaveBranch?.()}
+                className="flex justify-center py-4"
               >
-                <span className="shrink-0 font-mono text-[11px] text-text-muted">
-                  {node.commit.shortHash}
-                </span>
-                <span className="truncate text-sm text-text-secondary">
-                  {node.commit.message}
-                </span>
-                {node.commit.isAgentCommit && (
-                  <span
-                    className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
-                      text-[10px] font-bold leading-none
-                      bg-purple-500/10 text-purple-300 border border-purple-400/20
-                      shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
-                    aria-label="AI Agent commit"
-                  >
-                    <Sparkles className="h-2.5 w-2.5" />
-                    AI
-                  </span>
-                )}
-                {/* Ref badges */}
-                {node.commit.refs.map((ref) => (
-                  <span
-                    key={ref.name}
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
-                  >
-                    {ref.name}
-                  </span>
-                ))}
-                <span className="ml-auto shrink-0 text-[11px] text-text-muted">
-                  {formatRelativeDate(node.commit.date)}
-                </span>
-              </button>
-            );
-          })}
-
-          {/* Loading indicator at bottom */}
-          {isFetchingMore && (
-            <div
-              style={{
-                position: "absolute",
-                top: totalHeight,
-                width: "100%",
-              }}
-              className="flex justify-center py-4"
-            >
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-primary" />
-            </div>
-          )}
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-primary" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Create branch dialog (single instance) */}
+      <CreateBranchDialog
+        open={createBranchTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setCreateBranchTarget(null);
+        }}
+        commit={createBranchTarget ?? { hash: "", shortHash: "", message: "" }}
+        projectId={projectId}
+        projectPath={projectPath}
+      />
+    </>
   );
 }
 

@@ -571,6 +571,29 @@ export async function pushGitBranch(
   return invoke<void>("push_git_branch", { repoPath, branchName, remote });
 }
 
+export async function gitCreateBranch(
+  repoPath: string,
+  branchName: string,
+  startPoint: string,
+): Promise<void> {
+  return invoke<void>("git_create_branch", { repoPath, branchName, startPoint });
+}
+
+export async function gitDeleteBranch(
+  repoPath: string,
+  branchName: string,
+  force = false,
+): Promise<void> {
+  return invoke<void>("git_delete_branch", { repoPath, branchName, force });
+}
+
+export async function gitSwitchBranch(
+  repoPath: string,
+  branchName: string,
+): Promise<void> {
+  return invoke<void>("git_switch_branch", { repoPath, branchName });
+}
+
 export async function selectTmuxWindow(
   sessionName: string,
   windowTarget: string,

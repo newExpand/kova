@@ -72,3 +72,40 @@ pub async fn git_create_commit(worktree_path: String, message: String) -> Result
     Ok(CommitResult { short_hash })
 }
 
+#[tauri::command]
+pub async fn git_create_branch(
+    repo_path: String,
+    branch_name: String,
+    start_point: String,
+) -> Result<(), AppError> {
+    services::git::create_branch(
+        std::path::Path::new(&repo_path),
+        &branch_name,
+        &start_point,
+    )
+}
+
+#[tauri::command]
+pub async fn git_delete_branch(
+    repo_path: String,
+    branch_name: String,
+    force: bool,
+) -> Result<(), AppError> {
+    services::git::delete_branch(
+        std::path::Path::new(&repo_path),
+        &branch_name,
+        force,
+    )
+}
+
+#[tauri::command]
+pub async fn git_switch_branch(
+    repo_path: String,
+    branch_name: String,
+) -> Result<(), AppError> {
+    services::git::switch_branch(
+        std::path::Path::new(&repo_path),
+        &branch_name,
+    )
+}
+

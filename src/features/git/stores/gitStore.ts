@@ -4,6 +4,7 @@ import {
   getCommitDetail, getGitGraph, getGitCommitsPage, getGitStatus, getWorkingChanges,
   gitStageFiles, gitStageAll, gitUnstageFiles, gitUnstageAll,
   gitDiscardFile, gitCreateCommit,
+  gitCreateBranch, gitDeleteBranch, gitSwitchBranch,
 } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,9 @@ interface GitState {
   commitError: string | null;
   lastCommitHash: string | null;
   paginationByProject: Record<string, PaginationState>;
+  // Branch operations
+  isBranchOperationInProgress: boolean;
+  branchOperationError: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,11 @@ interface GitActions {
   commitChanges: (worktreePath: string, message: string, projectId: string, projectPath: string) => Promise<void>;
   setCommitMessage: (message: string) => void;
   clearCommitError: () => void;
+  // Branch management
+  createBranch: (repoPath: string, branchName: string, startPoint: string, projectId: string) => Promise<void>;
+  deleteBranch: (repoPath: string, branchName: string, force: boolean, projectId: string) => Promise<void>;
+  switchBranch: (repoPath: string, branchName: string, projectId: string) => Promise<void>;
+  clearBranchOperationError: () => void;
   // Computed
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
@@ -98,6 +107,8 @@ const initialState: GitState = {
   commitError: null,
   lastCommitHash: null,
   paginationByProject: {},
+  isBranchOperationInProgress: false,
+  branchOperationError: null,
 };
 
 // Commit-related state to clear on worktree switch
@@ -375,6 +386,68 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   setCommitMessage: (message) => set({ commitMessage: message }),
 
   clearCommitError: () => set({ commitError: null }),
+
+  // Branch management actions
+
+  createBranch: async (repoPath, branchName, startPoint, projectId) => {
+    if (get().isBranchOperationInProgress) return;
+    set({ isBranchOperationInProgress: true, branchOperationError: null });
+    try {
+      await gitCreateBranch(repoPath, branchName, startPoint);
+    } catch (e) {
+      console.error("[gitStore] createBranch failed:", e);
+      set({ branchOperationError: toErrorMessage(e) });
+      throw e;
+    } finally {
+      set({ isBranchOperationInProgress: false });
+    }
+    // Post-operation refresh — errors here should not confuse the user
+    try {
+      await get().fetchGraphData(projectId, repoPath);
+    } catch (e) {
+      console.error("[gitStore] post-branch-op refresh failed:", e);
+    }
+  },
+
+  deleteBranch: async (repoPath, branchName, force, projectId) => {
+    if (get().isBranchOperationInProgress) return;
+    set({ isBranchOperationInProgress: true, branchOperationError: null });
+    try {
+      await gitDeleteBranch(repoPath, branchName, force);
+    } catch (e) {
+      console.error("[gitStore] deleteBranch failed:", e);
+      set({ branchOperationError: toErrorMessage(e) });
+      throw e;
+    } finally {
+      set({ isBranchOperationInProgress: false });
+    }
+    try {
+      await get().fetchGraphData(projectId, repoPath);
+    } catch (e) {
+      console.error("[gitStore] post-branch-op refresh failed:", e);
+    }
+  },
+
+  switchBranch: async (repoPath, branchName, projectId) => {
+    if (get().isBranchOperationInProgress) return;
+    set({ isBranchOperationInProgress: true, branchOperationError: null });
+    try {
+      await gitSwitchBranch(repoPath, branchName);
+    } catch (e) {
+      console.error("[gitStore] switchBranch failed:", e);
+      set({ branchOperationError: toErrorMessage(e) });
+      throw e;
+    } finally {
+      set({ isBranchOperationInProgress: false });
+    }
+    try {
+      await get().fetchGraphData(projectId, repoPath);
+    } catch (e) {
+      console.error("[gitStore] post-branch-op refresh failed:", e);
+    }
+  },
+
+  clearBranchOperationError: () => set({ branchOperationError: null }),
 
   reset: () => set(initialState),
 }));

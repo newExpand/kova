@@ -18,7 +18,7 @@ export function ProjectTabSwitcher({ projectId }: ProjectTabSwitcherProps) {
   const activeTab = location.pathname.includes("/git") ? "git" : "terminal";
 
   return (
-    <div className="relative flex h-6 items-center rounded-lg border border-white/[0.10] bg-white/[0.03] p-0.5">
+    <div className="relative flex h-6 items-center select-none rounded-lg border border-white/[0.10] bg-white/[0.03] p-0.5">
       {TABS.map((tab) => {
         const isActive = activeTab === tab.key;
         const Icon = tab.icon;
