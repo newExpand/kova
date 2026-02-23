@@ -22,6 +22,7 @@ function escapeShellPath(path: string): string {
 interface UseTerminalOptions {
   onDragState?: (isDragging: boolean) => void;
   onRequestPaneAction?: (action: PaneAction) => void;
+  isActive?: boolean;
 }
 
 interface UseTerminalResult {
@@ -45,6 +46,9 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   onDragStateRef.current = options?.onDragState;
   const onRequestPaneActionRef = useRef(options?.onRequestPaneAction);
   onRequestPaneActionRef.current = options?.onRequestPaneAction;
+  // Track active state so drag-drop handler only fires for the visible terminal
+  const isActiveRef = useRef(options?.isActive ?? false);
+  isActiveRef.current = options?.isActive ?? false;
   // Guard flag — prevents writes/kills after PTY has exited
   const aliveRef = useRef(false);
   // Track current projectId for disconnect() — set during connect()
@@ -1008,6 +1012,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             if (isStale()) return;
 
             const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+              if (!isActiveRef.current) return;
               if (event.payload.type === "enter") {
                 onDragStateRef.current?.(true);
               } else if (event.payload.type === "leave") {

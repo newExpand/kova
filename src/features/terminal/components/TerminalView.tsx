@@ -16,6 +16,7 @@ function TerminalView({ config, isActive, glassClassName, onRequestPaneAction }:
   const { containerRef, connect, disconnect, refit } = useTerminal({
     onDragState: setIsDragOver,
     onRequestPaneAction,
+    isActive,
   });
   const status = useTerminalStore((s) => s.getTerminal(config.projectId).status);
   const error = useTerminalStore((s) => s.getTerminal(config.projectId).error);
