@@ -145,7 +145,7 @@ pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError>
     let limit_str = limit.to_string();
     let output = run_git(
         repo_path,
-        &["log", GIT_LOG_FORMAT, "--topo-order", "-n", &limit_str, "--all"],
+        &["log", GIT_LOG_FORMAT, "--decorate=full", "--topo-order", "-n", &limit_str, "--all"],
     )?;
     Ok(parse_log_output(&output))
 }
@@ -160,6 +160,7 @@ pub fn get_log_page(repo_path: &Path, skip: u32, limit: u32) -> Result<GitCommit
         &[
             "log",
             GIT_LOG_FORMAT,
+            "--decorate=full",
             "--topo-order",
             "--skip",
             &skip_str,
@@ -184,27 +185,59 @@ fn parse_refs(decorations: &str) -> Vec<GitRef> {
         .filter(|s| !s.is_empty())
         .map(|s| {
             let trimmed = s.trim();
-            if trimmed.starts_with("HEAD -> ") {
-                GitRef {
-                    name: trimmed.strip_prefix("HEAD -> ").unwrap_or(trimmed).to_string(),
+
+            // "HEAD -> refs/heads/branch-name" (attached HEAD)
+            if let Some(rest) = trimmed.strip_prefix("HEAD -> ") {
+                let name = rest
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(rest)
+                    .to_string();
+                return GitRef {
+                    name,
                     ref_type: GitRefType::Head,
-                }
-            } else if trimmed.starts_with("tag: ") {
-                GitRef {
-                    name: trimmed.strip_prefix("tag: ").unwrap_or(trimmed).to_string(),
+                };
+            }
+
+            // "HEAD" alone (detached HEAD)
+            if trimmed == "HEAD" {
+                return GitRef {
+                    name: "HEAD".to_string(),
+                    ref_type: GitRefType::Head,
+                };
+            }
+
+            // "tag: refs/tags/v1.0"
+            if let Some(rest) = trimmed.strip_prefix("tag: ") {
+                let name = rest
+                    .strip_prefix("refs/tags/")
+                    .unwrap_or(rest)
+                    .to_string();
+                return GitRef {
+                    name,
                     ref_type: GitRefType::Tag,
-                }
-            } else if trimmed.contains('/') && !trimmed.starts_with("refs/") {
-                // e.g. "origin/main"
-                GitRef {
-                    name: trimmed.to_string(),
+                };
+            }
+
+            // "refs/remotes/origin/main"
+            if let Some(name) = trimmed.strip_prefix("refs/remotes/") {
+                return GitRef {
+                    name: name.to_string(),
                     ref_type: GitRefType::RemoteBranch,
-                }
-            } else {
-                GitRef {
-                    name: trimmed.to_string(),
+                };
+            }
+
+            // "refs/heads/feat/lucky-draw"
+            if let Some(name) = trimmed.strip_prefix("refs/heads/") {
+                return GitRef {
+                    name: name.to_string(),
                     ref_type: GitRefType::LocalBranch,
-                }
+                };
+            }
+
+            // Fallback: treat unknown refs as local branches
+            GitRef {
+                name: trimmed.to_string(),
+                ref_type: GitRefType::LocalBranch,
             }
         })
         .collect()
@@ -1185,7 +1218,10 @@ mod tests {
 
     #[test]
     fn test_parse_refs() {
-        let refs = parse_refs("HEAD -> main, origin/main, tag: v1.0");
+        // With --decorate=full, git outputs full ref paths
+        let refs = parse_refs(
+            "HEAD -> refs/heads/main, refs/remotes/origin/main, tag: refs/tags/v1.0",
+        );
         assert_eq!(refs.len(), 3);
         assert!(matches!(refs[0].ref_type, GitRefType::Head));
         assert_eq!(refs[0].name, "main");
@@ -1193,6 +1229,32 @@ mod tests {
         assert_eq!(refs[1].name, "origin/main");
         assert!(matches!(refs[2].ref_type, GitRefType::Tag));
         assert_eq!(refs[2].name, "v1.0");
+    }
+
+    #[test]
+    fn test_parse_refs_slashed_local_branch() {
+        // This was the bug: feat/lucky-draw was misclassified as RemoteBranch
+        let refs = parse_refs(
+            "HEAD -> refs/heads/develop, refs/remotes/origin/feat/desktop-app, refs/heads/feat/lucky-draw",
+        );
+        assert_eq!(refs.len(), 3);
+        assert!(matches!(refs[0].ref_type, GitRefType::Head));
+        assert_eq!(refs[0].name, "develop");
+        assert!(matches!(refs[1].ref_type, GitRefType::RemoteBranch));
+        assert_eq!(refs[1].name, "origin/feat/desktop-app");
+        // The fix: slashed local branch is correctly classified
+        assert!(matches!(refs[2].ref_type, GitRefType::LocalBranch));
+        assert_eq!(refs[2].name, "feat/lucky-draw");
+    }
+
+    #[test]
+    fn test_parse_refs_detached_head() {
+        let refs = parse_refs("HEAD, refs/heads/feat/lucky-draw");
+        assert_eq!(refs.len(), 2);
+        assert!(matches!(refs[0].ref_type, GitRefType::Head));
+        assert_eq!(refs[0].name, "HEAD");
+        assert!(matches!(refs[1].ref_type, GitRefType::LocalBranch));
+        assert_eq!(refs[1].name, "feat/lucky-draw");
     }
 
     #[test]

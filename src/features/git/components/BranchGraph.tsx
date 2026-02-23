@@ -182,7 +182,7 @@ export function BranchGraph({
                   projectPath={projectPath}
                   onCreateBranch={handleCreateBranch}
                 >
-                  {({ onContextMenu }) => (
+                  {({ onContextMenu, onRefContextMenu }) => (
                     <button
                       type="button"
                       className={`flex w-full items-center gap-3 px-3 text-left select-none transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
@@ -220,11 +220,16 @@ export function BranchGraph({
                           AI
                         </span>
                       )}
-                      {/* Ref badges */}
+                      {/* Ref badges — right-click on a badge targets that specific branch */}
                       {node.commit.refs.map((ref) => (
                         <span
                           key={ref.name}
                           className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
+                          onContextMenu={(e) => {
+                            if (ref.refType === "localBranch" || ref.refType === "head") {
+                              onRefContextMenu(e, ref.name);
+                            }
+                          }}
                         >
                           {ref.name}
                         </span>

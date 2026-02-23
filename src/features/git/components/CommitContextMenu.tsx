@@ -20,6 +20,7 @@ interface CommitContextMenuProps {
   onCreateBranch: (commit: GitCommit) => void;
   children: (props: {
     onContextMenu: (e: React.MouseEvent) => void;
+    onRefContextMenu: (e: React.MouseEvent, refName: string) => void;
   }) => React.ReactNode;
 }
 
@@ -36,6 +37,7 @@ export function CommitContextMenu({
   children,
 }: CommitContextMenuProps) {
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
+  const [targetRef, setTargetRef] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDirtySwitch, setConfirmDirtySwitch] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -46,34 +48,38 @@ export function CommitContextMenu({
   const switchBranch = useGitStore((s) => s.switchBranch);
   const refreshStatus = useGitStore((s) => s.refreshStatus);
 
-  // Derive branch info from commit refs
-  const localBranches = commit.refs.filter(
-    (r) => r.refType === "localBranch",
-  );
   const headBranchName = commit.refs.find((r) => r.refType === "head")?.name;
 
-  // Switchable: local branches that are NOT the current HEAD
-  const switchableBranches = localBranches.filter(
-    (r) => r.name !== headBranchName,
-  );
-  // Deletable: switchable + not main/master
-  const deletableBranches = switchableBranches.filter(
-    (r) => r.name !== "main" && r.name !== "master",
-  );
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
+  const openMenu = useCallback(
+    (e: React.MouseEvent, refName: string | null) => {
       e.preventDefault();
       const MENU_W = 220;
       const MENU_H = 160;
       const x = Math.min(e.clientX, window.innerWidth - MENU_W);
       const y = Math.min(e.clientY, window.innerHeight - MENU_H);
       setMenuPos({ x: Math.max(0, x), y: Math.max(0, y) });
+      setTargetRef(refName);
     },
     [],
   );
 
-  const closeMenu = useCallback(() => setMenuPos(null), []);
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => openMenu(e, null),
+    [openMenu],
+  );
+
+  const handleRefContextMenu = useCallback(
+    (e: React.MouseEvent, refName: string) => {
+      e.stopPropagation();
+      openMenu(e, refName);
+    },
+    [openMenu],
+  );
+
+  const closeMenu = useCallback(() => {
+    setMenuPos(null);
+    setTargetRef(null);
+  }, []);
 
   useEffect(() => {
     if (!menuPos) return;
@@ -156,7 +162,7 @@ export function CommitContextMenu({
 
   return (
     <>
-      {children({ onContextMenu: handleContextMenu })}
+      {children({ onContextMenu: handleContextMenu, onRefContextMenu: handleRefContextMenu })}
 
       {/* Context menu — portal to body */}
       {menuPos &&
@@ -172,34 +178,31 @@ export function CommitContextMenu({
               onClick={handleCreateBranch}
             />
 
-            {switchableBranches.length > 0 && (
+            {targetRef && targetRef !== headBranchName && (
               <>
                 <div className="my-1 border-t border-white/[0.06]" />
-                {switchableBranches.map((ref) => (
-                  <MenuItem
-                    key={`switch-${ref.name}`}
-                    icon={<GitBranch className="h-3.5 w-3.5" />}
-                    label={`Switch to ${ref.name}`}
-                    onClick={() => handleSwitch(ref.name)}
-                  />
-                ))}
+                <MenuItem
+                  icon={<GitBranch className="h-3.5 w-3.5" />}
+                  label={`Switch to ${targetRef}`}
+                  onClick={() => handleSwitch(targetRef)}
+                />
               </>
             )}
 
-            {deletableBranches.length > 0 && (
-              <>
-                <div className="my-1 border-t border-white/[0.06]" />
-                {deletableBranches.map((ref) => (
+            {targetRef &&
+              targetRef !== headBranchName &&
+              targetRef !== "main" &&
+              targetRef !== "master" && (
+                <>
+                  <div className="my-1 border-t border-white/[0.06]" />
                   <MenuItem
-                    key={`delete-${ref.name}`}
                     icon={<Trash2 className="h-3.5 w-3.5" />}
-                    label={`Delete ${ref.name}`}
-                    onClick={() => handleDelete(ref.name)}
+                    label={`Delete ${targetRef}`}
+                    onClick={() => handleDelete(targetRef)}
                     danger
                   />
-                ))}
-              </>
-            )}
+                </>
+              )}
           </div>,
           document.body,
         )}
