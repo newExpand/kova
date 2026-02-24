@@ -12,20 +12,23 @@ import {
   createSshConnection,
   updateSshConnection,
   deleteSshConnection,
-  connectSsh,
+  connectSshSession,
+  killTmuxSession,
   testSshConnection,
 } from "../../../lib/tauri/commands";
 
 interface SshState {
   // 1. State
   connections: SshConnection[];
-  activeConnectionId: string | null;
+  activeConnections: Record<string, SshConnectResult>;
   isLoading: boolean;
   error: string | null;
 
   // 2. Computed
   getConnectionById: (id: string) => SshConnection | undefined;
   getConnectionsByProject: (projectId: string) => SshConnection[];
+  isConnectionActive: (id: string) => boolean;
+  getActiveResult: (id: string) => SshConnectResult | undefined;
 
   // 3. Actions
   fetchConnections: () => Promise<void>;
@@ -38,8 +41,8 @@ interface SshState {
     input: UpdateSshConnectionInput,
   ) => Promise<SshConnection>;
   deleteConnection: (id: string) => Promise<void>;
-  connect: (id: string, sessionName: string) => Promise<SshConnectResult>;
-  disconnect: () => void;
+  connectSession: (id: string) => Promise<SshConnectResult>;
+  disconnectSession: (id: string) => Promise<void>;
   testConnection: (id: string) => Promise<SshTestResult>;
 
   // 4. Reset
@@ -48,34 +51,33 @@ interface SshState {
 
 const initialState = {
   connections: [] as SshConnection[],
-  activeConnectionId: null as string | null,
+  activeConnections: {} as Record<string, SshConnectResult>,
   isLoading: false,
   error: null as string | null,
 };
 
-export const useSshStore = create<SshState>((set, get) => ({
+export const useSshStore = create<SshState>()((set, get) => ({
   ...initialState,
 
   // Computed
   getConnectionById: (id) => get().connections.find((c) => c.id === id),
   getConnectionsByProject: (projectId) =>
     get().connections.filter((c) => c.projectId === projectId),
+  isConnectionActive: (id) => id in get().activeConnections,
+  getActiveResult: (id) => get().activeConnections[id],
 
   // Actions
   fetchConnections: async () => {
     set({ isLoading: true, error: null });
     try {
       const connections = await listSshConnections();
-      // Clear stale activeConnectionId if the connection no longer exists
       set((state) => {
         const ids = new Set(connections.map((c) => c.id));
-        return {
-          connections,
-          activeConnectionId:
-            state.activeConnectionId && ids.has(state.activeConnectionId)
-              ? state.activeConnectionId
-              : null,
-        };
+        const cleaned: Record<string, SshConnectResult> = {};
+        for (const [k, v] of Object.entries(state.activeConnections)) {
+          if (ids.has(k)) cleaned[k] = v;
+        }
+        return { connections, activeConnections: cleaned };
       });
     } catch (e) {
       set({ error: String(e) });
@@ -89,7 +91,6 @@ export const useSshStore = create<SshState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const projectConnections = await listSshConnectionsByProject(projectId);
-      // Merge: replace project connections, keep others
       set((state) => {
         const others = state.connections.filter(
           (c) => c.projectId !== projectId,
@@ -141,12 +142,23 @@ export const useSshStore = create<SshState>((set, get) => ({
   deleteConnection: async (id) => {
     set({ isLoading: true, error: null });
     try {
+      // Kill associated tmux session if active
+      const activeResult = get().activeConnections[id];
+      if (activeResult) {
+        try {
+          await killTmuxSession(activeResult.sessionName);
+        } catch {
+          // Session may already be gone — proceed with deletion
+        }
+      }
       await deleteSshConnection(id);
-      set((state) => ({
-        connections: state.connections.filter((c) => c.id !== id),
-        activeConnectionId:
-          state.activeConnectionId === id ? null : state.activeConnectionId,
-      }));
+      set((state) => {
+        const { [id]: _, ...remaining } = state.activeConnections;
+        return {
+          connections: state.connections.filter((c) => c.id !== id),
+          activeConnections: remaining,
+        };
+      });
     } catch (e) {
       set({ error: String(e) });
       throw e;
@@ -155,20 +167,42 @@ export const useSshStore = create<SshState>((set, get) => ({
     }
   },
 
-  connect: async (id, sessionName) => {
-    set({ error: null });
+  connectSession: async (id) => {
+    set({ isLoading: true, error: null });
     try {
-      const result = await connectSsh(id, sessionName);
-      set({ activeConnectionId: id });
+      const result = await connectSshSession(id);
+      set((state) => ({
+        activeConnections: { ...state.activeConnections, [id]: result },
+      }));
       return result;
     } catch (e) {
-      set({ error: String(e), activeConnectionId: null });
+      set({ error: String(e) });
       throw e;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
-  disconnect: () => {
-    set({ activeConnectionId: null });
+  disconnectSession: async (id) => {
+    const result = get().activeConnections[id];
+    if (!result) return;
+    set({ isLoading: true, error: null });
+    try {
+      await killTmuxSession(result.sessionName);
+    } catch (e) {
+      const msg = String(e);
+      // Suppress expected "session not found" errors
+      if (!msg.includes("not found") && !msg.includes("no server running")) {
+        console.error(`[SSH] Failed to kill session '${result.sessionName}':`, e);
+        set({ error: `Failed to disconnect: ${msg}` });
+      }
+    } finally {
+      // Always remove from active connections — session may already be gone
+      set((state) => {
+        const { [id]: _, ...remaining } = state.activeConnections;
+        return { activeConnections: remaining, isLoading: false };
+      });
+    }
   },
 
   testConnection: async (id) => {

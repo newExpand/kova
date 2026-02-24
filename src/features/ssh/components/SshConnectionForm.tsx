@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, FolderOpen } from "lucide-react";
+import { AlertCircle, CheckCircle2, FolderOpen, Wifi } from "lucide-react";
+import { testSshConnectionParams } from "../../../lib/tauri/commands";
+import type { SshTestResult } from "../../../lib/tauri/commands";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +52,8 @@ export function SshConnectionForm({
   );
   const [keyPath, setKeyPath] = useState(editConnection?.keyPath ?? "");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<SshTestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isEdit = !!editConnection;
@@ -64,18 +68,31 @@ export function SshConnectionForm({
       setAuthType(editConnection?.authType ?? "key");
       setKeyPath(editConnection?.keyPath ?? "");
       setError(null);
+      setTestResult(null);
     }
   }, [isOpen, editConnection]);
 
-  const resetForm = useCallback(() => {
-    setName(editConnection?.name ?? "");
-    setHost(editConnection?.host ?? "");
-    setPort(String(editConnection?.port ?? 22));
-    setUsername(editConnection?.username ?? "");
-    setAuthType(editConnection?.authType ?? "key");
-    setKeyPath(editConnection?.keyPath ?? "");
+  const handleTest = useCallback(async () => {
     setError(null);
-  }, [editConnection]);
+    setTestResult(null);
+    setTesting(true);
+    try {
+      const result = await testSshConnectionParams(
+        host,
+        Number(port),
+        username,
+        authType,
+        authType === "key" ? keyPath || undefined : undefined,
+      );
+      setTestResult(result);
+    } catch (e) {
+      setTestResult({ success: false, message: String(e) });
+    } finally {
+      setTesting(false);
+    }
+  }, [host, port, username, authType, keyPath]);
+
+  const canTest = host.trim() !== "" && username.trim() !== "";
 
   const handleBrowseKey = useCallback(async () => {
     try {
@@ -126,7 +143,6 @@ export function SshConnectionForm({
         await createConnection(input);
       }
       onOpenChange(false);
-      resetForm();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -145,7 +161,6 @@ export function SshConnectionForm({
     createConnection,
     updateConnection,
     onOpenChange,
-    resetForm,
   ]);
 
   return (
@@ -262,9 +277,35 @@ export function SshConnectionForm({
               <p>{error}</p>
             </div>
           )}
+
+          {testResult && (
+            <div
+              className={cn(
+                "flex items-center gap-1.5 text-xs",
+                testResult.success ? "text-success" : "text-red-400",
+              )}
+            >
+              {testResult.success ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <p>{testResult.message}</p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mr-auto gap-1"
+            disabled={!canTest || testing || saving}
+            onClick={handleTest}
+          >
+            <Wifi className="h-3.5 w-3.5" />
+            {testing ? "Testing..." : "Test"}
+          </Button>
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}

@@ -104,6 +104,14 @@ pub fn kill_all_app_tmux_sessions(
 }
 
 #[tauri::command]
+pub fn close_tmux_window_by_name(
+    session_name: String,
+    window_name: String,
+) -> Result<(), AppError> {
+    services::tmux::close_window_by_name(&session_name, &window_name)
+}
+
+#[tauri::command]
 pub fn refresh_tmux_client(session_name: String) -> Result<(), AppError> {
     services::tmux::refresh_tmux_client(&session_name)
 }

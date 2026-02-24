@@ -5,7 +5,7 @@ use crate::models::ssh::{
 };
 use rusqlite::Connection;
 use std::path::Path;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Characters forbidden in SSH host/username fields (shell metacharacters)
@@ -385,6 +385,56 @@ pub fn connect_with_profile(
         connection_name: connection.name.clone(),
         window_name,
         session_name: session_name.to_string(),
+    })
+}
+
+/// SSH standalone tmux session. Reuses existing session if present.
+///
+/// Note: when reusing an existing session, the SSH process health is not verified.
+/// The session may contain a dead SSH connection (e.g. due to network timeout).
+/// The frontend should handle this case via terminal disconnect detection.
+pub fn connect_as_session(
+    connection: &SshConnection,
+) -> Result<SshConnectResult, AppError> {
+    let ssh_cmd = build_ssh_command(connection)?;
+    let session_name = format!("ssh-{}", sanitize_for_tmux(&connection.name));
+
+    // Reuse existing session if it exists
+    let sessions = crate::services::tmux::list_sessions()?;
+    if !sessions.iter().any(|s| s.name == session_name) {
+        crate::services::tmux::create_session(&session_name, 80, 24)?;
+
+        // Clean up orphaned session on send_keys failure
+        if let Err(e) = crate::services::tmux::send_keys(&session_name, &ssh_cmd) {
+            warn!(
+                "send_keys failed, cleaning up session '{}': {}",
+                session_name, e
+            );
+            if let Err(cleanup_err) = crate::services::tmux::kill_session(&session_name) {
+                error!(
+                    "Failed to clean up orphaned session '{}': {}",
+                    session_name, cleanup_err
+                );
+            }
+            return Err(e);
+        }
+
+        info!(
+            "SSH session '{}' created for connection '{}'",
+            session_name, connection.name
+        );
+    } else {
+        info!(
+            "Reusing existing SSH session '{}' for '{}'",
+            session_name, connection.name
+        );
+    }
+
+    Ok(SshConnectResult {
+        connection_id: connection.id.clone(),
+        connection_name: connection.name.clone(),
+        window_name: String::from("0"),
+        session_name,
     })
 }
 

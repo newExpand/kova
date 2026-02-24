@@ -366,6 +366,61 @@ body {
   animation: shimmer-sweep 2s infinite linear;
 }
 
+/* ---------- SSH animations ---------- */
+
+/* --- SSH Accordion (grid 0fr → 1fr) --- */
+.ssh-accordion-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 250ms var(--ease-out-expo);
+}
+.ssh-accordion-grid[data-expanded="true"] {
+  grid-template-rows: 1fr;
+}
+.ssh-accordion-grid > .ssh-accordion-inner {
+  overflow: hidden;
+}
+
+/* --- SSH Item Stagger Entrance (on expand) --- */
+@keyframes ssh-item-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ssh-accordion-grid:not([data-expanded="true"]) .ssh-item-stagger {
+  opacity: 0;
+  transition: opacity 100ms var(--ease-out-quart);
+}
+.ssh-accordion-grid[data-expanded="true"] .ssh-item-stagger {
+  animation: ssh-item-enter 200ms var(--ease-out-expo) both;
+  animation-delay: calc(var(--stagger-index, 0) * 20ms);
+}
+
+/* --- SSH Action Icons (scale+fade reveal) --- */
+.ssh-action-icon {
+  opacity: 0;
+  transform: scale(0.8) translateX(4px);
+  transition: opacity 150ms var(--ease-out-quart),
+              transform 150ms var(--ease-out-back);
+  pointer-events: none;
+}
+.group:hover > .ssh-action-icon {
+  opacity: 1;
+  transform: scale(1) translateX(0);
+  pointer-events: auto;
+}
+
+/* --- Connected Globe Pulse --- */
+@keyframes ssh-globe-pulse {
+  0%  { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 40%, transparent); }
+  70% { box-shadow: 0 0 0 4px transparent; }
+  100%{ box-shadow: 0 0 0 0 transparent; }
+}
+.ssh-globe-connected {
+  color: var(--color-success);
+  border-radius: 50%;
+  animation: ssh-globe-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -379,7 +434,11 @@ body {
   .worktree-card-enter,
   .worktree-card-exit-inner,
   .worktree-card-exit-wrapper,
-  .skeleton-shimmer {
+  .skeleton-shimmer,
+  .ssh-accordion-grid,
+  .ssh-item-stagger,
+  .ssh-action-icon,
+  .ssh-globe-connected {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }

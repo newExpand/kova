@@ -242,6 +242,7 @@ pub fn run() {
             commands::tmux::refresh_tmux_client,
             commands::tmux::send_tmux_keys,
             commands::tmux::list_tmux_sessions_with_ownership,
+            commands::tmux::close_tmux_window_by_name,
             // Notification commands
             commands::notification::list_project_notifications,
             commands::notification::prune_notifications,
@@ -287,7 +288,9 @@ pub fn run() {
             commands::ssh::update_ssh_connection,
             commands::ssh::delete_ssh_connection,
             commands::ssh::connect_ssh,
+            commands::ssh::connect_ssh_session,
             commands::ssh::test_ssh_connection,
+            commands::ssh::test_ssh_connection_params,
             // Environment commands
             commands::environment::check_environment,
         ])

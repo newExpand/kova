@@ -4,11 +4,6 @@ import { TerminalSquare, Command } from "lucide-react";
 import { SessionManagerPage, useTmuxStore } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
 
-// Lazy-load SshConnectionList
-const SshConnectionList = lazy(
-  () => import("../features/ssh/components/SshConnectionList"),
-);
-
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
   () => import("../features/terminal/components/TerminalPage"),
@@ -21,6 +16,7 @@ const GitGraphPage = lazy(
 
 const TERMINAL_ROUTE_PATTERN = /^\/projects\/([^/]+)\/terminal$/;
 const GIT_ROUTE_PATTERN = /^\/projects\/([^/]+)\/git$/;
+const SSH_TERMINAL_ROUTE_PATTERN = /^\/ssh\/([^/]+)\/terminal$/;
 
 function useTerminalRouteMatch(): {
   isTerminalRoute: boolean;
@@ -43,6 +39,18 @@ function useGitRouteMatch(): {
   return {
     isGitRoute: !!match,
     activeProjectId: match?.[1] ?? null,
+  };
+}
+
+function useSshTerminalRouteMatch(): {
+  isSshTerminalRoute: boolean;
+  activeConnectionId: string | null;
+} {
+  const location = useLocation();
+  const match = location.pathname.match(SSH_TERMINAL_ROUTE_PATTERN);
+  return {
+    isSshTerminalRoute: !!match,
+    activeConnectionId: match?.[1] ?? null,
   };
 }
 
@@ -144,6 +152,52 @@ function TerminalPool() {
   );
 }
 
+/** Layout-level SSH terminal pool — mirrors TerminalPool for SSH connections */
+function SshTerminalPool() {
+  const { isSshTerminalRoute, activeConnectionId } = useSshTerminalRouteMatch();
+  const [visitedConnections, setVisitedConnections] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (activeConnectionId) {
+      setVisitedConnections((prev) =>
+        prev.includes(activeConnectionId) ? prev : [...prev, activeConnectionId],
+      );
+    }
+  }, [activeConnectionId]);
+
+  return (
+    <div
+      className="flex flex-1 min-w-0 flex-col overflow-hidden"
+      style={isSshTerminalRoute ? undefined : { display: "none" }}
+    >
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-text-muted">Loading terminal...</p>
+          </div>
+        }
+      >
+        {visitedConnections.map((cid) => (
+          <div
+            key={cid}
+            style={{
+              display: cid === activeConnectionId ? "flex" : "none",
+              flex: 1,
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <TerminalPage
+              sshConnectionId={cid}
+              isActive={cid === activeConnectionId}
+            />
+          </div>
+        ))}
+      </Suspense>
+    </div>
+  );
+}
+
 /** Layout-level git graph pool — survives route navigation (mirrors TerminalPool) */
 function GitGraphPool() {
   const { isGitRoute, activeProjectId } = useGitRouteMatch();
@@ -193,7 +247,8 @@ function GitGraphPool() {
 function AppRoutes() {
   const { isTerminalRoute } = useTerminalRouteMatch();
   const { isGitRoute } = useGitRouteMatch();
-  const isPoolRoute = isTerminalRoute || isGitRoute;
+  const { isSshTerminalRoute } = useSshTerminalRouteMatch();
+  const isPoolRoute = isTerminalRoute || isGitRoute || isSshTerminalRoute;
 
   return (
     <>
@@ -205,27 +260,15 @@ function AppRoutes() {
           <Route path="/" element={<WelcomePage />} />
           <Route path="/sessions" element={<SessionManagerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route
-            path="/ssh"
-            element={
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center">
-                    <p className="text-sm text-text-muted">Loading SSH...</p>
-                  </div>
-                }
-              >
-                <SshConnectionList />
-              </Suspense>
-            }
-          />
           <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
           <Route path="/projects/:projectId/terminal" element={<></>} />
           <Route path="/projects/:projectId/git" element={<></>} />
+          <Route path="/ssh/:connectionId/terminal" element={<></>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <TerminalPool />
+      <SshTerminalPool />
       <GitGraphPool />
     </>
   );

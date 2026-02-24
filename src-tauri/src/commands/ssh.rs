@@ -1,7 +1,7 @@
 use crate::db::DbConnection;
 use crate::errors::AppError;
 use crate::models::ssh::{
-    CreateSshConnectionInput, SshConnectResult, SshConnection, SshTestResult,
+    CreateSshConnectionInput, SshAuthType, SshConnectResult, SshConnection, SshTestResult,
     UpdateSshConnectionInput,
 };
 use crate::services::ssh;
@@ -91,6 +91,20 @@ pub fn connect_ssh(
 }
 
 #[tauri::command]
+pub fn connect_ssh_session(
+    id: String,
+    state: State<'_, Mutex<DbConnection>>,
+) -> Result<SshConnectResult, AppError> {
+    let connection = {
+        let conn = state
+            .lock()
+            .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
+        ssh::get(&conn.conn, &id)?
+    };
+    ssh::connect_as_session(&connection)
+}
+
+#[tauri::command]
 pub fn test_ssh_connection(
     id: String,
     state: State<'_, Mutex<DbConnection>>,
@@ -103,4 +117,28 @@ pub fn test_ssh_connection(
         ssh::get(&conn.conn, &id)?
     };
     ssh::test_connection_with_profile(&connection)
+}
+
+#[tauri::command]
+pub fn test_ssh_connection_params(
+    host: String,
+    port: i32,
+    username: String,
+    auth_type: SshAuthType,
+    key_path: Option<String>,
+) -> Result<SshTestResult, AppError> {
+    let temp = SshConnection {
+        id: String::new(),
+        name: String::from("test"),
+        host,
+        port,
+        username,
+        auth_type,
+        key_path,
+        project_id: None,
+        is_default: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+    };
+    ssh::test_connection_with_profile(&temp)
 }

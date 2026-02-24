@@ -8,13 +8,12 @@ import {
 } from "../../../lib/tauri/commands";
 import type { TmuxWindow } from "../../../lib/tauri/commands";
 import type { PaneAction } from "../types";
-import { SshQuickConnect } from "../../ssh";
+import { Globe } from "lucide-react";
 
 interface WindowToolbarProps {
   sessionName: string;
   disabled: boolean;
   isActive: boolean;
-  projectId?: string | null;
   onRequestAction: (action: PaneAction) => void;
 }
 
@@ -24,7 +23,6 @@ export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
   isActive,
-  projectId,
   onRequestAction,
 }: WindowToolbarProps) {
   const [windows, setWindows] = useState<TmuxWindow[]>([]);
@@ -86,18 +84,22 @@ export const WindowToolbar = memo(function WindowToolbar({
     >
       {/* Window tabs */}
       <div className="flex items-center gap-0.5 overflow-x-auto mr-auto">
-        {windows.map((w) => (
-          <span
-            key={w.windowIndex}
-            className={`inline-flex items-center rounded px-1.5 text-xs ${
-              w.windowActive
-                ? "bg-accent text-white"
-                : "text-text-muted hover:bg-bg-tertiary"
-            }`}
-          >
-            {w.windowIndex}: {w.windowName}
-          </span>
-        ))}
+        {windows.map((w) => {
+          const isSsh = w.windowName.startsWith("ssh-");
+          return (
+            <span
+              key={w.windowIndex}
+              className={`inline-flex items-center gap-0.5 rounded px-1.5 text-xs ${
+                w.windowActive
+                  ? "bg-accent text-white"
+                  : "text-text-muted hover:bg-bg-tertiary"
+              }`}
+            >
+              {isSsh && <Globe className="h-2.5 w-2.5" />}
+              {w.windowIndex}: {isSsh ? w.windowName.slice(4) : w.windowName}
+            </span>
+          );
+        })}
       </div>
 
       {/* Navigation & action buttons */}
@@ -142,16 +144,6 @@ export const WindowToolbar = memo(function WindowToolbar({
       >
         ✕ <span className="ml-0.5 opacity-60">⌘⇧W</span>
       </Button>
-
-      {/* Separator between tmux controls and SSH */}
-      <div className="h-3.5 w-px bg-white/[0.08] mx-1" />
-
-      {/* SSH Quick Connect */}
-      <SshQuickConnect
-        sessionName={sessionName}
-        projectId={projectId ?? null}
-        disabled={disabled}
-      />
     </div>
   );
 });

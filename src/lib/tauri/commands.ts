@@ -304,6 +304,13 @@ export async function closeTmuxWindow(sessionName: string): Promise<void> {
   return invoke<void>("close_tmux_window", { sessionName });
 }
 
+export async function closeTmuxWindowByName(
+  sessionName: string,
+  windowName: string,
+): Promise<void> {
+  return invoke<void>("close_tmux_window_by_name", { sessionName, windowName });
+}
+
 export async function nextTmuxWindow(sessionName: string): Promise<void> {
   return invoke<void>("next_tmux_window", { sessionName });
 }
@@ -776,14 +783,27 @@ export async function deleteSshConnection(id: string): Promise<void> {
   return invoke<void>("delete_ssh_connection", { id });
 }
 
-export async function connectSsh(
-  id: string,
-  sessionName: string,
-): Promise<SshConnectResult> {
-  return invoke<SshConnectResult>("connect_ssh", { id, sessionName });
+export async function connectSshSession(id: string): Promise<SshConnectResult> {
+  return invoke<SshConnectResult>("connect_ssh_session", { id });
 }
 
 export async function testSshConnection(id: string): Promise<SshTestResult> {
   return invoke<SshTestResult>("test_ssh_connection", { id });
+}
+
+export async function testSshConnectionParams(
+  host: string,
+  port: number,
+  username: string,
+  authType: SshAuthType,
+  keyPath?: string,
+): Promise<SshTestResult> {
+  return invoke<SshTestResult>("test_ssh_connection_params", {
+    host,
+    port,
+    username,
+    authType,
+    keyPath: keyPath || null,
+  });
 }
 

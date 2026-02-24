@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { useProjectStore } from "../../project/stores/projectStore";
+import { useSshStore } from "../../ssh";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { TerminalView } from "./TerminalView";
@@ -19,28 +20,40 @@ import {
 import type { TerminalConfig, PaneAction } from "../types";
 
 interface TerminalPageProps {
-  projectId: string;
+  projectId?: string;
+  sshConnectionId?: string;
   isActive: boolean;
 }
 
-function TerminalPage({ projectId, isActive }: TerminalPageProps) {
+function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProps) {
+  // Determine mode
+  const isSshMode = !!sshConnectionId;
+  const storeKey = isSshMode ? `ssh-${sshConnectionId}` : projectId!;
+
   const project = useProjectStore((s) =>
-    s.projects.find((p) => p.id === projectId),
+    projectId ? s.projects.find((p) => p.id === projectId) : undefined,
   );
 
-  const status = useTerminalStore((s) => s.getTerminal(projectId).status);
-  const errorMessage = useTerminalStore((s) => s.getTerminal(projectId).error);
+  const sshActiveResult = useSshStore((s) =>
+    sshConnectionId ? s.getActiveResult(sshConnectionId) : undefined,
+  );
+  const sshConnection = useSshStore((s) =>
+    sshConnectionId ? s.getConnectionById(sshConnectionId) : undefined,
+  );
 
-  // Clean up this project's terminal state on unmount
+  const status = useTerminalStore((s) => s.getTerminal(storeKey).status);
+  const errorMessage = useTerminalStore((s) => s.getTerminal(storeKey).error);
+
+  // Clean up this terminal's state on unmount
   useEffect(() => {
     return () => {
-      useTerminalStore.getState().resetTerminal(projectId);
+      useTerminalStore.getState().resetTerminal(storeKey);
     };
-  }, [projectId]);
+  }, [storeKey]);
 
-
+  // Project mode: use tmux sessions hook
   const { sessions, projectSessions, isAvailable, isLoading, hasFetchedSessions } =
-    useTmuxSessions(projectId);
+    useTmuxSessions(isSshMode ? undefined : projectId);
 
   const [activeConfig, setActiveConfig] = useState<TerminalConfig | null>(null);
   const autoConnectAttempted = useRef(false);
@@ -51,24 +64,55 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
 
   const handleConnect = useCallback(
     (config: TerminalConfig) => {
-      setActiveConfig({ ...config, projectId });
+      setActiveConfig({ ...config, projectId: storeKey });
     },
-    [projectId],
+    [storeKey],
   );
 
-  // Auto-connect: attach existing session or create new one
+  // SSH mode: auto-connect using sshActiveResult session name
   useEffect(() => {
+    if (!isSshMode) return;
     if (autoConnectAttempted.current) return;
-    if (isAvailable === null || !hasFetchedSessions) {
-      // On first-ever mount, hasFetchedSessions is false → waits for fetch.
-      // On subsequent switches, cached data is preserved → fires immediately.
-      // isLoading is NOT checked: background fetch shouldn't block auto-connect.
-      return;
-    }
+    if (!sshActiveResult) return;
+
+    autoConnectAttempted.current = true;
+    setAutoConnectDone(true);
+
+    handleConnect({
+      projectId: storeKey,
+      sessionName: sshActiveResult.sessionName,
+      cols: 80,
+      rows: 24,
+    });
+  }, [isSshMode, sshActiveResult, handleConnect, storeKey]);
+
+  // SSH mode: timeout when sshActiveResult is missing (e.g. page refresh)
+  useEffect(() => {
+    if (!isSshMode) return;
+    if (autoConnectAttempted.current) return;
+    if (sshActiveResult) return;
+
+    const timer = setTimeout(() => {
+      if (!autoConnectAttempted.current) {
+        autoConnectAttempted.current = true;
+        setAutoConnectDone(true);
+        useTerminalStore.getState().setError(
+          storeKey,
+          "SSH session is not active. Please reconnect from the sidebar.",
+        );
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [isSshMode, sshActiveResult, storeKey]);
+
+  // Project mode: auto-connect (existing logic)
+  useEffect(() => {
+    if (isSshMode) return;
+    if (autoConnectAttempted.current) return;
+    if (isAvailable === null || !hasFetchedSessions) return;
     if (activeConfig) return;
 
     if (isAvailable === false) {
-      // tmux not installed
       autoConnectAttempted.current = true;
       setAutoConnectDone(true);
       return;
@@ -86,12 +130,11 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     const firstSession = projectSessions[0];
     const name = firstSession ? firstSession.name : slug;
 
-    // Check if session already exists in tmux (even if not registered in app DB)
     const existsInTmux = sessions.some((s) => s.name === name);
     const isNewSession = !firstSession && !existsInTmux;
 
     handleConnect({
-      projectId,
+      projectId: projectId!,
       sessionName: name,
       cols: 80,
       rows: 24,
@@ -101,7 +144,6 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
         : undefined,
     });
 
-    // Restore worktree windows for existing .claude/worktrees/* entries
     if (isNewSession && project?.path) {
       setTimeout(async () => {
         try {
@@ -117,6 +159,7 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
       }, 800);
     }
   }, [
+    isSshMode,
     isAvailable,
     isLoading,
     hasFetchedSessions,
@@ -134,26 +177,24 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     autoConnectAttempted.current = false;
     setAutoConnectDone(false);
     setActiveConfig(null);
-    useTerminalStore.getState().setStatus(projectId, "idle");
-  }, [projectId]);
+    useTerminalStore.getState().setStatus(storeKey, "idle");
+  }, [storeKey]);
 
   // --- Auto-reconnect on session disconnect ---
   const consecutiveDisconnects = useRef(0);
 
-  // Reset counter on successful connection
   useEffect(() => {
     if (status === "connected") {
       consecutiveDisconnects.current = 0;
     }
   }, [status]);
 
-  // Detect disconnect and schedule reconnect (with loop protection)
   useEffect(() => {
     if (status === "disconnected") {
       consecutiveDisconnects.current += 1;
       if (consecutiveDisconnects.current > 3) {
         useTerminalStore.getState().setError(
-          projectId,
+          storeKey,
           "Session keeps disconnecting. Click Retry to try again.",
         );
         consecutiveDisconnects.current = 0;
@@ -162,7 +203,7 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
       const timer = setTimeout(() => handleRetry(), 500);
       return () => clearTimeout(timer);
     }
-  }, [status, handleRetry, projectId]);
+  }, [status, handleRetry, storeKey]);
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
@@ -206,7 +247,6 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
             break;
         }
         if (startClaude) {
-          // Wait for shell to initialize in the new pane/window
           await new Promise((resolve) => setTimeout(resolve, 300));
           await sendTmuxKeys(sessionName, "claude --dangerously-skip-permissions");
         }
@@ -226,7 +266,8 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     refocusTerminal();
   }, [refocusTerminal]);
 
-  if (!project) {
+  // Check if we have a valid subject (project or ssh connection)
+  if (!isSshMode && !project) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-text-muted">Project not found</p>
@@ -234,9 +275,17 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
     );
   }
 
+  if (isSshMode && !sshConnection) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-text-muted">SSH connection not found</p>
+      </div>
+    );
+  }
+
   // Rendering state decisions (priority order)
   const showLoading = !autoConnectDone && status !== "error";
-  const showTmuxMissing = autoConnectDone && isAvailable === false;
+  const showTmuxMissing = !isSshMode && autoConnectDone && isAvailable === false;
   const showError = status === "error";
   const showTerminal = activeConfig && !showError;
 
@@ -289,7 +338,6 @@ function TerminalPage({ projectId, isActive }: TerminalPageProps) {
             sessionName={activeConfig.sessionName}
             disabled={status !== "connected"}
             isActive={isActive}
-            projectId={projectId}
             onRequestAction={handleRequestAction}
           />
           <PaneToolbar

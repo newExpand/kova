@@ -11,15 +11,19 @@ import {
   RefreshCw,
   Settings,
   X,
+  Globe,
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project/stores/projectStore";
 import { useTmuxStore, useSessionClassification } from "../../features/tmux";
+import { useSshStore } from "../../features/ssh";
+import { SshConnectionForm } from "../../features/ssh";
 import { killTmuxSession } from "../../lib/tauri/commands";
 import { StatusIndicator } from "../../features/project/components/StatusIndicator";
 import { ProjectEditForm } from "../../features/project/components/ProjectEditForm";
 import { COLOR_PALETTE } from "../../features/project/types";
 import type { Project } from "../../features/project/types";
+import type { SshConnection } from "../../features/ssh";
 import type { SessionInfo } from "../../features/tmux/types";
 import {
   Dialog,
@@ -72,6 +76,13 @@ function Sidebar() {
 
   const { appSessions, externalSessions } = useSessionClassification(sessions);
 
+  // SSH state — individual selectors to avoid re-render loops
+  const sshConnections = useSshStore((s) => s.connections);
+  const sshError = useSshStore((s) => s.error);
+  const fetchSshConnections = useSshStore((s) => s.fetchConnections);
+  const connectSession = useSshStore((s) => s.connectSession);
+  const sshDeleteConnection = useSshStore((s) => s.deleteConnection);
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -81,6 +92,19 @@ function Sidebar() {
   const [killTarget, setKillTarget] = useState<SessionInfo | null>(null);
   const [isKilling, setIsKilling] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SSH sidebar state
+  const [sshExpanded, setSshExpanded] = useState(false);
+  const [sshFormOpen, setSshFormOpen] = useState(false);
+  const [sshEditTarget, setSshEditTarget] = useState<SshConnection | null>(null);
+  const [sshDeleteTarget, setSshDeleteTarget] = useState<SshConnection | null>(null);
+
+  // Fetch SSH connections on mount
+  useEffect(() => {
+    fetchSshConnections().catch((e) => {
+      console.error("[SSH] Failed to fetch connections:", e);
+    });
+  }, [fetchSshConnections]);
 
   // Close context menu on outside click or Escape
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
@@ -166,6 +190,36 @@ function Sidebar() {
       confirmDelete(id);
       deleteTimerRef.current = null;
     }, DELETE_CONFIRM_MS);
+  };
+
+  // SSH handlers
+  const handleSelectSsh = async (conn: SshConnection) => {
+    try {
+      await connectSession(conn.id);
+      navigate(`/ssh/${conn.id}/terminal`);
+    } catch (e) {
+      console.error(`[SSH] Connection to '${conn.name}' failed:`, e);
+      // error is set in store and displayed via sshError
+    }
+  };
+
+  const handleEditSsh = (conn: SshConnection) => {
+    setSshEditTarget(conn);
+  };
+
+  const handleDeleteSsh = (conn: SshConnection) => {
+    setSshDeleteTarget(conn);
+  };
+
+  const handleDeleteSshConfirm = async () => {
+    if (!sshDeleteTarget) return;
+    try {
+      await sshDeleteConnection(sshDeleteTarget.id);
+      setSshDeleteTarget(null);
+    } catch (e) {
+      console.error(`[SSH] Delete failed for '${sshDeleteTarget.name}':`, e);
+      // Keep dialog open — error is displayed via sshError
+    }
   };
 
   return (
@@ -404,6 +458,98 @@ function Sidebar() {
         )}
       </nav>
 
+      {/* SSH collapsible section — above bottom actions */}
+      <div className="border-t border-white/[0.06]">
+        <button
+          onClick={() => setSshExpanded(!sshExpanded)}
+          className="group flex w-full items-center gap-1.5 px-3 py-2 text-xs text-text-muted hover:text-text-secondary hover:bg-white/[0.04] active:scale-[0.98] transition-all duration-150 rounded-md"
+        >
+          <ChevronRight
+            className={cn("h-3 w-3 transition-transform duration-200", sshExpanded && "rotate-90")}
+            style={{ transitionTimingFunction: "var(--ease-out-expo)" }}
+          />
+          {!collapsed && <span className="font-medium uppercase tracking-wider">SSH</span>}
+          {!collapsed && sshConnections.length > 0 && (
+            <span className="ml-auto flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-white/[0.06] text-[9px] text-text-muted transition-colors duration-200 group-hover:bg-white/[0.12]">
+              {sshConnections.length}
+            </span>
+          )}
+          {collapsed && (
+            <Globe className="h-3.5 w-3.5" />
+          )}
+        </button>
+
+        {!collapsed && (
+          <div className="ssh-accordion-grid" data-expanded={sshExpanded}>
+            <div className="ssh-accordion-inner">
+              <div className="px-2 pb-2 pt-0.5 space-y-0.5">
+                {sshError && (
+                  <p className="px-2 py-1 text-[10px] text-danger truncate" title={sshError}>
+                    {sshError}
+                  </p>
+                )}
+                {sshConnections.map((conn, i) => {
+                  const isActive = location.pathname === `/ssh/${conn.id}/terminal`;
+                  return (
+                    <div
+                      key={conn.id}
+                      className="ssh-item-stagger group relative flex items-center rounded-lg"
+                      style={{ '--stagger-index': i } as React.CSSProperties}
+                    >
+                      <button
+                        onClick={() => handleSelectSsh(conn)}
+                        onMouseEnter={preloadTerminal}
+                        className={cn(
+                          "sidebar-item-hover flex flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm pr-10",
+                          isActive
+                            ? "bg-primary/10 border border-primary/20 text-text"
+                            : "text-text-secondary hover:bg-white/[0.08]",
+                        )}
+                      >
+                        <Globe className={cn(
+                          "h-3 w-3 shrink-0 transition-colors duration-200",
+                          isActive ? "ssh-globe-connected" : "text-text-muted",
+                        )} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs truncate">{conn.name}</p>
+                          <p className="text-[10px] text-text-muted truncate">
+                            {conn.username}@{conn.host}
+                          </p>
+                        </div>
+                      </button>
+                      <div className="ssh-action-icon absolute right-1.5 flex items-center gap-0.5">
+                        <button
+                          title="Edit"
+                          onClick={() => handleEditSsh(conn)}
+                          className="h-5 w-5 flex items-center justify-center rounded text-text-muted hover:text-text-secondary hover:bg-white/[0.08] transition-colors"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          title="Delete"
+                          onClick={() => handleDeleteSsh(conn)}
+                          className="h-5 w-5 flex items-center justify-center rounded text-text-muted hover:text-danger hover:bg-danger/10 transition-colors"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={() => setSshFormOpen(true)}
+                  className="ssh-item-stagger flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text-muted hover:bg-white/[0.08] hover:text-text-secondary active:scale-[0.98] transition-all"
+                  style={{ '--stagger-index': sshConnections.length } as React.CSSProperties}
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add SSH Connection</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Bottom actions */}
       <div className="border-t border-white/[0.10] p-2 space-y-0.5 bg-black/[0.08]">
         {sidebarMode === "projects" ? (
@@ -498,6 +644,47 @@ function Sidebar() {
           onSave={updateProject}
         />
       )}
+
+      {/* SSH Connection form (new / edit) */}
+      {(sshFormOpen || sshEditTarget) && (
+        <SshConnectionForm
+          open={sshFormOpen || !!sshEditTarget}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSshFormOpen(false);
+              setSshEditTarget(null);
+            }
+          }}
+          editConnection={sshEditTarget}
+          projectId={null}
+        />
+      )}
+
+      {/* SSH delete confirmation dialog */}
+      <Dialog
+        open={!!sshDeleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setSshDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete SSH Connection</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{sshDeleteTarget?.name}&quot;?
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSshDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSshConfirm}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Kill session confirmation dialog */}
       <Dialog
