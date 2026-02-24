@@ -152,7 +152,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
             </div>
           )}
         </div>
-        {selectedCommitHash && project?.path && (
+        {isActive && selectedCommitHash && project?.path && (
           <CommitDetailPanel
             projectPath={project.path}
             onClose={handleCloseCommit}
@@ -160,7 +160,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
             onToggleMaximize={togglePanelMaximize}
           />
         )}
-        {selectedWorktreePath && (
+        {isActive && selectedWorktreePath && (
           <WorkingChangesPanel
             onClose={handleCloseWorktree}
             maximized={panelMaximized}
