@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { Sparkles, X, Copy, Check, AlertCircle, Maximize2, Minimize2 } from "lucide-react";
 import { useGitStore } from "../stores/gitStore";
 import { FileDiffRow } from "./DiffViewer";
+import { AuthorAvatar } from "./AuthorAvatar";
 
 interface CommitDetailPanelProps {
   projectPath: string;
@@ -19,8 +20,8 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
   const fetchCommitDetail = useGitStore((s) => s.fetchCommitDetail);
 
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
 
   // Fetch commit detail when selected hash changes
   useEffect(() => {
@@ -67,21 +68,21 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
     };
   }, []);
 
-  const handleCopyHash = useCallback(async () => {
-    if (!commitDetail?.hash) return;
+  const handleCopy = useCallback(async (text: string, field: string) => {
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(commitDetail.hash);
-      setCopied(true);
-      setCopyFailed(false);
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setCopyFailedField(null);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+      copyTimerRef.current = setTimeout(() => setCopiedField(null), 2000);
     } catch (e) {
       console.warn("[CommitDetailPanel] Clipboard write failed:", e);
-      setCopyFailed(true);
+      setCopyFailedField(field);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      copyTimerRef.current = setTimeout(() => setCopyFailed(false), 2000);
+      copyTimerRef.current = setTimeout(() => setCopyFailedField(null), 2000);
     }
-  }, [commitDetail?.hash]);
+  }, []);
 
   const toggleFile = useCallback((path: string) => {
     setExpandedFiles((prev) => {
@@ -125,14 +126,14 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
         {/* Hash + copy button */}
         <button
           type="button"
-          onClick={handleCopyHash}
+          onClick={() => commitDetail?.hash && handleCopy(commitDetail.hash, 'hash')}
           className="flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-sm text-text-muted hover:bg-white/[0.06] transition-colors"
           title="Copy full hash"
         >
           {commitDetail?.hash.slice(0, 10) ?? selectedHash.slice(0, 10)}
-          {copyFailed ? (
+          {copyFailedField === 'hash' ? (
             <X className="h-3 w-3 text-red-400" />
-          ) : copied ? (
+          ) : copiedField === 'hash' ? (
             <Check className="h-3 w-3 text-green-400" />
           ) : (
             <Copy className="h-3 w-3" />
@@ -188,7 +189,23 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
           <div className="space-y-3">
             {/* Message section */}
             <div>
-              <h3 className="text-sm font-medium text-text-primary">{subject}</h3>
+              <div className="group/subject flex items-start gap-1">
+                <h3 className="text-sm font-medium text-text-primary">{subject}</h3>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(subject, 'subject')}
+                  className="shrink-0 mt-0.5 rounded p-0.5 text-text-muted hover:bg-white/[0.06] transition-all opacity-0 group-hover/subject:opacity-100"
+                  title="Copy commit message"
+                >
+                  {copyFailedField === 'subject' ? (
+                    <X className="h-3 w-3 text-red-400" />
+                  ) : copiedField === 'subject' ? (
+                    <Check className="h-3 w-3 text-green-400" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </button>
+              </div>
               {body && (
                 <pre className="mt-1 text-sm text-text-muted whitespace-pre-wrap font-mono leading-relaxed">
                   {body}
@@ -199,7 +216,11 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
             {/* Meta section */}
             {selectedCommit && (
               <div className="text-sm text-text-muted space-y-0.5">
-                <div>
+                <div className="flex items-center gap-2">
+                  <AuthorAvatar
+                    name={selectedCommit.authorName}
+                    isAgent={selectedCommit.isAgentCommit}
+                  />
                   {selectedCommit.authorName}
                   {" "}
                   <span className="text-text-muted/60">&lt;{selectedCommit.authorEmail}&gt;</span>

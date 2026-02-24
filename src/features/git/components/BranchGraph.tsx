@@ -7,6 +7,7 @@ import { BranchLine } from "./BranchLine";
 import { CommitNode } from "./CommitNode";
 import { CommitContextMenu } from "./CommitContextMenu";
 import { CreateBranchDialog } from "./CreateBranchDialog";
+import { AuthorAvatar } from "./AuthorAvatar";
 import { useGitStore } from "../stores/gitStore";
 import { Sparkles } from "lucide-react";
 
@@ -202,6 +203,10 @@ export function BranchGraph({
                       onMouseEnter={() => branch && onHoverBranch?.(branch)}
                       onMouseLeave={() => onLeaveBranch?.()}
                     >
+                      <AuthorAvatar
+                        name={node.commit.authorName}
+                        isAgent={node.commit.isAgentCommit}
+                      />
                       <span className="shrink-0 font-mono text-[11px] text-text-muted">
                         {node.commit.shortHash}
                       </span>

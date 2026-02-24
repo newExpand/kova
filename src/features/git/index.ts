@@ -41,3 +41,4 @@ export { WorktreeContextMenu } from "./components/WorktreeContextMenu";
 export { CommitContextMenu } from "./components/CommitContextMenu";
 export { CreateBranchDialog } from "./components/CreateBranchDialog";
 export { CommitBox } from "./components/CommitBox";
+export { AuthorAvatar, authorColor } from "./components/AuthorAvatar";
