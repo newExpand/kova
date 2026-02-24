@@ -239,7 +239,7 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
     )?;
 
     // Enable OSC 52 clipboard so tmux sends clipboard data to the terminal.
-    // NOTE: set-clipboard must be on for copy-selection-no-clear to emit OSC 52.
+    // NOTE: set-clipboard must be on for copy commands to emit OSC 52.
     run_tmux_nonfatal(
         &["set-option", "-t", name, "set-clipboard", "on"],
         "enable set-clipboard", name,
@@ -271,12 +271,11 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
         )?;
     }
 
-    // Override MouseDragEnd1Pane: copy-selection-no-clear copies text to the
-    // tmux paste buffer and (because set-clipboard is on) emits OSC 52 to the
-    // terminal. Stays in copy mode to preserve scroll position.
+    // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
+    // (because set-clipboard is on), then immediately exit copy mode.
     for table in &["copy-mode", "copy-mode-vi"] {
         run_tmux_nonfatal(
-            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-no-clear"],
+            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"],
             &format!("bind MouseDragEnd1Pane ({})", table), name,
         )?;
     }

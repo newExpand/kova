@@ -62,9 +62,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const tier1TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tier2TimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Drag-distance tracking: prevent accidental clipboard copy on micro-drags (<5px).
+  // Drag-distance tracking: prevent accidental clipboard copy on micro-drags.
+  // Uses time + distance composite condition: mousedown must be held for at least
+  // DRAG_TIME_THRESHOLD_MS (150ms) AND moved beyond DRAG_THRESHOLD_PX (5px).
   // Shared between DOM listeners (mousedown/mousemove) and OSC 52 handler.
-  const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0 });
+  const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0, startTime: 0 });
   const dragListenersRef = useRef<{ cleanup: () => void } | null>(null);
 
   const cleanup = useCallback(() => {
@@ -272,14 +274,22 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         fitAddonRef.current = fitAddon;
 
         // ── Drag-distance tracking for OSC 52 clipboard filter ──
-        // Prevents accidental copy on micro-drags (< 5px mouse movement).
+        // Composite condition: mouse must be held for >= 150ms AND moved >= 5px
+        // to count as intentional drag. Prevents accidental copy during fast work.
         const DRAG_THRESHOLD_PX = 5;
         const DRAG_THRESHOLD_SQ = DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX;
+        const DRAG_TIME_THRESHOLD_MS = 150;
         const onDragMouseDown = (e: MouseEvent) => {
-          dragDistanceRef.current = { exceeded: false, startX: e.clientX, startY: e.clientY };
+          dragDistanceRef.current = { exceeded: false, startX: e.clientX, startY: e.clientY, startTime: Date.now() };
         };
         const onDragMouseMove = (e: MouseEvent) => {
           if (dragDistanceRef.current.exceeded) return;
+          if (Date.now() - dragDistanceRef.current.startTime < DRAG_TIME_THRESHOLD_MS) {
+            // Keep resetting origin so distance is measured only after the hold period.
+            dragDistanceRef.current.startX = e.clientX;
+            dragDistanceRef.current.startY = e.clientY;
+            return;
+          }
           const dx = e.clientX - dragDistanceRef.current.startX;
           const dy = e.clientY - dragDistanceRef.current.startY;
           if (dx * dx + dy * dy >= DRAG_THRESHOLD_SQ) {
@@ -407,13 +417,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               "send-keys", "-X", "cancel",
           ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
               "send-keys", "-X", "cancel",
-          // Override MouseDragEnd1Pane: copy-selection-no-clear copies text to the
-          // tmux paste buffer and (because set-clipboard is on) emits OSC 52 to the
-          // terminal. Stays in copy mode to preserve scroll position.
+          // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
+          // (because set-clipboard is on), then immediately exit copy mode.
           ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-              "send-keys", "-X", "copy-selection-no-clear",
+              "send-keys", "-X", "copy-selection-and-cancel",
           ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-              "send-keys", "-X", "copy-selection-no-clear",
+              "send-keys", "-X", "copy-selection-and-cancel",
           // Cancel copy mode on the previously-active pane when switching panes.
           ";", "set-hook", "window-pane-changed",
               "send-keys -t '{last}' -X cancel",
