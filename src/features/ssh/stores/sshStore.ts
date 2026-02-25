@@ -24,6 +24,8 @@ interface SshState {
   activeConnections: Record<string, SshConnectResult>;
   /** PTY pids for SSH direct mode connections (for cleanup when TerminalPage is unmounted) */
   sshPtyPids: Record<string, number>;
+  /** Pre-warmed tmux availability results (populated by sidebar background probe) */
+  tmuxCheckCache: Record<string, boolean | null>;
   isLoading: boolean;
   error: string | null;
 
@@ -49,6 +51,10 @@ interface SshState {
   testConnection: (id: string) => Promise<SshTestResult>;
   /** Register PTY pid for SSH direct mode (called by TerminalPage after PTY spawn) */
   registerSshPtyPid: (connectionId: string, pid: number) => void;
+  /** Update remote tmux availability in active connection (for navigation cache) */
+  updateRemoteTmuxAvailable: (connectionId: string, value: boolean | null) => void;
+  /** Cache pre-warmed tmux check result (called by Sidebar background probe) */
+  cacheTmuxCheck: (connectionId: string, value: boolean | null) => void;
 
   // 4. Reset
   reset: () => void;
@@ -58,6 +64,7 @@ const initialState = {
   connections: [] as SshConnection[],
   activeConnections: {} as Record<string, SshConnectResult>,
   sshPtyPids: {} as Record<string, number>,
+  tmuxCheckCache: {} as Record<string, boolean | null>,
   isLoading: false,
   error: null as string | null,
 };
@@ -198,6 +205,11 @@ export const useSshStore = create<SshState>()((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const result = await connectSshSession(id);
+      // Merge pre-warmed tmux check result if available
+      const cachedTmux = get().tmuxCheckCache[id];
+      if (result.remoteTmuxAvailable == null && cachedTmux != null) {
+        result.remoteTmuxAvailable = cachedTmux;
+      }
       set((state) => ({
         activeConnections: { ...state.activeConnections, [id]: result },
       }));
@@ -251,6 +263,25 @@ export const useSshStore = create<SshState>()((set, get) => ({
     set((state) => ({
       sshPtyPids: { ...state.sshPtyPids, [connectionId]: pid },
     }));
+  },
+
+  cacheTmuxCheck: (connectionId, value) => {
+    set((state) => ({
+      tmuxCheckCache: { ...state.tmuxCheckCache, [connectionId]: value },
+    }));
+  },
+
+  updateRemoteTmuxAvailable: (connectionId, value) => {
+    set((state) => {
+      const result = state.activeConnections[connectionId];
+      if (!result) return state;
+      return {
+        activeConnections: {
+          ...state.activeConnections,
+          [connectionId]: { ...result, remoteTmuxAvailable: value },
+        },
+      };
+    });
   },
 
   testConnection: async (id) => {

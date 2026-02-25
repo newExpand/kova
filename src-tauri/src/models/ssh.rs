@@ -95,6 +95,8 @@ pub struct SshConnectResult {
     pub ssh_args: Option<Vec<String>>,
     /// Sanitized session name for remote tmux (connect_as_session only)
     pub remote_session_name: Option<String>,
+    /// Shell-escaped tmux command with full configuration for remote execution (connect_as_session only)
+    pub remote_tmux_command: Option<String>,
 }
 
 /// Result of an SSH connection test

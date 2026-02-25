@@ -399,6 +399,7 @@ pub fn connect_with_profile(
         remote_tmux_available: None,
         ssh_args: None,
         remote_session_name: None,
+        remote_tmux_command: None,
     })
 }
 
@@ -479,6 +480,40 @@ pub fn check_remote_tmux(connection: &SshConnection) -> Result<Option<bool>, App
     }
 }
 
+/// Build a shell-safe tmux command with full configuration for remote SSH execution.
+///
+/// The returned string is intended to be passed as SSH's `-t` argument,
+/// and will be interpreted by the remote shell. Escaping rules:
+///   `\;`   → remote shell passes `;` to tmux → top-level command separator
+///   `'\;'` → remote shell passes `\;` literally → bind-key inner command separator
+///
+/// NOTE: These settings mirror `create_session()` in tmux.rs. Keep both in sync.
+fn build_remote_tmux_command(session_name: &str) -> String {
+    format!(
+        concat!(
+            "tmux new-session -A -s '{name}'",
+            " \\; set-option mouse on",
+            " \\; set-option set-clipboard on",
+            " \\; set-option -as terminal-features ,xterm-256color:RGB",
+            " \\; bind-key -T copy-mode MouseDown1Pane",
+            " select-pane -t = '\\;' send-keys -X clear-selection",
+            " \\; bind-key -T copy-mode-vi MouseDown1Pane",
+            " select-pane -t = '\\;' send-keys -X clear-selection",
+            " \\; bind-key -T copy-mode MouseUp1Pane",
+            " send-keys -X cancel",
+            " \\; bind-key -T copy-mode-vi MouseUp1Pane",
+            " send-keys -X cancel",
+            " \\; bind-key -T copy-mode MouseDragEnd1Pane",
+            " send-keys -X copy-selection-and-cancel",
+            " \\; bind-key -T copy-mode-vi MouseDragEnd1Pane",
+            " send-keys -X copy-selection-and-cancel",
+            " \\; set-hook window-pane-changed",
+            " \"send-keys -t '{{last}}' -X cancel\"",
+        ),
+        name = session_name,
+    )
+}
+
 /// SSH direct connection (no local tmux wrapper).
 ///
 /// Returns SSH args for frontend PTY spawn, plus remote tmux availability info.
@@ -489,27 +524,14 @@ pub fn connect_as_session(
     let ssh_args = build_ssh_args(connection)?;
     let remote_session_name = sanitize_for_tmux(&connection.name);
 
-    // Check remote tmux availability.
-    // Validation errors (InvalidInput, Internal) propagate — they indicate
-    // malformed connection data that build_ssh_args would also reject.
-    // This provides fail-fast behavior for security-relevant issues.
-    let remote_tmux = match check_remote_tmux(connection) {
-        Ok(result) => result,
-        Err(e) => {
-            // check_remote_tmux only returns Err for validation/internal failures
-            // (from build_ssh_probe_cmd → validate_ssh_field / expand_tilde).
-            // IO/process errors are handled internally as Ok(None).
-            error!(
-                "Remote tmux check failed for '{}': {}",
-                connection.name, e
-            );
-            return Err(e);
-        }
-    };
+    // Remote tmux check is deferred to a separate async command (check_ssh_remote_tmux)
+    // to avoid blocking the initial SSH connection by up to 5 seconds.
+    // Frontend will call the check in the background and reconnect if tmux is available.
+    let remote_tmux_cmd = build_remote_tmux_command(&remote_session_name);
 
     info!(
-        "SSH connect prepared for '{}': remote_tmux={:?}",
-        connection.name, remote_tmux
+        "SSH connect prepared for '{}' (remote tmux check deferred)",
+        connection.name
     );
 
     Ok(SshConnectResult {
@@ -517,9 +539,10 @@ pub fn connect_as_session(
         connection_name: connection.name.clone(),
         window_name: None,
         session_name: None,
-        remote_tmux_available: remote_tmux,
+        remote_tmux_available: None,
         ssh_args: Some(ssh_args),
         remote_session_name: Some(remote_session_name),
+        remote_tmux_command: Some(remote_tmux_cmd),
     })
 }
 

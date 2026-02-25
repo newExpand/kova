@@ -289,6 +289,7 @@ pub fn run() {
             commands::ssh::delete_ssh_connection,
             commands::ssh::connect_ssh,
             commands::ssh::connect_ssh_session,
+            commands::ssh::check_ssh_remote_tmux,
             commands::ssh::test_ssh_connection,
             commands::ssh::test_ssh_connection_params,
             // Environment commands

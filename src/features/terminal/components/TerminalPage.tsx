@@ -16,8 +16,11 @@ import {
   createTmuxWindow,
   sendTmuxKeys,
   restoreWorktreeWindows,
+  checkSshRemoteTmux,
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
+
+type TmuxCheckStatus = "pending" | "available" | "unavailable" | "indeterminate";
 
 interface TerminalPageProps {
   projectId?: string;
@@ -58,6 +61,8 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   const [activeConfig, setActiveConfig] = useState<TerminalConfig | null>(null);
   const autoConnectAttempted = useRef(false);
   const [autoConnectDone, setAutoConnectDone] = useState(false);
+  const [sshTmuxStatus, setSshTmuxStatus] = useState<TmuxCheckStatus>("pending");
+  const tmuxReconnectAttempted = useRef(false);
   const [pendingAction, setPendingAction] = useState<PaneAction | null>(null);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -69,44 +74,97 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     [storeKey],
   );
 
-  // SSH mode: auto-connect using sshActiveResult
+  // SSH mode: auto-connect using sshActiveResult (immediate plain SSH + background tmux check)
   useEffect(() => {
-    if (!isSshMode) return;
-    if (autoConnectAttempted.current) return;
-    if (!sshActiveResult) return;
+    if (!isSshMode || autoConnectAttempted.current || !sshActiveResult) return;
 
-    autoConnectAttempted.current = true;
-    setAutoConnectDone(true);
-
-    // Remote tmux not available — show install message, don't connect
+    // Store has cached check result from previous navigation → reuse it
     if (sshActiveResult.remoteTmuxAvailable === false) {
+      autoConnectAttempted.current = true;
+      setAutoConnectDone(true);
+      setSshTmuxStatus("unavailable");
+      return; // show tmux-not-installed UI
+    }
+    if (sshActiveResult.remoteTmuxAvailable === true) {
+      autoConnectAttempted.current = true;
+      setAutoConnectDone(true);
+      setSshTmuxStatus("available");
+      // Already known → connect with tmux args (includes full config from Rust)
+      const sshArgs = [...(sshActiveResult.sshArgs ?? [])];
+      sshArgs.push("-t", sshActiveResult.remoteTmuxCommand!);
+      handleConnect({
+        projectId: storeKey,
+        sessionName: `ssh-${sshActiveResult.connectionId}-tmux`,
+        cols: 80,
+        rows: 24,
+        sshArgs,
+        isSshMode: true,
+      });
       return;
     }
 
-    // Build SSH args for direct PTY spawn
-    // After the early return above, remoteTmuxAvailable is true | null (never false)
-    const sshArgs = [...(sshActiveResult.sshArgs ?? [])];
-    if (sshActiveResult.remoteTmuxAvailable === true && sshActiveResult.remoteSessionName) {
-      // Only attach to remote tmux when we confirmed it exists.
-      // -t: force pseudo-terminal allocation (required for remote tmux)
-      // remoteSessionName is sanitized server-side via sanitize_for_tmux()
-      // Single-quote the session name to prevent option parsing (e.g. names starting with '-')
-      sshArgs.push("-t", `tmux new-session -A -s '${sshActiveResult.remoteSessionName}'`);
-    } else if (sshActiveResult.remoteTmuxAvailable === null) {
-      // Indeterminate (BatchMode auth failure, timeout, etc.)
-      // Connect without remote tmux — user can run tmux manually if needed.
-      console.warn("[SSH] Remote tmux availability unknown; connecting without remote tmux");
-    }
+    // remoteTmuxAvailable === null → first connection: plain SSH immediately + background check
+    autoConnectAttempted.current = true;
+    setAutoConnectDone(true);
 
     handleConnect({
       projectId: storeKey,
-      sessionName: `ssh-${sshActiveResult.connectionId}`, // synthetic key for React/store
+      sessionName: `ssh-${sshActiveResult.connectionId}`,
+      cols: 80,
+      rows: 24,
+      sshArgs: [...(sshActiveResult.sshArgs ?? [])],
+      isSshMode: true,
+    });
+
+    // Background tmux check
+    if (sshActiveResult.remoteSessionName && sshConnectionId) {
+      checkSshRemoteTmux(sshConnectionId)
+        .then((result) => {
+          const newStatus: TmuxCheckStatus =
+            result === true ? "available" :
+            result === false ? "unavailable" : "indeterminate";
+          setSshTmuxStatus(newStatus);
+          // Persist in store for navigation cache
+          useSshStore.getState().updateRemoteTmuxAvailable(sshConnectionId!, result);
+        })
+        .catch((e) => {
+          console.warn("[SSH] Remote tmux check failed:", e);
+          setSshTmuxStatus("indeterminate");
+        });
+    }
+  }, [isSshMode, sshActiveResult, handleConnect, storeKey, sshConnectionId]);
+
+  // SSH mode: reconnect with tmux when background check confirms availability
+  useEffect(() => {
+    if (!isSshMode || !sshActiveResult?.remoteSessionName) return;
+    if (sshTmuxStatus !== "available") return;
+    if (tmuxReconnectAttempted.current) return; // prevent infinite loop
+    tmuxReconnectAttempted.current = true;
+
+    // Set "connecting" to prevent "disconnected" flash during remount
+    useTerminalStore.getState().setStatus(storeKey, "connecting");
+
+    // Invalidate old PTY pid (orphan prevention)
+    if (sshConnectionId) {
+      const oldPid = useSshStore.getState().sshPtyPids[sshConnectionId];
+      if (oldPid != null) {
+        useSshStore.getState().registerSshPtyPid(sshConnectionId, -1);
+      }
+    }
+
+    const sshArgs = [...(sshActiveResult.sshArgs ?? [])];
+    sshArgs.push("-t", sshActiveResult.remoteTmuxCommand!);
+
+    // sessionName with '-tmux' suffix → React key change → TerminalView remount
+    handleConnect({
+      projectId: storeKey,
+      sessionName: `ssh-${sshActiveResult.connectionId}-tmux`,
       cols: 80,
       rows: 24,
       sshArgs,
       isSshMode: true,
     });
-  }, [isSshMode, sshActiveResult, handleConnect, storeKey]);
+  }, [sshTmuxStatus, isSshMode, sshActiveResult, handleConnect, storeKey, sshConnectionId]);
 
   // SSH mode: timeout when sshActiveResult is missing (e.g. page refresh)
   useEffect(() => {
@@ -334,7 +392,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // Rendering state decisions (priority order)
   const showLoading = !autoConnectDone && status !== "error";
   const showTmuxMissing = !isSshMode && autoConnectDone && isAvailable === false;
-  const showSshNoTmux = isSshMode && autoConnectDone && sshActiveResult?.remoteTmuxAvailable === false;
+  const showSshNoTmux = isSshMode && autoConnectDone && sshTmuxStatus === "unavailable";
   const showSshDisconnected = isSshMode && status === "disconnected" && activeConfig;
   const showError = status === "error";
   const showTerminal = activeConfig && !showError && !showSshDisconnected;

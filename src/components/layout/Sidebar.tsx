@@ -18,7 +18,7 @@ import { useProjectStore } from "../../features/project/stores/projectStore";
 import { useTmuxStore, useSessionClassification } from "../../features/tmux";
 import { useSshStore } from "../../features/ssh";
 import { SshConnectionForm } from "../../features/ssh";
-import { killTmuxSession } from "../../lib/tauri/commands";
+import { killTmuxSession, checkSshRemoteTmux } from "../../lib/tauri/commands";
 import { StatusIndicator } from "../../features/project/components/StatusIndicator";
 import { ProjectEditForm } from "../../features/project/components/ProjectEditForm";
 import { COLOR_PALETTE } from "../../features/project/types";
@@ -99,11 +99,35 @@ function Sidebar() {
   const [sshEditTarget, setSshEditTarget] = useState<SshConnection | null>(null);
   const [sshDeleteTarget, setSshDeleteTarget] = useState<SshConnection | null>(null);
 
-  // Fetch SSH connections on mount
+  // Fetch SSH connections on mount + pre-warm tmux availability checks
   useEffect(() => {
-    fetchSshConnections().catch((e) => {
-      console.error("[SSH] Failed to fetch connections:", e);
-    });
+    let cancelled = false;
+
+    fetchSshConnections()
+      .then(() => {
+        if (cancelled) return;
+        // Pre-warm: check remote tmux availability in background
+        // Results are cached in sshStore for instant connection on click
+        const { connections, tmuxCheckCache } = useSshStore.getState();
+        for (const conn of connections) {
+          if (conn.id in tmuxCheckCache) continue; // already checked
+
+          checkSshRemoteTmux(conn.id)
+            .then((result) => {
+              if (!cancelled) {
+                useSshStore.getState().cacheTmuxCheck(conn.id, result);
+              }
+            })
+            .catch(() => {
+              // Silent: probe failure doesn't affect UX
+            });
+        }
+      })
+      .catch((e) => {
+        console.error("[SSH] Failed to fetch connections:", e);
+      });
+
+    return () => { cancelled = true; };
   }, [fetchSshConnections]);
 
   // Close context menu on outside click or Escape

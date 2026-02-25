@@ -105,6 +105,22 @@ pub fn connect_ssh_session(
 }
 
 #[tauri::command]
+pub async fn check_ssh_remote_tmux(
+    id: String,
+    state: State<'_, Mutex<DbConnection>>,
+) -> Result<Option<bool>, AppError> {
+    let connection = {
+        let conn = state
+            .lock()
+            .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
+        ssh::get(&conn.conn, &id)?
+    };
+    tauri::async_runtime::spawn_blocking(move || ssh::check_remote_tmux(&connection))
+        .await
+        .map_err(|e| AppError::Internal(format!("Task join error: {}", e)))?
+}
+
+#[tauri::command]
 pub fn test_ssh_connection(
     id: String,
     state: State<'_, Mutex<DbConnection>>,

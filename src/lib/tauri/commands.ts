@@ -747,6 +747,8 @@ export interface SshConnectResult {
   sshArgs: string[] | null;
   /** Sanitized session name for remote tmux (connect_as_session only) */
   remoteSessionName: string | null;
+  /** Shell-escaped tmux command with configuration for remote execution (connect_as_session only) */
+  remoteTmuxCommand: string | null;
 }
 
 export interface SshTestResult {
@@ -793,6 +795,10 @@ export async function deleteSshConnection(id: string): Promise<void> {
 
 export async function connectSshSession(id: string): Promise<SshConnectResult> {
   return invoke<SshConnectResult>("connect_ssh_session", { id });
+}
+
+export async function checkSshRemoteTmux(id: string): Promise<boolean | null> {
+  return invoke<boolean | null>("check_ssh_remote_tmux", { id });
 }
 
 export async function testSshConnection(id: string): Promise<SshTestResult> {
