@@ -93,10 +93,10 @@ fn detect_agent_commit(body: &str) -> bool {
     })
 }
 
-/// Parse git log output using NUL-byte separated fields.
-/// Format: %H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D
-/// Each commit is separated by a newline.
 /// Parse NUL-byte separated git log output into GitCommit structs.
+/// Fields: hash, short_hash, subject, author_name, author_email, date, parents, refs,
+/// and Co-Authored-By trailer value (valueonly format — no key prefix).
+/// See `GIT_LOG_FORMAT` for the exact format string.
 /// Shared by `get_log()` and `get_log_page()` to avoid duplication.
 fn parse_log_output(output: &str) -> Vec<GitCommit> {
     output
@@ -121,8 +121,9 @@ fn parse_log_output(output: &str) -> Vec<GitCommit> {
                 Vec::new()
             };
 
-            let body = if fields.len() > 8 { fields[8].trim() } else { "" };
-            let is_agent_commit = detect_agent_commit(body);
+            let co_authored_by = if fields.len() > 8 { fields[8].trim() } else { "" };
+            let is_agent_commit = !co_authored_by.is_empty()
+                && co_authored_by.to_lowercase().contains("claude");
 
             Some(GitCommit {
                 hash: fields[0].to_string(),
@@ -139,7 +140,7 @@ fn parse_log_output(output: &str) -> Vec<GitCommit> {
         .collect()
 }
 
-const GIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D";
+const GIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D%x00%(trailers:key=Co-Authored-By,valueonly,separator=%x20)";
 
 pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError> {
     let limit_str = limit.to_string();
@@ -1379,6 +1380,33 @@ mod tests {
     fn test_detect_agent_commit_empty() {
         assert!(!detect_agent_commit(""));
         assert!(!detect_agent_commit("  \n  \n"));
+    }
+
+    #[test]
+    fn test_parse_log_output_with_trailer() {
+        // Simulate GIT_LOG_FORMAT output with Co-Authored-By trailer (field 8)
+        let line = "abc123\0abc\0feat: thing\0Dev\0dev@ex.com\02026-01-01T00:00:00Z\0parent1\0HEAD -> refs/heads/main\0Claude <noreply@anthropic.com>";
+        let commits = parse_log_output(line);
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].is_agent_commit);
+    }
+
+    #[test]
+    fn test_parse_log_output_without_trailer() {
+        // No trailer → empty field 8 → not an agent commit
+        let line = "abc123\0abc\0feat: thing\0Dev\0dev@ex.com\02026-01-01T00:00:00Z\0parent1\0HEAD -> refs/heads/main\0";
+        let commits = parse_log_output(line);
+        assert_eq!(commits.len(), 1);
+        assert!(!commits[0].is_agent_commit);
+    }
+
+    #[test]
+    fn test_parse_log_output_no_trailer_field() {
+        // Only 8 fields (no field 8 at all) → not an agent commit
+        let line = "abc123\0abc\0feat: thing\0Dev\0dev@ex.com\02026-01-01T00:00:00Z\0parent1\0HEAD -> refs/heads/main";
+        let commits = parse_log_output(line);
+        assert_eq!(commits.len(), 1);
+        assert!(!commits[0].is_agent_commit);
     }
 
     #[test]
