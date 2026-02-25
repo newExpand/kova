@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::git::{CommitDetail, CommitResult, GitCommitsPage, GitGraphData, GitStatus, WorkingChanges};
+use crate::models::git::{CommitDetail, CommitResult, GitCommitsPage, GitFetchResult, GitGraphData, GitStatus, WorkingChanges};
 use crate::services;
 
 #[tauri::command]
@@ -107,5 +107,10 @@ pub async fn git_switch_branch(
         std::path::Path::new(&repo_path),
         &branch_name,
     )
+}
+
+#[tauri::command]
+pub async fn git_fetch_remote(path: String) -> Result<GitFetchResult, AppError> {
+    services::git::fetch_remote(std::path::Path::new(&path))
 }
 

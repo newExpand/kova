@@ -5,6 +5,7 @@ import {
   gitStageFiles, gitStageAll, gitUnstageFiles, gitUnstageAll,
   gitDiscardFile, gitCreateCommit,
   gitCreateBranch, gitDeleteBranch, gitSwitchBranch,
+  gitFetchRemote,
 } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,9 @@ interface GitState {
   commitError: string | null;
   lastCommitHash: string | null;
   paginationByProject: Record<string, PaginationState>;
+  // Remote fetch
+  isFetching: boolean;
+  lastFetchAt: number | null;
   // Branch operations
   isBranchOperationInProgress: boolean;
   branchOperationError: string | null;
@@ -72,6 +76,9 @@ interface GitActions {
   commitChanges: (worktreePath: string, message: string, projectId: string, projectPath: string) => Promise<void>;
   setCommitMessage: (message: string) => void;
   clearCommitError: () => void;
+  // Remote fetch
+  fetchRemote: (projectPath: string) => Promise<boolean>;
+  fetchAndRefreshGraph: (projectId: string, projectPath: string) => Promise<void>;
   // Branch management
   createBranch: (repoPath: string, branchName: string, startPoint: string, projectId: string) => Promise<void>;
   deleteBranch: (repoPath: string, branchName: string, force: boolean, projectId: string) => Promise<void>;
@@ -107,6 +114,8 @@ const initialState: GitState = {
   commitError: null,
   lastCommitHash: null,
   paginationByProject: {},
+  isFetching: false,
+  lastFetchAt: null,
   isBranchOperationInProgress: false,
   branchOperationError: null,
 };
@@ -386,6 +395,28 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   setCommitMessage: (message) => set({ commitMessage: message }),
 
   clearCommitError: () => set({ commitError: null }),
+
+  // Remote fetch actions
+
+  fetchRemote: async (projectPath) => {
+    if (get().isFetching) return false;
+    set({ isFetching: true });
+    try {
+      const result = await gitFetchRemote(projectPath);
+      set({ lastFetchAt: Date.now() });
+      return result.success;
+    } catch (e) {
+      console.error("[gitStore] fetchRemote failed:", e);
+      return false;
+    } finally {
+      set({ isFetching: false });
+    }
+  },
+
+  fetchAndRefreshGraph: async (projectId, projectPath) => {
+    await get().fetchRemote(projectPath);
+    await get().fetchGraphData(projectId, projectPath);
+  },
 
   // Branch management actions
 

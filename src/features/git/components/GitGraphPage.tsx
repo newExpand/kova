@@ -9,7 +9,7 @@ import { MergeProgressDialog } from "./MergeProgressDialog";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { GitBranch } from "lucide-react";
+import { GitBranch, RefreshCw } from "lucide-react";
 
 interface GitGraphPageProps {
   projectId: string;
@@ -30,6 +30,8 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
   const selectWorktree = useGitStore((s) => s.selectWorktree);
   const fetchMoreCommits = useGitStore((s) => s.fetchMoreCommits);
+  const isFetching = useGitStore((s) => s.isFetching);
+  const fetchAndRefreshGraph = useGitStore((s) => s.fetchAndRefreshGraph);
   const pagination = useGitStore((s) => s.getPagination(projectId));
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
@@ -85,6 +87,11 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   // Compute layout
   const layout = useGitGraph(graphData);
 
+  const handleFetch = useCallback(() => {
+    if (!project?.path || isFetching) return;
+    fetchAndRefreshGraph(projectId, project.path);
+  }, [fetchAndRefreshGraph, projectId, project?.path, isFetching]);
+
   const handleLoadMore = useCallback(() => {
     if (!project?.path) return;
     fetchMoreCommits(projectId, project.path);
@@ -132,6 +139,20 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
     <div className="flex h-full overflow-hidden">
       {/* Main graph area + detail panel */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {/* Fetch toolbar */}
+        {!panelMaximized && (
+          <div className="flex items-center justify-end px-3 py-1 border-b border-border/40">
+            <button
+              type="button"
+              onClick={handleFetch}
+              disabled={isFetching}
+              className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
+              {isFetching ? "Fetching..." : "Fetch"}
+            </button>
+          </div>
+        )}
         <div className={panelMaximized ? "hidden" : "flex-1 min-h-0"}>
           {layout.nodes.length > 0 ? (
             <BranchGraph

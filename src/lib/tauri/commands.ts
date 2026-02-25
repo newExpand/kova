@@ -187,6 +187,11 @@ export interface GitCommitsPage {
   hasMore: boolean;
 }
 
+export interface GitFetchResult {
+  success: boolean;
+  message: string;
+}
+
 // ---------------------------------------------------------------------------
 // PTY commands (plugin:pty)
 // ---------------------------------------------------------------------------
@@ -487,6 +492,9 @@ export async function gitCreateCommit(
   return invoke<CommitResult>("git_create_commit", { worktreePath, message });
 }
 
+export async function gitFetchRemote(path: string): Promise<GitFetchResult> {
+  return invoke<GitFetchResult>("git_fetch_remote", { path });
+}
 
 // ---------------------------------------------------------------------------
 // Agent activity commands

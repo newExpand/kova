@@ -1106,6 +1106,40 @@ pub fn get_commit_detail(repo_path: &Path, hash: &str) -> Result<CommitDetail, A
     })
 }
 
+// ---------------------------------------------------------------------------
+// Remote fetch
+// ---------------------------------------------------------------------------
+
+/// Fetch from all remotes to update remote tracking refs.
+/// Returns `Ok(success: false)` on network errors (non-fatal) so the caller
+/// can silently skip the failure without crashing the UI.
+pub fn fetch_remote(repo_path: &Path) -> Result<GitFetchResult, AppError> {
+    let git = resolve_git_path()?;
+    let output = Command::new(git)
+        .args(["fetch", "--all", "--prune"])
+        .current_dir(repo_path)
+        .env("LC_ALL", "C")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", "ssh -oBatchMode=yes -oConnectTimeout=10")
+        .output()
+        .map_err(|e| AppError::Git(format!("Failed to execute git fetch: {}", e)))?;
+
+    if output.status.success() {
+        info!("git fetch --all --prune succeeded for {}", repo_path.display());
+        Ok(GitFetchResult {
+            success: true,
+            message: String::new(),
+        })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        warn!("git fetch failed for {}: {}", repo_path.display(), stderr);
+        Ok(GitFetchResult {
+            success: false,
+            message: stderr,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

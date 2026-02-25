@@ -208,3 +208,10 @@ pub struct RebaseStatusResult {
     pub in_progress: bool,
     pub has_conflicts: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFetchResult {
+    pub success: bool,
+    pub message: String,
+}

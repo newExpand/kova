@@ -265,6 +265,7 @@ pub fn run() {
             commands::git::git_create_branch,
             commands::git::git_delete_branch,
             commands::git::git_switch_branch,
+            commands::git::git_fetch_remote,
             // Agent worktree commands
             commands::agent::start_worktree_task,
             commands::agent::restore_worktree_windows,
