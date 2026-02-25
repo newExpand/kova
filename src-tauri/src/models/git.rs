@@ -86,6 +86,7 @@ pub struct GitWorktree {
     pub commit_hash: String,
     pub is_bare: bool,
     pub is_main: bool,
+    pub is_prunable: bool,
     pub status: Option<GitStatus>,
 }
 
@@ -160,6 +161,7 @@ pub struct GitCommitsPage {
 pub enum MergeToMainStatus {
     Success,
     ConflictsDetected,
+    DirtyWorktree,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +173,7 @@ pub struct MergeToMainResult {
     pub conflict_details: Option<String>,
     pub worktree_removed: bool,
     pub branch_deleted: bool,
+    pub dirty_file_count: Option<u32>,
 }
 
 impl MergeToMainResult {
@@ -187,6 +190,7 @@ impl MergeToMainResult {
             conflict_details: None,
             worktree_removed,
             branch_deleted,
+            dirty_file_count: None,
         }
     }
 
@@ -198,6 +202,19 @@ impl MergeToMainResult {
             conflict_details: Some(details),
             worktree_removed: false,
             branch_deleted: false,
+            dirty_file_count: None,
+        }
+    }
+
+    pub fn dirty_worktree(branch_name: String, dirty_count: u32) -> Self {
+        Self {
+            status: MergeToMainStatus::DirtyWorktree,
+            merge_hash: None,
+            branch_name,
+            conflict_details: None,
+            worktree_removed: false,
+            branch_deleted: false,
+            dirty_file_count: Some(dirty_count),
         }
     }
 }

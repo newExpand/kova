@@ -114,3 +114,8 @@ pub fn abort_merge_rebase(worktree_path: String) -> Result<(), AppError> {
 pub fn check_rebase_status(worktree_path: String) -> Result<RebaseStatusResult, AppError> {
     services::git::check_rebase_status(std::path::Path::new(&worktree_path))
 }
+
+#[tauri::command]
+pub fn prune_stale_worktrees(repo_path: String) -> Result<(), AppError> {
+    services::git::prune_worktrees(std::path::Path::new(&repo_path))
+}

@@ -301,6 +301,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
     let mut current_hash = String::new();
     let mut current_branch: Option<String> = None;
     let mut is_bare = false;
+    let mut is_prunable = false;
     let mut is_first = true;
 
     for line in output.lines() {
@@ -312,6 +313,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
                     commit_hash: current_hash.clone(),
                     is_bare,
                     is_main: is_first,
+                    is_prunable,
                     status: None,
                 });
                 is_first = false;
@@ -320,6 +322,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
             current_hash.clear();
             current_branch = None;
             is_bare = false;
+            is_prunable = false;
             continue;
         }
 
@@ -337,6 +340,8 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
             );
         } else if line == "bare" {
             is_bare = true;
+        } else if line.starts_with("prunable") {
+            is_prunable = true;
         }
     }
 
@@ -348,6 +353,7 @@ pub fn get_worktrees(repo_path: &Path) -> Result<Vec<GitWorktree>, AppError> {
             commit_hash: current_hash,
             is_bare,
             is_main: is_first,
+            is_prunable,
             status: None,
         });
     }
@@ -401,6 +407,25 @@ pub fn get_graph_data(repo_path: &Path, limit: u32) -> Result<GitGraphData, AppE
     let mut worktrees = get_worktrees(repo_path)?;
     let status = get_status(repo_path)?;
 
+    // Auto-prune stale worktrees if any are prunable (avoids unnecessary git calls every poll)
+    let prunable_count = worktrees.iter().filter(|wt| wt.is_prunable).count();
+    if prunable_count > 0 {
+        info!("Detected {} stale (prunable) worktree entries, attempting prune", prunable_count);
+        match prune_worktrees(repo_path) {
+            Ok(()) => {
+                // Only re-fetch if prune succeeded
+                worktrees = get_worktrees(repo_path)?;
+            }
+            Err(e) => {
+                warn!("Auto-prune failed (continuing): {}", e);
+                // Do NOT re-fetch — prune failed, worktrees haven't changed.
+                // Prunable entries will be filtered below.
+            }
+        }
+    }
+    // Filter out any remaining prunable entries (safety net)
+    worktrees.retain(|wt| !wt.is_prunable);
+
     // Enrich each worktree with its own status
     for wt in &mut worktrees {
         if wt.is_bare {
@@ -436,6 +461,13 @@ pub fn remove_worktree(repo_path: &Path, worktree_path: &str, force: bool) -> Re
     args.push(worktree_path);
     run_git(repo_path, &args)?;
     info!("Removed worktree: {}", worktree_path);
+    Ok(())
+}
+
+/// Prune stale worktree metadata entries whose directories no longer exist.
+pub fn prune_worktrees(repo_path: &Path) -> Result<(), AppError> {
+    run_git(repo_path, &["worktree", "prune"])?;
+    info!("Pruned stale worktrees in {}", repo_path.display());
     Ok(())
 }
 
@@ -561,6 +593,21 @@ pub fn merge_worktree_to_main(
     session_name: Option<&str>,
 ) -> Result<MergeToMainResult, AppError> {
     validate_worktree(worktree_path)?;
+
+    // 0. Block merge if worktree has uncommitted changes
+    let wt_status = get_status(worktree_path)?;
+    if wt_status.is_dirty {
+        let total = wt_status.staged_count + wt_status.unstaged_count + wt_status.untracked_count;
+        info!(
+            "Merge blocked: worktree '{}' has {} uncommitted changes",
+            worktree_path.display(),
+            total
+        );
+        return Ok(MergeToMainResult::dirty_worktree(
+            feature_branch.to_string(),
+            total,
+        ));
+    }
 
     let main_branch = get_main_branch_name(repo_path)?;
     info!(
@@ -706,10 +753,29 @@ fn cleanup_worktree(
         }
     }
 
-    // Remove worktree
-    match remove_worktree(repo_path, &worktree_path.to_string_lossy(), false) {
+    // Remove worktree (force — merge already succeeded, all commits are on main)
+    info!("Force-removing worktree after successful merge: {}", worktree_path.display());
+    match remove_worktree(repo_path, &worktree_path.to_string_lossy(), true) {
         Ok(()) => worktree_removed = true,
-        Err(e) => warn!("Worktree removal failed: {}", e),
+        Err(e) => {
+            warn!("Worktree removal failed: {}. Attempting prune fallback.", e);
+            match prune_worktrees(repo_path) {
+                Ok(()) => {
+                    if !worktree_path.exists() {
+                        info!("Prune fallback succeeded for {}", worktree_path.display());
+                        worktree_removed = true;
+                    } else {
+                        warn!(
+                            "Prune completed but worktree directory still exists: {}",
+                            worktree_path.display()
+                        );
+                    }
+                }
+                Err(prune_err) => {
+                    warn!("Prune fallback also failed: {}", prune_err);
+                }
+            }
+        }
     }
 
     // Delete feature branch

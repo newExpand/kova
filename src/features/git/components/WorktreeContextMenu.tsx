@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Terminal, GitBranchPlus, GitMerge, Trash2 } from "lucide-react";
+import { Terminal, GitBranchPlus, GitMerge, Trash2, XCircle } from "lucide-react";
 import type { GitWorktree } from "../../../lib/tauri/commands";
 import {
   selectTmuxWindow,
@@ -45,6 +45,8 @@ export function WorktreeContextMenu({
 }: WorktreeContextMenuProps) {
   const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isForceDeleting, setIsForceDeleting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -110,13 +112,17 @@ export function WorktreeContextMenu({
   const handleMergeToMain = useCallback(() => {
     closeMenu();
     if (!worktree.branch) return;
+    const status = worktree.status;
     useMergeStore.getState().requestMerge({
       repoPath: projectPath,
       worktreePath: worktree.path,
       branchName: worktree.branch,
       agent: sessionName && taskName ? { sessionName, taskName } : null,
+      dirtyCount: status
+        ? status.stagedCount + status.unstagedCount + status.untrackedCount
+        : 0,
     });
-  }, [closeMenu, projectPath, worktree.path, worktree.branch, sessionName, taskName]);
+  }, [closeMenu, projectPath, worktree.path, worktree.branch, worktree.status, sessionName, taskName]);
 
   const handleDeleteWorktree = useCallback(async () => {
     setConfirmDelete(false);
@@ -133,7 +139,23 @@ export function WorktreeContextMenu({
       }
       onDeleted?.(worktree.path);
     } catch (e) {
-      console.error("Delete worktree failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Delete worktree failed:", msg);
+      setDeleteError(msg);
+    }
+  }, [projectPath, worktree.path, worktree.branch, sessionName, onDeleted]);
+
+  const handleForceDelete = useCallback(async () => {
+    setIsForceDeleting(true);
+    setDeleteError(null);
+    try {
+      await removeAgentWorktree(projectPath, worktree.path, sessionName, worktree.branch, true);
+      onDeleted?.(worktree.path);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setDeleteError(`Force delete also failed: ${msg}`);
+    } finally {
+      setIsForceDeleting(false);
     }
   }, [projectPath, worktree.path, worktree.branch, sessionName, onDeleted]);
 
@@ -218,6 +240,32 @@ export function WorktreeContextMenu({
               onClick={handleDeleteWorktree}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete error */}
+      <Dialog open={!!deleteError} onOpenChange={() => setDeleteError(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-danger">
+              <XCircle className="h-4 w-4" />
+              Delete Failed
+            </DialogTitle>
+            <DialogDescription>{deleteError}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setDeleteError(null)}>
+              Close
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleForceDelete}
+              disabled={isForceDeleting}
+            >
+              {isForceDeleting ? "Deleting..." : "Force Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

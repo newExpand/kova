@@ -133,6 +133,7 @@ export interface GitWorktree {
   commitHash: string;
   isBare: boolean;
   isMain: boolean;
+  isPrunable: boolean;
   status: GitStatus | null;
 }
 
@@ -644,7 +645,7 @@ export async function sendKeysToTmuxWindowDelayed(
 // Merge to Main types & commands
 // ---------------------------------------------------------------------------
 
-export type MergeToMainStatus = "success" | "conflictsDetected";
+export type MergeToMainStatus = "success" | "conflictsDetected" | "dirtyWorktree";
 
 export interface MergeToMainResult {
   status: MergeToMainStatus;
@@ -653,6 +654,7 @@ export interface MergeToMainResult {
   conflictDetails: string | null;
   worktreeRemoved: boolean;
   branchDeleted: boolean;
+  dirtyFileCount: number | null;
 }
 
 export interface RebaseStatusResult {
@@ -698,6 +700,10 @@ export async function checkRebaseStatus(
   worktreePath: string,
 ): Promise<RebaseStatusResult> {
   return invoke<RebaseStatusResult>("check_rebase_status", { worktreePath });
+}
+
+export async function pruneStaleWorktrees(repoPath: string): Promise<void> {
+  return invoke<void>("prune_stale_worktrees", { repoPath });
 }
 
 // ---------------------------------------------------------------------------

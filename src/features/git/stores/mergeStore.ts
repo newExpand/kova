@@ -16,6 +16,7 @@ import { useAgentActivityStore, normalizePathKey } from "./agentActivityStore";
 export type MergeStatus =
   | "idle"
   | "confirming"
+  | "dirty"
   | "rebasing"
   | "conflicts"
   | "waitingForAgent"
@@ -34,6 +35,8 @@ interface MergeContext {
   worktreePath: string;
   branchName: string;
   agent: AgentRef | null;
+  /** Number of uncommitted changes (staged + unstaged + untracked). 0 = clean. */
+  dirtyCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +49,7 @@ interface MergeState {
   conflictDetails: string | null;
   result: MergeToMainResult | null;
   errorMessage: string | null;
+  dirtyFileCount: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +78,7 @@ const initialState: MergeState = {
   conflictDetails: null,
   result: null,
   errorMessage: null,
+  dirtyFileCount: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,7 +118,13 @@ export const useMergeStore = create<MergeState & MergeActions>()((set, get) => (
     const { context } = get();
     if (!context) return;
 
-    set({ status: "rebasing", errorMessage: null });
+    // Fast path: if frontend already knows it's dirty, skip the backend call
+    if (context.dirtyCount > 0) {
+      set({ status: "dirty", dirtyFileCount: context.dirtyCount });
+      return;
+    }
+
+    set({ status: "rebasing", errorMessage: null, dirtyFileCount: null });
 
     try {
       const result = await mergeWorktreeToMain(
@@ -125,8 +136,13 @@ export const useMergeStore = create<MergeState & MergeActions>()((set, get) => (
 
       if (result.status === "success") {
         set({ status: "success", result });
-      } else {
+      } else if (result.status === "dirtyWorktree") {
+        set({ status: "dirty", dirtyFileCount: result.dirtyFileCount });
+      } else if (result.status === "conflictsDetected") {
         set({ status: "conflicts", conflictDetails: result.conflictDetails });
+      } else {
+        console.error("[mergeStore] Unknown merge status:", result.status);
+        set({ status: "error", errorMessage: `Unexpected merge status: ${result.status}` });
       }
     } catch (e) {
       set({ status: "error", errorMessage: toErrorMessage(e) });

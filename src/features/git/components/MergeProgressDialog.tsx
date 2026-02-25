@@ -8,8 +8,10 @@ import {
   Terminal,
   Bot,
   XCircle,
+  FileWarning,
 } from "lucide-react";
 import { selectTmuxWindow } from "../../../lib/tauri/commands";
+import { useGitStore } from "../stores/gitStore";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,7 @@ export function MergeProgressDialog({
   const conflictDetails = useMergeStore((s) => s.conflictDetails);
   const result = useMergeStore((s) => s.result);
   const errorMessage = useMergeStore((s) => s.errorMessage);
+  const dirtyFileCount = useMergeStore((s) => s.dirtyFileCount);
   const startMerge = useMergeStore((s) => s.startMerge);
   const sendConflictPromptToClaude = useMergeStore(
     (s) => s.sendConflictPromptToClaude,
@@ -45,6 +48,8 @@ export function MergeProgressDialog({
   const abortMerge = useMergeStore((s) => s.abortMerge);
   const onAgentStopDetected = useMergeStore((s) => s.onAgentStopDetected);
   const dismiss = useMergeStore((s) => s.dismiss);
+  const selectWorktree = useGitStore((s) => s.selectWorktree);
+  const fetchWorkingChanges = useGitStore((s) => s.fetchWorkingChanges);
   const navigate = useNavigate();
 
   // Subscribe to agent Stop events for the merge worktree
@@ -67,6 +72,13 @@ export function MergeProgressDialog({
 
     return unsub;
   }, [status, context?.worktreePath, onAgentStopDetected]);
+
+  const handleViewChanges = useCallback(() => {
+    if (!context?.worktreePath) return;
+    dismiss();
+    selectWorktree(context.worktreePath);
+    fetchWorkingChanges(context.worktreePath);
+  }, [context?.worktreePath, dismiss, selectWorktree, fetchWorkingChanges]);
 
   const handleOpenTerminal = useCallback(() => {
     dismiss();
@@ -105,12 +117,47 @@ export function MergeProgressDialog({
                 and branch will be deleted after merge.
               </DialogDescription>
             </DialogHeader>
+            {(context?.dirtyCount ?? 0) > 0 && (
+              <div className="flex items-center gap-2 rounded bg-warning/10 px-3 py-2 text-xs text-warning">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  This worktree has {context?.dirtyCount ?? 0} uncommitted change{(context?.dirtyCount ?? 0) !== 1 ? "s" : ""}.
+                  Please commit or stash your changes first.
+                </span>
+              </div>
+            )}
             <DialogFooter>
               <Button variant="ghost" size="sm" onClick={dismiss}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={startMerge}>
+              <Button size="sm" onClick={startMerge} disabled={(context?.dirtyCount ?? 0) > 0}>
                 Merge
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* Dirty worktree (backend blocked) */}
+        {status === "dirty" && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-warning">
+                <FileWarning className="h-4 w-4" />
+                Uncommitted Changes
+              </DialogTitle>
+              <DialogDescription>
+                This worktree has{" "}
+                <strong>{dirtyFileCount ?? "some"}</strong>{" "}
+                uncommitted change{(dirtyFileCount ?? 0) !== 1 ? "s" : ""}.
+                Please commit or stash your changes before merging to main.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" size="sm" onClick={dismiss}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleViewChanges}>
+                View Changes
               </Button>
             </DialogFooter>
           </>
@@ -266,6 +313,12 @@ export function MergeProgressDialog({
                 {result.branchDeleted && " Branch deleted."}
               </DialogDescription>
             </DialogHeader>
+            {!result.worktreeRemoved && (
+              <div className="rounded bg-warning/10 px-3 py-2 text-xs text-warning">
+                Could not automatically remove the worktree directory.
+                Right-click the card and select Delete to remove it manually.
+              </div>
+            )}
             <DialogFooter>
               <Button size="sm" onClick={dismiss}>
                 Done

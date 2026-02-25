@@ -279,6 +279,7 @@ pub fn run() {
             commands::agent::complete_merge_to_main,
             commands::agent::abort_merge_rebase,
             commands::agent::check_rebase_status,
+            commands::agent::prune_stale_worktrees,
             // Agent activity commands
             commands::agent_activity::list_agent_activities,
             // SSH commands
