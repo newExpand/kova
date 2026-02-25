@@ -75,14 +75,26 @@ pub struct UpdateSshConnectionInput {
     pub is_default: Option<bool>,
 }
 
-/// Result of an SSH connect action
+/// Result of an SSH connect action.
+///
+/// Two usage paths:
+/// - `connect_with_profile()`: sets `window_name` + `session_name` (local tmux)
+/// - `connect_as_session()`: sets `ssh_args` + `remote_tmux_available` + `remote_session_name` (direct SSH)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectResult {
     pub connection_id: String,
     pub connection_name: String,
-    pub window_name: String,
-    pub session_name: String,
+    /// Local tmux window name (connect_with_profile only)
+    pub window_name: Option<String>,
+    /// Local tmux session name (connect_with_profile only)
+    pub session_name: Option<String>,
+    /// Whether tmux is available on the remote server (connect_as_session only)
+    pub remote_tmux_available: Option<bool>,
+    /// SSH arguments for direct PTY spawn (connect_as_session only)
+    pub ssh_args: Option<Vec<String>>,
+    /// Sanitized session name for remote tmux (connect_as_session only)
+    pub remote_session_name: Option<String>,
 }
 
 /// Result of an SSH connection test

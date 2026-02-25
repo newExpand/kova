@@ -312,21 +312,22 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Build an SSH command string from a connection profile
-pub fn build_ssh_command(connection: &SshConnection) -> Result<String, AppError> {
+/// Build SSH arguments as a Vec for direct PTY spawn (exec-style, no shell).
+/// Does NOT apply shell_quote — spawn() passes args directly to execvp.
+pub fn build_ssh_args(connection: &SshConnection) -> Result<Vec<String>, AppError> {
     validate_ssh_field(&connection.host, "host")?;
     validate_ssh_field(&connection.username, "username")?;
 
-    let mut parts = vec!["ssh".to_string()];
-
-    parts.push("-o".to_string());
-    parts.push("StrictHostKeyChecking=accept-new".to_string());
-    parts.push("-o".to_string());
-    parts.push("ConnectTimeout=10".to_string());
+    let mut args: Vec<String> = vec![
+        "-o".into(),
+        "StrictHostKeyChecking=accept-new".into(),
+        "-o".into(),
+        "ConnectTimeout=10".into(),
+    ];
 
     if connection.port != 22 {
-        parts.push("-p".to_string());
-        parts.push(connection.port.to_string());
+        args.push("-p".into());
+        args.push(connection.port.to_string());
     }
 
     match connection.auth_type {
@@ -334,8 +335,8 @@ pub fn build_ssh_command(connection: &SshConnection) -> Result<String, AppError>
             match &connection.key_path {
                 Some(key_path) if !key_path.is_empty() => {
                     let expanded = expand_tilde(key_path)?;
-                    parts.push("-i".to_string());
-                    parts.push(shell_quote(&expanded));
+                    args.push("-i".into());
+                    args.push(expanded); // No shell_quote for exec-style spawn
                 }
                 _ => {
                     warn!(
@@ -348,7 +349,17 @@ pub fn build_ssh_command(connection: &SshConnection) -> Result<String, AppError>
         SshAuthType::Agent => {}
     }
 
-    parts.push(format!("{}@{}", connection.username, connection.host));
+    args.push(format!("{}@{}", connection.username, connection.host));
+    Ok(args)
+}
+
+/// Build an SSH command string for tmux send-keys (shell-interpreted).
+/// Delegates to build_ssh_args() and applies shell_quote where needed.
+pub fn build_ssh_command(connection: &SshConnection) -> Result<String, AppError> {
+    let args = build_ssh_args(connection)?;
+    let mut parts = vec!["ssh".to_string()];
+    // shell_quote is a no-op for args that don't need quoting
+    parts.extend(args.into_iter().map(|a| shell_quote(&a)));
     Ok(parts.join(" "))
 }
 
@@ -383,65 +394,17 @@ pub fn connect_with_profile(
     Ok(SshConnectResult {
         connection_id: connection.id.clone(),
         connection_name: connection.name.clone(),
-        window_name,
-        session_name: session_name.to_string(),
+        window_name: Some(window_name),
+        session_name: Some(session_name.to_string()),
+        remote_tmux_available: None,
+        ssh_args: None,
+        remote_session_name: None,
     })
 }
 
-/// SSH standalone tmux session. Reuses existing session if present.
-///
-/// Note: when reusing an existing session, the SSH process health is not verified.
-/// The session may contain a dead SSH connection (e.g. due to network timeout).
-/// The frontend should handle this case via terminal disconnect detection.
-pub fn connect_as_session(
-    connection: &SshConnection,
-) -> Result<SshConnectResult, AppError> {
-    let ssh_cmd = build_ssh_command(connection)?;
-    let session_name = format!("ssh-{}", sanitize_for_tmux(&connection.name));
-
-    // Reuse existing session if it exists
-    let sessions = crate::services::tmux::list_sessions()?;
-    if !sessions.iter().any(|s| s.name == session_name) {
-        crate::services::tmux::create_session(&session_name, 80, 24)?;
-
-        // Clean up orphaned session on send_keys failure
-        if let Err(e) = crate::services::tmux::send_keys(&session_name, &ssh_cmd) {
-            warn!(
-                "send_keys failed, cleaning up session '{}': {}",
-                session_name, e
-            );
-            if let Err(cleanup_err) = crate::services::tmux::kill_session(&session_name) {
-                error!(
-                    "Failed to clean up orphaned session '{}': {}",
-                    session_name, cleanup_err
-                );
-            }
-            return Err(e);
-        }
-
-        info!(
-            "SSH session '{}' created for connection '{}'",
-            session_name, connection.name
-        );
-    } else {
-        info!(
-            "Reusing existing SSH session '{}' for '{}'",
-            session_name, connection.name
-        );
-    }
-
-    Ok(SshConnectResult {
-        connection_id: connection.id.clone(),
-        connection_name: connection.name.clone(),
-        window_name: String::from("0"),
-        session_name,
-    })
-}
-
-/// Test SSH connectivity (non-interactive, does not hold DB lock)
-pub fn test_connection_with_profile(
-    connection: &SshConnection,
-) -> Result<SshTestResult, AppError> {
+/// Build a non-interactive SSH probe command (BatchMode=yes, ConnectTimeout=5).
+/// Used by both `check_remote_tmux` and `test_connection_with_profile`.
+fn build_ssh_probe_cmd(connection: &SshConnection) -> Result<std::process::Command, AppError> {
     validate_ssh_field(&connection.host, "host")?;
     validate_ssh_field(&connection.username, "username")?;
 
@@ -461,15 +424,110 @@ pub fn test_connection_with_profile(
 
     match connection.auth_type {
         SshAuthType::Key => {
-            if let Some(ref key_path) = connection.key_path {
-                let expanded = expand_tilde(key_path)?;
-                cmd.args(["-i", &expanded]);
+            match &connection.key_path {
+                Some(key_path) if !key_path.is_empty() => {
+                    let expanded = expand_tilde(key_path)?;
+                    cmd.args(["-i", &expanded]);
+                }
+                _ => {
+                    warn!(
+                        "SSH probe for '{}' has auth_type=key but no key_path; SSH will try default keys",
+                        connection.name
+                    );
+                }
             }
         }
         SshAuthType::Agent => {}
     }
 
     cmd.arg(format!("{}@{}", connection.username, connection.host));
+    Ok(cmd)
+}
+
+/// Check if tmux is available on the remote SSH server (non-interactive, best-effort).
+///
+/// Returns:
+/// - `Some(true)`: tmux found on remote
+/// - `Some(false)`: connected but tmux not found
+/// - `None`: could not determine (auth failure with BatchMode, timeout, etc.)
+pub fn check_remote_tmux(connection: &SshConnection) -> Result<Option<bool>, AppError> {
+    let mut cmd = build_ssh_probe_cmd(connection)?;
+    cmd.arg("command -v tmux");
+
+    match cmd.output() {
+        Ok(output) if output.status.success() => {
+            info!("Remote tmux detected for '{}'", connection.name);
+            Ok(Some(true))
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("Permission denied") || stderr.contains("Host key verification") {
+                warn!(
+                    "Cannot determine remote tmux for '{}' (auth issue with BatchMode)",
+                    connection.name
+                );
+                Ok(None)
+            } else {
+                info!("Remote tmux NOT found for '{}'", connection.name);
+                Ok(Some(false))
+            }
+        }
+        Err(e) => {
+            error!("Remote tmux check failed for '{}': {}", connection.name, e);
+            Ok(None)
+        }
+    }
+}
+
+/// SSH direct connection (no local tmux wrapper).
+///
+/// Returns SSH args for frontend PTY spawn, plus remote tmux availability info.
+/// The frontend will spawn `ssh <args>` directly via tauri-pty.
+pub fn connect_as_session(
+    connection: &SshConnection,
+) -> Result<SshConnectResult, AppError> {
+    let ssh_args = build_ssh_args(connection)?;
+    let remote_session_name = sanitize_for_tmux(&connection.name);
+
+    // Check remote tmux availability.
+    // Validation errors (InvalidInput, Internal) propagate — they indicate
+    // malformed connection data that build_ssh_args would also reject.
+    // This provides fail-fast behavior for security-relevant issues.
+    let remote_tmux = match check_remote_tmux(connection) {
+        Ok(result) => result,
+        Err(e) => {
+            // check_remote_tmux only returns Err for validation/internal failures
+            // (from build_ssh_probe_cmd → validate_ssh_field / expand_tilde).
+            // IO/process errors are handled internally as Ok(None).
+            error!(
+                "Remote tmux check failed for '{}': {}",
+                connection.name, e
+            );
+            return Err(e);
+        }
+    };
+
+    info!(
+        "SSH connect prepared for '{}': remote_tmux={:?}",
+        connection.name, remote_tmux
+    );
+
+    Ok(SshConnectResult {
+        connection_id: connection.id.clone(),
+        connection_name: connection.name.clone(),
+        window_name: None,
+        session_name: None,
+        remote_tmux_available: remote_tmux,
+        ssh_args: Some(ssh_args),
+        remote_session_name: Some(remote_session_name),
+    })
+}
+
+/// Test SSH connectivity (non-interactive, does not hold DB lock)
+pub fn test_connection_with_profile(
+    connection: &SshConnection,
+) -> Result<SshTestResult, AppError> {
+    let mut cmd = build_ssh_probe_cmd(connection)?;
     cmd.arg("exit");
 
     let output = cmd

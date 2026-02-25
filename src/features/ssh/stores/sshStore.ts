@@ -14,6 +14,7 @@ import {
   deleteSshConnection,
   connectSshSession,
   killTmuxSession,
+  killPty,
   testSshConnection,
 } from "../../../lib/tauri/commands";
 
@@ -21,6 +22,8 @@ interface SshState {
   // 1. State
   connections: SshConnection[];
   activeConnections: Record<string, SshConnectResult>;
+  /** PTY pids for SSH direct mode connections (for cleanup when TerminalPage is unmounted) */
+  sshPtyPids: Record<string, number>;
   isLoading: boolean;
   error: string | null;
 
@@ -44,6 +47,8 @@ interface SshState {
   connectSession: (id: string) => Promise<SshConnectResult>;
   disconnectSession: (id: string) => Promise<void>;
   testConnection: (id: string) => Promise<SshTestResult>;
+  /** Register PTY pid for SSH direct mode (called by TerminalPage after PTY spawn) */
+  registerSshPtyPid: (connectionId: string, pid: number) => void;
 
   // 4. Reset
   reset: () => void;
@@ -52,6 +57,7 @@ interface SshState {
 const initialState = {
   connections: [] as SshConnection[],
   activeConnections: {} as Record<string, SshConnectResult>,
+  sshPtyPids: {} as Record<string, number>,
   isLoading: false,
   error: null as string | null,
 };
@@ -142,21 +148,42 @@ export const useSshStore = create<SshState>()((set, get) => ({
   deleteConnection: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      // Kill associated tmux session if active
+      // Kill associated local tmux session if active (connect_with_profile mode only)
       const activeResult = get().activeConnections[id];
-      if (activeResult) {
+      if (activeResult?.sessionName) {
         try {
           await killTmuxSession(activeResult.sessionName);
-        } catch {
-          // Session may already be gone — proceed with deletion
+        } catch (e) {
+          const msg = String(e);
+          if (!msg.includes("not found") && !msg.includes("no server running")) {
+            console.warn(
+              `[SSH] Unexpected error killing session '${activeResult.sessionName}' during delete:`,
+              e,
+            );
+          }
+        }
+      } else if (activeResult) {
+        // SSH direct mode: kill PTY process directly
+        const pid = get().sshPtyPids[id];
+        if (pid != null && pid >= 0) {
+          try {
+            await killPty(pid);
+          } catch (e) {
+            const msg = String(e);
+            if (!msg.includes("Unavailable pid") && !msg.includes("No such process")) {
+              console.warn(`[SSH] Unexpected error killing PTY pid ${pid} during delete:`, e);
+            }
+          }
         }
       }
       await deleteSshConnection(id);
       set((state) => {
-        const { [id]: _, ...remaining } = state.activeConnections;
+        const { [id]: _, ...remainConn } = state.activeConnections;
+        const { [id]: __, ...remainPids } = state.sshPtyPids;
         return {
           connections: state.connections.filter((c) => c.id !== id),
-          activeConnections: remaining,
+          activeConnections: remainConn,
+          sshPtyPids: remainPids,
         };
       });
     } catch (e) {
@@ -188,21 +215,42 @@ export const useSshStore = create<SshState>()((set, get) => ({
     if (!result) return;
     set({ isLoading: true, error: null });
     try {
-      await killTmuxSession(result.sessionName);
+      if (result.sessionName) {
+        // connect_with_profile mode: kill local tmux session
+        await killTmuxSession(result.sessionName);
+      } else {
+        // SSH direct mode: kill PTY process directly (handles unmounted TerminalPage)
+        const pid = get().sshPtyPids[id];
+        if (pid != null && pid >= 0) {
+          try {
+            await killPty(pid);
+          } catch (e) {
+            const msg = String(e);
+            if (!msg.includes("Unavailable pid") && !msg.includes("No such process")) {
+              console.warn(`[SSH] Unexpected error killing PTY pid ${pid}:`, e);
+            }
+          }
+        }
+      }
     } catch (e) {
       const msg = String(e);
-      // Suppress expected "session not found" errors
       if (!msg.includes("not found") && !msg.includes("no server running")) {
-        console.error(`[SSH] Failed to kill session '${result.sessionName}':`, e);
+        console.error(`[SSH] Failed to disconnect '${result.connectionName}':`, e);
         set({ error: `Failed to disconnect: ${msg}` });
       }
     } finally {
-      // Always remove from active connections — session may already be gone
       set((state) => {
-        const { [id]: _, ...remaining } = state.activeConnections;
-        return { activeConnections: remaining, isLoading: false };
+        const { [id]: _, ...remainConn } = state.activeConnections;
+        const { [id]: __, ...remainPids } = state.sshPtyPids;
+        return { activeConnections: remainConn, sshPtyPids: remainPids, isLoading: false };
       });
     }
+  },
+
+  registerSshPtyPid: (connectionId, pid) => {
+    set((state) => ({
+      sshPtyPids: { ...state.sshPtyPids, [connectionId]: pid },
+    }));
   },
 
   testConnection: async (id) => {

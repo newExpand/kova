@@ -22,6 +22,7 @@ function escapeShellPath(path: string): string {
 interface UseTerminalOptions {
   onDragState?: (isDragging: boolean) => void;
   onRequestPaneAction?: (action: PaneAction) => void;
+  onPtySpawn?: (pid: number) => void;
   isActive?: boolean;
 }
 
@@ -46,6 +47,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   onDragStateRef.current = options?.onDragState;
   const onRequestPaneActionRef = useRef(options?.onRequestPaneAction);
   onRequestPaneActionRef.current = options?.onRequestPaneAction;
+  const onPtySpawnRef = useRef(options?.onPtySpawn);
+  onPtySpawnRef.current = options?.onPtySpawn;
   // Track active state so drag-drop handler only fires for the visible terminal
   const isActiveRef = useRef(options?.isActive ?? false);
   isActiveRef.current = options?.isActive ?? false;
@@ -390,52 +393,80 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         const cols = term.cols || config.cols;
         const rows = term.rows || config.rows;
 
-        // Spawn PTY with tmux
+        // Spawn PTY — SSH direct mode or local tmux mode
         const { spawn } = await import("tauri-pty");
         if (isStale()) {
           term.dispose();
           return;
         }
 
-        // -A flag: create session if not exists, attach if it does
-        const args = [
-          "new-session", "-A", "-s", config.sessionName,
-          "-x", String(cols), "-y", String(rows),
-          ";", "set-option", "mouse", "on",
-          ";", "set-option", "set-clipboard", "on",
-          // Enable true color (24-bit RGB) passthrough: tmux 3.2+
-          ";", "set-option", "-as", "terminal-features", ",xterm-256color:RGB",
-          // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
-          // NOTE: These copy-mode bindings are also configured in
-          // src-tauri/src/services/tmux.rs create_session(). Keep both in sync.
-          ";", "bind-key", "-T", "copy-mode", "MouseDown1Pane",
-              "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
-          ";", "bind-key", "-T", "copy-mode-vi", "MouseDown1Pane",
-              "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
-          // MouseUp1Pane: exit copy mode on simple click (does not fire after drag).
-          ";", "bind-key", "-T", "copy-mode", "MouseUp1Pane",
-              "send-keys", "-X", "cancel",
-          ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
-              "send-keys", "-X", "cancel",
-          // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
-          // (because set-clipboard is on), then immediately exit copy mode.
-          ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-              "send-keys", "-X", "copy-selection-and-cancel",
-          ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-              "send-keys", "-X", "copy-selection-and-cancel",
-          // Cancel copy mode on the previously-active pane when switching panes.
-          ";", "set-hook", "window-pane-changed",
-              "send-keys -t '{last}' -X cancel",
-        ];
+        let pty;
+        if (config.isSshMode && config.sshArgs) {
+          // SSH direct mode: spawn ssh process directly, no local tmux wrapper.
+          // tauri-pty provides a PTY, so SSH gets a pseudo-terminal automatically.
+          // The -t flag in sshArgs is only for remote tmux allocation.
+          try {
+            pty = spawn("ssh", config.sshArgs, {
+              name: "xterm-256color",
+              cols,
+              rows,
+            });
+          } catch (spawnErr) {
+            const msg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+            throw new Error(
+              msg.includes("ENOENT")
+                ? "SSH client not found. Please ensure OpenSSH is installed."
+                : `Failed to start SSH connection: ${msg}`,
+            );
+          }
+        } else {
+          // Project mode: existing local tmux spawn logic
+          // -A flag: create session if not exists, attach if it does
+          const args = [
+            "new-session", "-A", "-s", config.sessionName,
+            "-x", String(cols), "-y", String(rows),
+            ";", "set-option", "mouse", "on",
+            ";", "set-option", "set-clipboard", "on",
+            // Enable true color (24-bit RGB) passthrough: tmux 3.2+
+            ";", "set-option", "-as", "terminal-features", ",xterm-256color:RGB",
+            // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
+            // NOTE: These copy-mode bindings are also configured in
+            // src-tauri/src/services/tmux.rs create_session(). Keep both in sync.
+            ";", "bind-key", "-T", "copy-mode", "MouseDown1Pane",
+                "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
+            ";", "bind-key", "-T", "copy-mode-vi", "MouseDown1Pane",
+                "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
+            // MouseUp1Pane: exit copy mode on simple click (does not fire after drag).
+            ";", "bind-key", "-T", "copy-mode", "MouseUp1Pane",
+                "send-keys", "-X", "cancel",
+            ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
+                "send-keys", "-X", "cancel",
+            // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
+            // (because set-clipboard is on), then immediately exit copy mode.
+            ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
+                "send-keys", "-X", "copy-selection-and-cancel",
+            ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
+                "send-keys", "-X", "copy-selection-and-cancel",
+            // Cancel copy mode on the previously-active pane when switching panes.
+            ";", "set-hook", "window-pane-changed",
+                "send-keys -t '{last}' -X cancel",
+          ];
 
-        const pty = spawn("tmux", args, {
-          name: "xterm-256color",
-          cols,
-          rows,
-          ...(config.cwd ? { cwd: config.cwd } : {}),
-        });
+          pty = spawn("tmux", args, {
+            name: "xterm-256color",
+            cols,
+            rows,
+            ...(config.cwd ? { cwd: config.cwd } : {}),
+          });
+        }
         ptyRef.current = pty;
         aliveRef.current = true;
+
+        // Notify caller of PTY pid (used by SSH store to kill orphaned processes)
+        const pid = (pty as unknown as { pid?: number }).pid;
+        if (pid != null && onPtySpawnRef.current) {
+          onPtySpawnRef.current(pid);
+        }
 
         // PTY → Terminal
         // Our patched tauri-plugin-pty returns raw Vec<u8> from read(),
@@ -742,7 +773,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 return false;
               }
 
-              // ── Pane/window shortcuts ──
+              // ── Pane/window shortcuts (local tmux only, skip in SSH mode) ──
+              if (config.isSshMode) return true;
               const sName = config.sessionName;
               if (sName) {
                 // ⌘T — New window (via dialog)
@@ -961,7 +993,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         }
 
         // Register session in DB for project ownership tracking
-        if (config.projectId && !isStale()) {
+        // Skip for SSH mode — no local tmux session to register
+        if (config.projectId && !config.isSshMode && !isStale()) {
           useTmuxStore
             .getState()
             .registerSession(config.projectId, config.sessionName)
@@ -1010,11 +1043,15 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // SIGWINCH coalescing issues entirely.
         tier1TimeoutRef.current = setTimeout(async () => {
           tier1TimeoutRef.current = null;
-          if (!firstDataLogged && !isStale() && ptyRef.current) {
+          if (!firstDataLogged && !isStale() && ptyRef.current && !config.isSshMode) {
             try {
               await commands.refreshTmuxClient(config.sessionName);
-            } catch {
-              // tmux client might not be attached yet — tier 2 will handle it
+            } catch (e) {
+              // Expected: tmux client might not be attached yet — tier 2 will handle it.
+              const msg = String(e);
+              if (!msg.includes("no current client") && !msg.includes("no server running")) {
+                console.warn("[useTerminal] Tier 1 recovery unexpected error:", e);
+              }
             }
           }
         }, 800);

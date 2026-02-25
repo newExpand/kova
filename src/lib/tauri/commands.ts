@@ -737,8 +737,16 @@ export interface UpdateSshConnectionInput {
 export interface SshConnectResult {
   connectionId: string;
   connectionName: string;
-  windowName: string;
-  sessionName: string;
+  /** Local tmux window name (connect_with_profile only) */
+  windowName: string | null;
+  /** Local tmux session name (connect_with_profile only) */
+  sessionName: string | null;
+  /** Whether tmux is available on the remote server (connect_as_session only) */
+  remoteTmuxAvailable: boolean | null;
+  /** SSH arguments for direct PTY spawn (connect_as_session only) */
+  sshArgs: string[] | null;
+  /** Sanitized session name for remote tmux (connect_as_session only) */
+  remoteSessionName: string | null;
 }
 
 export interface SshTestResult {

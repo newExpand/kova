@@ -69,7 +69,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     [storeKey],
   );
 
-  // SSH mode: auto-connect using sshActiveResult session name
+  // SSH mode: auto-connect using sshActiveResult
   useEffect(() => {
     if (!isSshMode) return;
     if (autoConnectAttempted.current) return;
@@ -78,11 +78,33 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     autoConnectAttempted.current = true;
     setAutoConnectDone(true);
 
+    // Remote tmux not available — show install message, don't connect
+    if (sshActiveResult.remoteTmuxAvailable === false) {
+      return;
+    }
+
+    // Build SSH args for direct PTY spawn
+    // After the early return above, remoteTmuxAvailable is true | null (never false)
+    const sshArgs = [...(sshActiveResult.sshArgs ?? [])];
+    if (sshActiveResult.remoteTmuxAvailable === true && sshActiveResult.remoteSessionName) {
+      // Only attach to remote tmux when we confirmed it exists.
+      // -t: force pseudo-terminal allocation (required for remote tmux)
+      // remoteSessionName is sanitized server-side via sanitize_for_tmux()
+      // Single-quote the session name to prevent option parsing (e.g. names starting with '-')
+      sshArgs.push("-t", `tmux new-session -A -s '${sshActiveResult.remoteSessionName}'`);
+    } else if (sshActiveResult.remoteTmuxAvailable === null) {
+      // Indeterminate (BatchMode auth failure, timeout, etc.)
+      // Connect without remote tmux — user can run tmux manually if needed.
+      console.warn("[SSH] Remote tmux availability unknown; connecting without remote tmux");
+    }
+
     handleConnect({
       projectId: storeKey,
-      sessionName: sshActiveResult.sessionName,
+      sessionName: `ssh-${sshActiveResult.connectionId}`, // synthetic key for React/store
       cols: 80,
       rows: 24,
+      sshArgs,
+      isSshMode: true,
     });
   }, [isSshMode, sshActiveResult, handleConnect, storeKey]);
 
@@ -173,6 +195,19 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     sessions,
   ]);
 
+  // SSH mode: detect disconnect from sidebar (store subscription)
+  const sshStillActive = useSshStore((s) =>
+    sshConnectionId ? s.isConnectionActive(sshConnectionId) : true,
+  );
+
+  useEffect(() => {
+    if (isSshMode && !sshStillActive && activeConfig) {
+      // Sidebar disconnect: clear activeConfig → TerminalView unmounts → PTY cleanup
+      setActiveConfig(null);
+      useTerminalStore.getState().setStatus(storeKey, "idle");
+    }
+  }, [isSshMode, sshStillActive, activeConfig, storeKey]);
+
   const handleRetry = useCallback(() => {
     autoConnectAttempted.current = false;
     setAutoConnectDone(false);
@@ -190,6 +225,8 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   }, [status]);
 
   useEffect(() => {
+    // SSH mode: no auto-reconnect (prevents SSH process spawn loop on network failure)
+    if (isSshMode) return;
     if (status === "disconnected") {
       consecutiveDisconnects.current += 1;
       if (consecutiveDisconnects.current > 3) {
@@ -203,7 +240,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       const timer = setTimeout(() => handleRetry(), 500);
       return () => clearTimeout(timer);
     }
-  }, [status, handleRetry, storeKey]);
+  }, [status, isSshMode, handleRetry, storeKey]);
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {
@@ -228,6 +265,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
 
   const handleConfirmAction = useCallback(
     (startClaude: boolean) => {
+      if (isSshMode) return; // SSH mode: no local tmux actions
       const action = pendingAction;
       const sessionName = activeConfig?.sessionName;
       setPendingAction(null);
@@ -258,13 +296,23 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
 
       refocusTerminal();
     },
-    [pendingAction, activeConfig?.sessionName, refocusTerminal],
+    [isSshMode, pendingAction, activeConfig?.sessionName, refocusTerminal],
   );
 
   const handleCancelAction = useCallback(() => {
     setPendingAction(null);
     refocusTerminal();
   }, [refocusTerminal]);
+
+  // SSH mode: register PTY pid in store for orphan cleanup
+  const handlePtySpawn = useCallback(
+    (pid: number) => {
+      if (isSshMode && sshConnectionId) {
+        useSshStore.getState().registerSshPtyPid(sshConnectionId, pid);
+      }
+    },
+    [isSshMode, sshConnectionId],
+  );
 
   // Check if we have a valid subject (project or ssh connection)
   if (!isSshMode && !project) {
@@ -286,8 +334,10 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // Rendering state decisions (priority order)
   const showLoading = !autoConnectDone && status !== "error";
   const showTmuxMissing = !isSshMode && autoConnectDone && isAvailable === false;
+  const showSshNoTmux = isSshMode && autoConnectDone && sshActiveResult?.remoteTmuxAvailable === false;
+  const showSshDisconnected = isSshMode && status === "disconnected" && activeConfig;
   const showError = status === "error";
-  const showTerminal = activeConfig && !showError;
+  const showTerminal = activeConfig && !showError && !showSshDisconnected;
 
   return (
     <div className="flex h-full flex-1 min-w-0 flex-col overflow-hidden">
@@ -295,7 +345,9 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         <div className="flex flex-1 items-center justify-center">
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-text-muted" />
-            <p className="text-sm text-text-muted">Connecting...</p>
+            <p className="text-sm text-text-muted">
+              {isSshMode ? "Connecting to SSH server..." : "Connecting..."}
+            </p>
           </div>
         </div>
       ) : showTmuxMissing ? (
@@ -307,6 +359,52 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
               <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
                 brew install tmux
               </code>
+            </p>
+          </div>
+        </div>
+      ) : showSshNoTmux ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="glass-surface rounded-xl p-6 text-center max-w-md">
+            <p className="text-sm text-text">tmux is not installed on this server</p>
+            <p className="mt-3 text-xs text-text-muted">
+              Install tmux on the remote server to enable terminal management:
+            </p>
+            <div className="mt-2 space-y-1.5 text-left">
+              <p className="text-xs text-text-muted">
+                <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                  apt install tmux
+                </code>{" "}
+                <span className="text-text-muted/60">(Debian/Ubuntu)</span>
+              </p>
+              <p className="text-xs text-text-muted">
+                <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                  yum install tmux
+                </code>{" "}
+                <span className="text-text-muted/60">(RHEL/CentOS)</span>
+              </p>
+              <p className="text-xs text-text-muted">
+                <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                  brew install tmux
+                </code>{" "}
+                <span className="text-text-muted/60">(macOS)</span>
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={handleRetry}
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      ) : showSshDisconnected ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="glass-surface rounded-xl border border-warning/30 p-4 text-center max-w-md">
+            <p className="text-sm text-text">SSH connection closed</p>
+            <p className="mt-1 text-xs text-text-muted">
+              Reconnect from the sidebar to start a new session.
             </p>
           </div>
         </div>
@@ -334,18 +432,22 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           ref={terminalContainerRef}
           style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
         >
-          <WindowToolbar
-            sessionName={activeConfig.sessionName}
-            disabled={status !== "connected"}
-            isActive={isActive}
-            onRequestAction={handleRequestAction}
-          />
-          <PaneToolbar
-            sessionName={activeConfig.sessionName}
-            disabled={status !== "connected"}
-            onRequestAction={handleRequestAction}
-            onToggleThemePicker={handleToggleThemePicker}
-          />
+          {!isSshMode && (
+            <>
+              <WindowToolbar
+                sessionName={activeConfig.sessionName}
+                disabled={status !== "connected"}
+                isActive={isActive}
+                onRequestAction={handleRequestAction}
+              />
+              <PaneToolbar
+                sessionName={activeConfig.sessionName}
+                disabled={status !== "connected"}
+                onRequestAction={handleRequestAction}
+                onToggleThemePicker={handleToggleThemePicker}
+              />
+            </>
+          )}
           <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
             <TerminalView
               key={activeConfig.sessionName}
@@ -353,6 +455,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
               isActive={isActive}
               glassClassName="terminal-glass"
               onRequestPaneAction={handleRequestAction}
+              onPtySpawn={isSshMode ? handlePtySpawn : undefined}
             />
             <ThemePickerPanel
               open={themePickerOpen}
@@ -361,7 +464,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           </div>
         </div>
       ) : null}
-      {isActive && (
+      {isActive && !isSshMode && (
         <NewPaneDialog
           action={pendingAction}
           onConfirm={handleConfirmAction}

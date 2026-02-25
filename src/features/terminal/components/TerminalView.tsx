@@ -9,13 +9,15 @@ interface TerminalViewProps {
   isActive: boolean;
   glassClassName?: string;
   onRequestPaneAction?: (action: PaneAction) => void;
+  onPtySpawn?: (pid: number) => void;
 }
 
-function TerminalView({ config, isActive, glassClassName, onRequestPaneAction }: TerminalViewProps) {
+function TerminalView({ config, isActive, glassClassName, onRequestPaneAction, onPtySpawn }: TerminalViewProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const { containerRef, connect, disconnect, refit } = useTerminal({
     onDragState: setIsDragOver,
     onRequestPaneAction,
+    onPtySpawn,
     isActive,
   });
   const status = useTerminalStore((s) => s.getTerminal(config.projectId).status);
@@ -68,7 +70,9 @@ function TerminalView({ config, isActive, glassClassName, onRequestPaneAction }:
       {/* Status overlay */}
       {status === "connecting" && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <p className="text-sm text-text-muted">Connecting to tmux session...</p>
+          <p className="text-sm text-text-muted">
+            {config.isSshMode ? "Connecting to SSH server..." : "Connecting to tmux session..."}
+          </p>
         </div>
       )}
       {status === "error" && (

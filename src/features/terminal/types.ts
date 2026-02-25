@@ -12,6 +12,10 @@ export interface TerminalConfig {
   rows: number;
   cwd?: string;
   initialCommand?: string;
+  /** SSH arguments for direct PTY spawn (bypasses local tmux) */
+  sshArgs?: string[];
+  /** Explicit SSH mode flag */
+  isSshMode?: boolean;
 }
 
 export type PaneAction = "split-vertical" | "split-horizontal" | "new-window";
