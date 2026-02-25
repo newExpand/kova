@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod agent_activity;
+pub mod files;
 pub mod git;
 pub mod notification;
 pub mod project;

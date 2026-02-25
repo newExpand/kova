@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "motion/react";
-import { TerminalSquare, GitBranch } from "lucide-react";
+import { TerminalSquare, GitBranch, FileText } from "lucide-react";
 
 interface ProjectTabSwitcherProps {
   projectId: string;
@@ -9,13 +9,18 @@ interface ProjectTabSwitcherProps {
 const TABS = [
   { key: "terminal", label: "Terminal", icon: TerminalSquare },
   { key: "git", label: "Git Graph", icon: GitBranch },
+  { key: "files", label: "Files", icon: FileText },
 ] as const;
 
 export function ProjectTabSwitcher({ projectId }: ProjectTabSwitcherProps) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const activeTab = location.pathname.includes("/git") ? "git" : "terminal";
+  const activeTab = location.pathname.includes("/git")
+    ? "git"
+    : location.pathname.includes("/files")
+      ? "files"
+      : "terminal";
 
   return (
     <div className="relative flex h-6 items-center select-none rounded-lg border border-white/[0.10] bg-white/[0.03] p-0.5">

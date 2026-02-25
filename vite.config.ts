@@ -28,9 +28,20 @@ export default defineConfig(async () => ({
         manualChunks: {
           xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-unicode11"],
           "git-viz": ["d3-shape", "motion"],
+          codemirror: [
+            "@codemirror/state",
+            "@codemirror/view",
+            "@codemirror/language",
+            "@codemirror/language-data",
+            "@codemirror/search",
+            "@codemirror/commands",
+          ],
         },
       },
     },
+  },
+  optimizeDeps: {
+    include: ["@codemirror/state", "@codemirror/view", "@codemirror/language"],
   },
   test: {
     globals: true,
