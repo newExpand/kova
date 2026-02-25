@@ -219,6 +219,7 @@ function Sidebar() {
   // SSH handlers
   const handleSelectSsh = async (conn: SshConnection) => {
     try {
+      selectProject(null);
       await connectSession(conn.id);
       navigate(`/ssh/${conn.id}/terminal`);
     } catch (e) {
