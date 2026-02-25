@@ -442,11 +442,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
                 "send-keys", "-X", "cancel",
             // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
-            // (because set-clipboard is on), then immediately exit copy mode.
+            // (because set-clipboard is on), stay in copy mode (scroll preserved).
             ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-                "send-keys", "-X", "copy-selection-and-cancel",
+                "send-keys", "-X", "copy-selection",
             ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-                "send-keys", "-X", "copy-selection-and-cancel",
+                "send-keys", "-X", "copy-selection",
             // Cancel copy mode on the previously-active pane when switching panes.
             ";", "set-hook", "window-pane-changed",
                 "send-keys -t '{last}' -X cancel",

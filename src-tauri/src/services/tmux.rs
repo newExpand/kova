@@ -272,10 +272,10 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
     }
 
     // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
-    // (because set-clipboard is on), then immediately exit copy mode.
+    // (because set-clipboard is on), stay in copy mode (scroll preserved).
     for table in &["copy-mode", "copy-mode-vi"] {
         run_tmux_nonfatal(
-            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"],
+            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection"],
             &format!("bind MouseDragEnd1Pane ({})", table), name,
         )?;
     }
