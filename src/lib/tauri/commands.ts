@@ -829,3 +829,50 @@ export async function testSshConnectionParams(
   });
 }
 
+// ---------------------------------------------------------------------------
+// File types
+// ---------------------------------------------------------------------------
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modified: string;
+  extension: string | null;
+}
+
+export interface FileContent {
+  content: string;
+  language: string;
+  path: string;
+  size: number;
+  isBinary: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// File commands
+// ---------------------------------------------------------------------------
+
+export async function listDirectory(
+  projectPath: string,
+  relativePath: string,
+): Promise<FileEntry[]> {
+  return invoke<FileEntry[]>("list_directory", { projectPath, relativePath });
+}
+
+export async function readFile(
+  projectPath: string,
+  relativePath: string,
+): Promise<FileContent> {
+  return invoke<FileContent>("read_file", { projectPath, relativePath });
+}
+
+export async function writeFile(
+  projectPath: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  return invoke<void>("write_file", { projectPath, relativePath, content });
+}
+

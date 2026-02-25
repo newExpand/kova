@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_activity;
 pub mod event_server;
+pub mod file_service;
 pub mod git;
 pub mod hooks;
 pub mod notification;

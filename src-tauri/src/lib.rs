@@ -293,6 +293,10 @@ pub fn run() {
             commands::ssh::check_ssh_remote_tmux,
             commands::ssh::test_ssh_connection,
             commands::ssh::test_ssh_connection_params,
+            // File commands
+            commands::files::list_directory,
+            commands::files::read_file,
+            commands::files::write_file,
             // Environment commands
             commands::environment::check_environment,
         ])
