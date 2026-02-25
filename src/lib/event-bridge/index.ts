@@ -58,6 +58,13 @@ export async function initEventBridge(): Promise<void> {
     const match = projects.find((p) => p.path === projectPath);
     if (match) {
       useGitStore.getState().fetchGraphData(match.id, projectPath);
+    } else {
+      console.warn(
+        "[event-bridge] worktree:ready — no project match for path:",
+        projectPath,
+        "Known paths:",
+        projects.map((p) => p.path),
+      );
     }
   });
 

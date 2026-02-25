@@ -228,7 +228,11 @@ pub fn inject_hooks_for_worktree_when_ready(
         };
 
         for attempt in 0..60 {
-            if wt.exists() {
+            // Check for .git file inside worktree (created as the final step of
+            // `git worktree add`), not just directory existence. The directory may
+            // appear before git fully registers the worktree, causing
+            // `git worktree list` to miss it when fetchGraphData runs.
+            if wt.join(".git").exists() {
                 match inject_hooks(wt, port) {
                     Ok(()) => info!(
                         "Injected hooks for new worktree '{}' (after ~{}s)",

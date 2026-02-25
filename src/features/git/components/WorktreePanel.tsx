@@ -107,6 +107,16 @@ export function WorktreePanel({
     }, 30_000);
   }, [fetchGraphData, projectId, projectPath]);
 
+  // Polling fallback: while skeleton is showing, poll fetchGraphData every 3s.
+  // Handles edge cases where the worktree:ready event is missed.
+  useEffect(() => {
+    if (!isCreating) return;
+    const id = setInterval(() => {
+      fetchGraphData(projectId, projectPath);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [isCreating, fetchGraphData, projectId, projectPath]);
+
   // Callback: worktree deleted -> exit animation then delayed refresh
   // exitingPaths is only cleared AFTER fetchGraphData completes to prevent blink-back
   const handleDeleted = useCallback(
