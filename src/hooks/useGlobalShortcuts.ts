@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useAppStore } from "../stores/appStore";
+import { useProjectStore } from "../features/project";
 
 interface GlobalShortcutsReturn {
   isCommandPaletteOpen: boolean;
@@ -38,6 +40,17 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
     if (e.metaKey && e.shiftKey && e.key === "g") {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent("flow-orche:toggle-git"));
+    }
+
+    // Cmd+\ — Toggle file viewer overlay panel
+    if (e.metaKey && e.key === "\\") {
+      const pathname = window.location.pathname;
+      const hasProject = !!useProjectStore.getState().selectedId;
+      // Skip if on /files route or no project selected
+      if (!pathname.includes("/files") && hasProject) {
+        e.preventDefault();
+        useAppStore.getState().toggleFileViewerPanel();
+      }
     }
   }, []);
 

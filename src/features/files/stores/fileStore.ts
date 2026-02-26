@@ -47,6 +47,7 @@ interface FileActions {
   // Computed
   getActiveFile: () => OpenFile | undefined;
   getTreeState: (projectPath: string) => TreeState;
+  getFilteredEntries: (projectPath: string, query: string) => FileEntry[];
   // Reset
   reset: () => void;
 }
@@ -276,6 +277,25 @@ export const useFileStore = create<FileStore>()((set, get) => ({
 
   getTreeState: (projectPath) => {
     return get().treeByProject[projectPath] ?? emptyTreeState;
+  },
+
+  getFilteredEntries: (projectPath, query) => {
+    const tree = get().treeByProject[projectPath];
+    if (!tree || !query.trim()) return [];
+
+    const lowerQuery = query.toLowerCase();
+    const results: FileEntry[] = [];
+
+    for (const entries of Object.values(tree.entries)) {
+      for (const entry of entries) {
+        if (!entry.isDir && entry.name.toLowerCase().includes(lowerQuery)) {
+          results.push(entry);
+          if (results.length >= 100) return results;
+        }
+      }
+    }
+
+    return results;
   },
 
   // ── Reset ──

@@ -1,5 +1,8 @@
-import { useState, useCallback, useRef } from "react";
+import { useRef, useEffect } from "react";
+import { motion, LayoutGroup } from "motion/react";
 import { useProjectStore } from "../../project/stores/projectStore";
+import { useFileStore } from "../stores/fileStore";
+import { useResizeHandle } from "../../../hooks/useResizeHandle";
 import { FileTree } from "./FileTree";
 import { FileTabs } from "./FileTabs";
 import { FileBreadcrumb } from "./FileBreadcrumb";
@@ -20,68 +23,62 @@ export default function FilesPage({ projectId, isActive }: FilesPageProps) {
     s.projects.find((p) => p.id === projectId),
   );
 
-  const [treeWidth, setTreeWidth] = useState(DEFAULT_TREE_WIDTH);
-  const isResizing = useRef(false);
+  const openFileCount = useFileStore((s) => s.openFiles.length);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
+  const { width: treeWidth, handleMouseDown } = useResizeHandle({
+    initialWidth: DEFAULT_TREE_WIDTH,
+    minWidth: MIN_TREE_WIDTH,
+    maxWidth: MAX_TREE_WIDTH,
+  });
 
-    const startX = e.clientX;
-    const startWidth = treeWidth;
+  const hasAnimatedIn = useRef(false);
 
-    const handleMouseMove = (ev: MouseEvent) => {
-      if (!isResizing.current) return;
-      const delta = ev.clientX - startX;
-      const newWidth = Math.min(MAX_TREE_WIDTH, Math.max(MIN_TREE_WIDTH, startWidth + delta));
-      setTreeWidth(newWidth);
-    };
+  // Only animate on first file open (0 -> 1 transition)
+  const shouldAnimate = !hasAnimatedIn.current && openFileCount > 0;
 
-    const handleMouseUp = () => {
-      isResizing.current = false;
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [treeWidth]);
+  useEffect(() => {
+    if (openFileCount > 0) {
+      hasAnimatedIn.current = true;
+    }
+  }, [openFileCount]);
 
   if (!project || !isActive) return null;
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      {/* File Tree */}
-      <div
-        className="flex flex-col border-r border-white/[0.06] overflow-hidden"
-        style={{ width: treeWidth, minWidth: MIN_TREE_WIDTH }}
-      >
-        <div className="flex h-7 items-center gap-1.5 border-b border-white/[0.06] px-3">
-          <Folder className="h-3.5 w-3.5 text-text-muted" />
-          <span className="text-xs font-medium text-text-secondary truncate">
-            {project.name}
-          </span>
+    <LayoutGroup id="files-main">
+      <div className="flex h-full w-full overflow-hidden">
+        {/* File Tree */}
+        <div
+          className="flex flex-col border-r border-white/[0.06] overflow-hidden"
+          style={{ width: treeWidth, minWidth: MIN_TREE_WIDTH }}
+        >
+          <div className="flex h-7 items-center gap-1.5 border-b border-white/[0.06] px-3">
+            <Folder className="h-3.5 w-3.5 text-text-muted" />
+            <span className="text-xs font-medium text-text-secondary truncate">
+              {project.name}
+            </span>
+          </div>
+          <FileTree projectPath={project.path} />
         </div>
-        <FileTree projectPath={project.path} />
-      </div>
 
-      {/* Resize Handle */}
-      <div
-        className="w-1 cursor-col-resize hover:bg-white/[0.06] transition-colors flex-shrink-0"
-        onMouseDown={handleMouseDown}
-      />
+        {/* Resize Handle */}
+        <div
+          className="w-1 cursor-col-resize hover:bg-white/[0.06] transition-colors flex-shrink-0"
+          onMouseDown={handleMouseDown}
+        />
 
-      {/* Right Panel */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <FileTabs />
-        <FileBreadcrumb projectPath={project.path} />
-        <CodeViewer projectPath={project.path} />
+        {/* Right Panel — slides in on first file open */}
+        <motion.div
+          className="flex flex-1 flex-col overflow-hidden"
+          initial={shouldAnimate ? { x: 40, opacity: 0 } : false}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <FileTabs />
+          <FileBreadcrumb projectPath={project.path} />
+          <CodeViewer projectPath={project.path} />
+        </motion.div>
       </div>
-    </div>
+    </LayoutGroup>
   );
 }

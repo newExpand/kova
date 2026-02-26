@@ -1,16 +1,20 @@
 import { BrowserRouter, useNavigate, useLocation } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { AppProviders } from "./providers";
 import { AppRoutes } from "./routes";
 import { Sidebar } from "../components/layout/Sidebar";
 import { StatusBar } from "../components/layout/StatusBar";
 import { CommandPalette } from "../components/layout/CommandPalette";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
-import { useEffect, useState } from "react";
+import { ErrorBoundary } from "../components/ui/error-boundary";
 import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
 import { useAppStore } from "../stores/appStore";
 import { ProjectTabSwitcher } from "../features/git";
+
+const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
 
 const PROJECT_ROUTE_PATTERN = /^\/projects\/([^/]+)\//;
 
@@ -41,6 +45,7 @@ function TitleBar() {
 
 function AppShell() {
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
+  const isFileViewerPanelOpen = useAppStore((s) => s.isFileViewerPanelOpen);
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
@@ -99,6 +104,36 @@ function AppShell() {
         open={isCommandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
       />
+      <AnimatePresence>
+        {isFileViewerPanelOpen && (
+          <ErrorBoundary
+            fallback={() => (
+              <div className="fixed right-4 bottom-12 z-50 rounded-lg glass-elevated px-4 py-3 text-xs text-text-secondary">
+                <p>Failed to load file viewer.</p>
+                <button
+                  type="button"
+                  onClick={() => useAppStore.getState().setFileViewerPanelOpen(false)}
+                  className="mt-1 text-primary hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          >
+            <Suspense
+              fallback={
+                <div className="fixed right-0 top-0 bottom-0 z-50 flex items-center justify-center glass-elevated border-l border-white/[0.10]"
+                  style={{ width: Math.max(320, window.innerWidth * 0.45) }}
+                >
+                  <span className="text-sm text-text-muted animate-pulse">Loading...</span>
+                </div>
+              }
+            >
+              <FileViewerPanel />
+            </Suspense>
+          </ErrorBoundary>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

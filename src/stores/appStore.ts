@@ -11,6 +11,7 @@ interface AppState {
   currentRoute: string;
   isOnboarding: boolean;
   pendingProjectNavigation: string | null;
+  isFileViewerPanelOpen: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,8 @@ interface AppActions {
   setCurrentRoute: (route: string) => void;
   setOnboarding: (value: boolean) => void;
   setPendingProjectNavigation: (id: string | null) => void;
+  toggleFileViewerPanel: () => void;
+  setFileViewerPanelOpen: (open: boolean) => void;
   reset: () => void;
 }
 
@@ -43,6 +46,7 @@ const initialState: AppState = {
   currentRoute: "/",
   isOnboarding: false,
   pendingProjectNavigation: null,
+  isFileViewerPanelOpen: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,6 +83,16 @@ export const useAppStore = create<AppStore>()(
           undefined,
           "setPendingProjectNavigation",
         ),
+
+      toggleFileViewerPanel: () =>
+        set(
+          (state) => ({ isFileViewerPanelOpen: !state.isFileViewerPanelOpen }),
+          undefined,
+          "toggleFileViewerPanel",
+        ),
+
+      setFileViewerPanelOpen: (open) =>
+        set({ isFileViewerPanelOpen: open }, undefined, "setFileViewerPanelOpen"),
 
       reset: () => set(initialState, undefined, "reset"),
     }),
