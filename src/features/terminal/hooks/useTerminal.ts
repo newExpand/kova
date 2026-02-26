@@ -20,15 +20,16 @@ function escapeShellPath(path: string): string {
   return path;
 }
 
-// Detect mouse event escape sequences (click, release, motion) from xterm.js onData.
-// Returns true for button/motion events (codes 0-63), false for scroll (64+) and non-mouse data.
-// SGR mode (1006): \x1b[<Pb;Px;PyM (press) or \x1b[<Pb;Px;Pym (release)
+// Parse the button code from an xterm mouse escape sequence, stripping modifier bits.
+// Returns the masked code (e.g. 0-3=button, 32-35=motion, 64+=scroll) or null.
+// SGR mode (1006): \x1b[<Pb;Px;PyM (press/motion) or \x1b[<Pb;Px;Pym (release)
 // Normal mode (1000): \x1b[M followed by 3 raw bytes (each value + 32)
+// Button code bits: 0-1=button, 2=shift, 3=meta, 4=ctrl, 5=motion(32), 6=scroll(64), 7=extended(128)
 const MOUSE_MODIFIER_MASK = ~(4 | 8 | 16); // strip shift, meta, ctrl bits
 
-function isMouseClickEscapeSequence(data: string): boolean {
-  if (data.length < 6) return false;
-  if (data[0] !== '\x1b' || data[1] !== '[') return false;
+function parseMouseButtonCode(data: string): number | null {
+  if (data.length < 6) return null;
+  if (data[0] !== '\x1b' || data[1] !== '[') return null;
 
   const mode = data[2];
 
@@ -36,20 +37,35 @@ function isMouseClickEscapeSequence(data: string): boolean {
   if (mode === '<') {
     const semiIdx = data.indexOf(";", 3);
     if (semiIdx > 3) {
-      const cb = parseInt(data.substring(3, semiIdx), 10);
-      if (!isNaN(cb)) {
-        return (cb & MOUSE_MODIFIER_MASK) < 64;
-      }
+      const raw = data.substring(3, semiIdx);
+      if (/^\d+$/.test(raw)) return parseInt(raw, 10) & MOUSE_MODIFIER_MASK;
     }
+    return null;
   }
 
   // Normal mouse mode: \x1b[M ...
   if (mode === 'M') {
-    const cb = data.charCodeAt(3) - 32;
-    return (cb & MOUSE_MODIFIER_MASK) < 64;
+    const raw = data.charCodeAt(3);
+    if (raw < 32) return null; // invalid: raw byte must be >= 32 per xterm protocol
+    return (raw - 32) & MOUSE_MODIFIER_MASK;
   }
 
-  return false;
+  return null;
+}
+
+// Detect mouse event escape sequences (click, release, motion) from xterm.js onData.
+// Returns true for button/motion events (codes 0-63), false for scroll (64+) and non-mouse data.
+function isMouseClickEscapeSequence(data: string): boolean {
+  const code = parseMouseButtonCode(data);
+  return code !== null && code < 64;
+}
+
+// Detect mouse DRAG MOTION escape sequences specifically (bit 5 = 32).
+// Returns true only for motion events (codes 32-35), not for press/release/scroll.
+// Used to suppress micro-drag motion that would cause tmux to enter copy-mode.
+function isMouseDragMotionSequence(data: string): boolean {
+  const code = parseMouseButtonCode(data);
+  return code !== null && (code & 32) !== 0 && code < 64;
 }
 
 interface UseTerminalOptions {
@@ -665,6 +681,18 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           // Prevents tmux MouseUp1Pane from canceling copy-mode (scroll to bottom).
           if (linkHoverRef.current && isMouseClickEscapeSequence(data)) {
             imeLog("onData SUPPRESSED (link hover mouse event)", JSON.stringify(data));
+            return;
+          }
+          // Suppress mouse drag motion escape sequences during micro-drags
+          // (before composite threshold exceeded: 150ms hold, then 5px movement).
+          // Prevents tmux from entering copy-mode on accidental tiny mouse movements.
+          // Button press/release events still pass through for pane focus and click handling.
+          if (
+            dragDistanceRef.current.startTime > 0 &&
+            !dragDistanceRef.current.exceeded &&
+            isMouseDragMotionSequence(data)
+          ) {
+            imeLog("onData SUPPRESSED (drag motion below threshold)", JSON.stringify(data));
             return;
           }
           if (aliveRef.current && ptyRef.current) {
