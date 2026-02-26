@@ -20,6 +20,38 @@ function escapeShellPath(path: string): string {
   return path;
 }
 
+// Detect mouse event escape sequences (click, release, motion) from xterm.js onData.
+// Returns true for button/motion events (codes 0-63), false for scroll (64+) and non-mouse data.
+// SGR mode (1006): \x1b[<Pb;Px;PyM (press) or \x1b[<Pb;Px;Pym (release)
+// Normal mode (1000): \x1b[M followed by 3 raw bytes (each value + 32)
+const MOUSE_MODIFIER_MASK = ~(4 | 8 | 16); // strip shift, meta, ctrl bits
+
+function isMouseClickEscapeSequence(data: string): boolean {
+  if (data.length < 6) return false;
+  if (data[0] !== '\x1b' || data[1] !== '[') return false;
+
+  const mode = data[2];
+
+  // SGR mouse mode: \x1b[< ...
+  if (mode === '<') {
+    const semiIdx = data.indexOf(";", 3);
+    if (semiIdx > 3) {
+      const cb = parseInt(data.substring(3, semiIdx), 10);
+      if (!isNaN(cb)) {
+        return (cb & MOUSE_MODIFIER_MASK) < 64;
+      }
+    }
+  }
+
+  // Normal mouse mode: \x1b[M ...
+  if (mode === 'M') {
+    const cb = data.charCodeAt(3) - 32;
+    return (cb & MOUSE_MODIFIER_MASK) < 64;
+  }
+
+  return false;
+}
+
 interface UseTerminalOptions {
   onDragState?: (isDragging: boolean) => void;
   onRequestPaneAction?: (action: PaneAction) => void;
@@ -73,6 +105,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0, startTime: 0 });
   const dragListenersRef = useRef<{ cleanup: () => void } | null>(null);
   const linkProviderDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  // True while mouse hovers a file path link. Suppresses mouse click escape
+  // sequences in onData so tmux copy-mode isn't canceled on link click.
+  const linkHoverRef = useRef(false);
+  const linkHoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanup = useCallback(() => {
     // Mark dead FIRST so callbacks stop writing
@@ -118,6 +154,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (linkProviderDisposableRef.current) {
       linkProviderDisposableRef.current.dispose();
       linkProviderDisposableRef.current = null;
+    }
+    linkHoverRef.current = false;
+    if (linkHoverTimeoutRef.current) {
+      clearTimeout(linkHoverTimeoutRef.current);
+      linkHoverTimeoutRef.current = null;
     }
 
     // Unregister Tauri drag-drop listener
@@ -288,6 +329,20 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         if (config.cwd) {
           linkProviderDisposableRef.current = createFilePathLinkProvider(term, {
             projectPath: config.cwd,
+            onLinkHoverChange: (hovering) => {
+              linkHoverRef.current = hovering;
+              if (linkHoverTimeoutRef.current) {
+                clearTimeout(linkHoverTimeoutRef.current);
+                linkHoverTimeoutRef.current = null;
+              }
+              if (hovering) {
+                // Safety timeout: auto-reset in case leave() never fires
+                linkHoverTimeoutRef.current = setTimeout(() => {
+                  linkHoverRef.current = false;
+                  linkHoverTimeoutRef.current = null;
+                }, 500);
+              }
+            },
           });
         }
 
@@ -606,6 +661,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         term.onData((data: string) => {
           imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
           if (imeActive) return;
+          // Suppress mouse click escape sequences while hovering a file path link.
+          // Prevents tmux MouseUp1Pane from canceling copy-mode (scroll to bottom).
+          if (linkHoverRef.current && isMouseClickEscapeSequence(data)) {
+            imeLog("onData SUPPRESSED (link hover mouse event)", JSON.stringify(data));
+            return;
+          }
           if (aliveRef.current && ptyRef.current) {
             ptyRef.current.write(data);
           }

@@ -5,6 +5,9 @@ import { useAppStore } from "../../../stores/appStore";
 
 export interface FilePathLinkProviderOptions {
   projectPath: string;
+  /** Called when mouse enters/leaves a file path link. Used to suppress mouse
+   *  escape sequences during hover so tmux copy-mode scroll is preserved. */
+  onLinkHoverChange?: (isHovering: boolean) => void;
 }
 
 // Match file paths with optional :line and :line:col suffixes.
@@ -68,7 +71,7 @@ export function createFilePathLinkProvider(
   terminal: Terminal,
   options: FilePathLinkProviderOptions,
 ): IDisposable {
-  const { projectPath } = options;
+  const { projectPath, onLinkHoverChange } = options;
 
   return terminal.registerLinkProvider({
     provideLinks(y, callback) {
@@ -96,6 +99,12 @@ export function createFilePathLinkProvider(
         decorations: {
           pointerCursor: true,
           underline: true,
+        },
+        hover: () => {
+          onLinkHoverChange?.(true);
+        },
+        leave: () => {
+          onLinkHoverChange?.(false);
         },
         activate: () => {
           // Resolve path
