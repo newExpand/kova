@@ -1,7 +1,28 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import type { Project, CreateProjectInput, UpdateProjectInput } from "../types";
+import { COLOR_PALETTE } from "../types";
 import * as commands from "../../../lib/tauri/commands";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function pickLeastUsedColor(projects: Project[]): number {
+  const total = COLOR_PALETTE.length;
+  const counts = new Array<number>(total).fill(0);
+  for (const p of projects) {
+    if (p.isActive && p.colorIndex >= 0 && p.colorIndex < total) {
+      counts[p.colorIndex] = (counts[p.colorIndex] ?? 0) + 1;
+    }
+  }
+  const min = Math.min(...counts);
+  const candidates: number[] = [];
+  for (let i = 0; i < total; i++) {
+    if (counts[i] === min) candidates.push(i);
+  }
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? 0;
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -99,10 +120,11 @@ export const useProjectStore = create<ProjectStore>()(
       createProject: async (input) => {
         set({ isCreating: true, error: null }, undefined, "createProject/start");
         try {
+          const colorIndex = input.colorIndex ?? pickLeastUsedColor(get().projects);
           const project = await commands.createProject(
             input.name,
             input.path,
-            input.colorIndex ?? 0,
+            colorIndex,
           );
           set(
             (state) => ({

@@ -3,9 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { COLOR_PALETTE, MAX_COLOR_INDEX } from "../types";
 import type { CreateProjectInput } from "../types";
-import { cn } from "../../../lib/utils";
 
 interface ProjectFormProps {
   onSubmit: (input: CreateProjectInput) => void;
@@ -16,7 +14,6 @@ interface ProjectFormProps {
 function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
-  const [colorIndex, setColorIndex] = useState(0);
 
   const handlePickFolder = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
@@ -32,7 +29,7 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !path.trim()) return;
-    onSubmit({ name: name.trim(), path: path.trim(), colorIndex });
+    onSubmit({ name: name.trim(), path: path.trim() });
   };
 
   return (
@@ -66,28 +63,6 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
         </div>
       </div>
 
-      {/* Color Selector */}
-      <div className="flex flex-col gap-3">
-        <Label>Color</Label>
-        <div className="flex gap-2.5 py-1">
-          {COLOR_PALETTE.map((color, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setColorIndex(i)}
-              className={cn(
-                "h-7 w-7 rounded-full transition-all",
-                colorIndex === i
-                  ? "ring-2 ring-primary ring-offset-2 ring-offset-transparent shadow-[0_0_8px_rgba(100,140,255,0.3)] scale-110"
-                  : "hover:scale-105",
-              )}
-              style={{ backgroundColor: color }}
-              aria-label={`Color ${i}`}
-            />
-          ))}
-        </div>
-      </div>
-
       {/* Actions */}
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" onClick={onCancel}>
@@ -95,7 +70,7 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
         </Button>
         <Button
           type="submit"
-          disabled={!name.trim() || !path.trim() || isSubmitting || colorIndex > MAX_COLOR_INDEX}
+          disabled={!name.trim() || !path.trim() || isSubmitting}
         >
           {isSubmitting ? "Creating..." : "Create Project"}
         </Button>
