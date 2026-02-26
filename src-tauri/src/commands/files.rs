@@ -3,6 +3,15 @@ use crate::models::files::{FileContent, FileEntry};
 use crate::services;
 
 #[tauri::command]
+pub async fn resolve_import_path(
+    project_path: String,
+    current_file: String,
+    import_path: String,
+) -> Result<Option<String>, AppError> {
+    services::file_service::resolve_import_path(&project_path, &current_file, &import_path)
+}
+
+#[tauri::command]
 pub async fn list_directory(
     project_path: String,
     relative_path: String,

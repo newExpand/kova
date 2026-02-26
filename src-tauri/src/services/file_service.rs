@@ -234,6 +234,95 @@ fn is_binary_content(data: &[u8]) -> bool {
     data[..check_len].contains(&0)
 }
 
+/// Extension candidates for import resolution (order = priority).
+const RESOLVE_EXTENSIONS: &[&str] = &[
+    ".ts", ".tsx", ".js", ".jsx", ".json", ".css",
+    "/index.ts", "/index.tsx", "/index.js", "/index.jsx",
+];
+
+/// Resolve an import path to a project-relative file path.
+///
+/// Given a current file and an import specifier (e.g. `"../lib/event-bridge"`),
+/// tries various extension suffixes and `/index.*` variants until a matching
+/// file is found within the project root.
+///
+/// Returns `Ok(None)` if no matching file is found.
+/// Returns `Err` for IO/validation failures (permission denied, invalid paths).
+pub fn resolve_import_path(
+    project_path: &str,
+    current_file: &str,
+    import_path: &str,
+) -> Result<Option<String>, AppError> {
+    if current_file.is_empty() || current_file.starts_with('/') {
+        return Err(AppError::InvalidInput(format!(
+            "Invalid current_file: '{}'",
+            current_file
+        )));
+    }
+
+    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
+        AppError::InvalidInput(format!("Invalid project path: {}", e))
+    })?;
+
+    let current_dir = project_root
+        .join(current_file)
+        .parent()
+        .ok_or_else(|| AppError::InvalidInput("Cannot determine parent directory".into()))?
+        .to_path_buf();
+
+    let base = current_dir.join(import_path);
+
+    // Helper: check candidate, validate within project, return relative path.
+    // Returns Ok(None) for NotFound (expected during probing), Err for other IO failures.
+    let try_candidate = |candidate: &Path| -> Result<Option<String>, AppError> {
+        let canonical = match candidate.canonicalize() {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                warn!(
+                    "resolve_import_path: unexpected error on '{}': {}",
+                    candidate.display(),
+                    e
+                );
+                return Ok(None);
+            }
+        };
+        if !canonical.starts_with(&project_root) {
+            warn!(
+                "Import path escapes project root: {}",
+                candidate.display()
+            );
+            return Ok(None);
+        }
+        if !canonical.is_file() {
+            return Ok(None);
+        }
+        let rel = canonical
+            .strip_prefix(&project_root)
+            .map_err(|e| AppError::Internal(format!("strip_prefix failed: {}", e)))?;
+        Ok(Some(rel.to_string_lossy().to_string()))
+    };
+
+    // 1. Try the path as-is (already has extension)
+    if base.extension().is_some() {
+        if let Some(rel) = try_candidate(&base)? {
+            return Ok(Some(rel));
+        }
+    }
+
+    // 2. Try each extension candidate
+    let base_str = base.to_string_lossy();
+    for ext in RESOLVE_EXTENSIONS {
+        let candidate_str = format!("{}{}", base_str, ext);
+        let candidate = Path::new(&candidate_str);
+        if let Some(rel) = try_candidate(candidate)? {
+            return Ok(Some(rel));
+        }
+    }
+
+    Ok(None)
+}
+
 /// Map file extension to language string for CodeMirror syntax highlighting.
 pub fn detect_language(path: &str) -> String {
     let ext = Path::new(path)

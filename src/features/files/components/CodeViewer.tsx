@@ -42,6 +42,8 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
     },
     scrollTarget,
     onScrollTargetConsumed: clearScrollTarget,
+    projectPath,
+    currentFilePath: activeFile?.path,
   });
 
   if (isFileLoading) {

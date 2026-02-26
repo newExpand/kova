@@ -6,6 +6,7 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemir
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { languages } from "@codemirror/language-data";
 import { glassDark } from "../themes/glassDark";
+import { importLinksExtension } from "../extensions/importLinks";
 import type { ScrollTarget } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,8 @@ interface UseCodeMirrorOptions {
   onSave?: () => void;
   scrollTarget?: ScrollTarget | null;
   onScrollTargetConsumed?: () => void;
+  projectPath?: string;
+  currentFilePath?: string;
 }
 
 // Compartment for dynamic language loading
@@ -68,17 +71,23 @@ export function useCodeMirror({
   onSave,
   scrollTarget,
   onScrollTargetConsumed,
+  projectPath,
+  currentFilePath,
 }: UseCodeMirrorOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onScrollTargetConsumedRef = useRef(onScrollTargetConsumed);
+  const projectPathRef = useRef(projectPath ?? "");
+  const currentFilePathRef = useRef(currentFilePath ?? "");
 
   // Keep refs in sync
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   onScrollTargetConsumedRef.current = onScrollTargetConsumed;
+  projectPathRef.current = projectPath ?? "";
+  currentFilePathRef.current = currentFilePath ?? "";
 
   // Create/destroy editor
   useEffect(() => {
@@ -119,6 +128,7 @@ export function useCodeMirror({
         updateListener,
         languageCompartment.of([]),
         flashField,
+        importLinksExtension(projectPathRef, currentFilePathRef),
         ...glassDark,
       ],
     });

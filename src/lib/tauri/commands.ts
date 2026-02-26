@@ -882,3 +882,15 @@ export async function writeFile(
   return invoke<void>("write_file", { projectPath, relativePath, content });
 }
 
+export async function resolveImportPath(
+  projectPath: string,
+  currentFile: string,
+  importPath: string,
+): Promise<string | null> {
+  return invoke<string | null>("resolve_import_path", {
+    projectPath,
+    currentFile,
+    importPath,
+  });
+}
+

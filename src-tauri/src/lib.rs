@@ -298,6 +298,7 @@ pub fn run() {
             commands::files::list_directory,
             commands::files::read_file,
             commands::files::write_file,
+            commands::files::resolve_import_path,
             // Environment commands
             commands::environment::check_environment,
         ])
