@@ -1,5 +1,6 @@
 import { ChevronRight, Folder, File } from "lucide-react";
 import { motion } from "motion/react";
+import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
 import type { FileEntry } from "../../../lib/tauri/commands";
 
 interface FileTreeItemProps {
@@ -10,6 +11,7 @@ interface FileTreeItemProps {
   isActive: boolean;
   onToggle: () => void;
   onClick: () => void;
+  projectPath: string;
 }
 
 export function FileTreeItem({
@@ -20,7 +22,15 @@ export function FileTreeItem({
   isActive,
   onToggle,
   onClick,
+  projectPath,
 }: FileTreeItemProps) {
+  // Agent tracking state (files only -- directories skip the store lookup)
+  const isAgentModified = !entry.isDir
+    && useAgentFileTrackingStore((s) => s.isAgentModified(projectPath, entry.path));
+  const isAgentRead = !entry.isDir
+    && useAgentFileTrackingStore((s) => s.isAgentRead(projectPath, entry.path));
+  const isRecentFlash = !entry.isDir
+    && useAgentFileTrackingStore((s) => s.isRecentFlash(projectPath, entry.path));
   const paddingLeft = depth * 16 + 8;
 
   const handleClick = () => {
@@ -37,8 +47,10 @@ export function FileTreeItem({
       onClick={handleClick}
       className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
         isActive ? "text-text" : "text-text-secondary"
+      } ${isRecentFlash ? "agent-flash" : ""} ${
+        isAgentModified ? "border-l-2 border-primary" : ""
       }`}
-      style={{ paddingLeft }}
+      style={{ paddingLeft: isAgentModified ? paddingLeft - 2 : paddingLeft }}
     >
       {isActive && (
         <motion.div
@@ -68,6 +80,13 @@ export function FileTreeItem({
           <span className="ml-1 text-[10px] text-text-muted animate-pulse">...</span>
         )}
       </span>
+      {/* Agent tracking dot */}
+      {isAgentModified && (
+        <span className="agent-dot-pulse relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+      )}
+      {isAgentRead && (
+        <span className="relative ml-auto mr-1 h-1 w-1 shrink-0 rounded-full bg-primary/50" />
+      )}
     </button>
   );
 }

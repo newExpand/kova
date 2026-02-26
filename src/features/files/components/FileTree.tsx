@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, X } from "lucide-react";
+import { Search, X, ChevronRight, Pencil, Eye } from "lucide-react";
 import { useFileStore } from "../stores/fileStore";
+import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
 import { FileTreeItem } from "./FileTreeItem";
 import type { FileEntry } from "../../../lib/tauri/commands";
+import type { FileTouch, ProjectWorkingSet } from "../stores/agentFileTrackingStore";
 
 const DIR_EXPAND_TRANSITION = {
   height: { duration: 0.25, ease: [0.16, 1, 0.3, 1] },
@@ -28,6 +30,10 @@ export function FileTree({ projectPath }: FileTreeProps) {
 
   const tree = useFileStore((s) => s.getTreeState(projectPath));
   const getFilteredEntries = useFileStore((s) => s.getFilteredEntries);
+
+  // Agent file tracking — working set for the summary section
+  const getWorkingSet = useAgentFileTrackingStore((s) => s.getWorkingSet);
+  const workingSet = getWorkingSet(projectPath);
 
   // Search is fully local per FileTree instance (no store pollution)
   const [localQuery, setLocalQuery] = useState("");
@@ -57,6 +63,9 @@ export function FileTree({ projectPath }: FileTreeProps) {
   const isSearching = debouncedQuery.trim().length > 0;
   const filteredEntries = isSearching ? getFilteredEntries(projectPath, debouncedQuery) : [];
 
+  const hasWorkingSet =
+    Object.keys(workingSet.writes).length + Object.keys(workingSet.reads).length > 0;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Search */}
@@ -82,6 +91,15 @@ export function FileTree({ projectPath }: FileTreeProps) {
         </div>
       </div>
 
+      {/* Working Set Section */}
+      {hasWorkingSet && !isSearching && (
+        <WorkingSetSection
+          workingSet={workingSet}
+          projectPath={projectPath}
+          onOpenFile={openFile}
+        />
+      )}
+
       {/* Tree or Search Results */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
         <FileTreeContent
@@ -97,6 +115,121 @@ export function FileTree({ projectPath }: FileTreeProps) {
         />
       </div>
     </div>
+  );
+}
+
+// ── Working Set Section ──
+
+interface WorkingSetSectionProps {
+  workingSet: ProjectWorkingSet;
+  projectPath: string;
+  onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
+}
+
+function WorkingSetSection({
+  workingSet,
+  projectPath,
+  onOpenFile,
+}: WorkingSetSectionProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const { writes, reads } = workingSet;
+  const writeCount = Object.keys(writes).length;
+  const readCount = Object.keys(reads).length;
+
+  return (
+    <div className="border-b border-border-subtle">
+      <button
+        type="button"
+        onClick={() => setIsCollapsed((p) => !p)}
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
+      >
+        <ChevronRight
+          className={`h-3 w-3 shrink-0 transition-transform duration-150 ${
+            !isCollapsed ? "rotate-90" : ""
+          }`}
+        />
+        <span>Agent Working Set</span>
+        <span className="ml-auto text-[10px] opacity-60">
+          {writeCount + readCount}
+        </span>
+      </button>
+      {!isCollapsed && (
+        <div className="pb-1">
+          {/* Modified files */}
+          {writeCount > 0 && (
+            <div>
+              <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
+                <Pencil className="h-2.5 w-2.5" />
+                <span>Modified</span>
+              </div>
+              {Object.values(writes)
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((touch) => (
+                  <WorkingSetItem
+                    key={touch.filePath}
+                    touch={touch}
+                    isWrite
+                    projectPath={projectPath}
+                    onOpenFile={onOpenFile}
+                  />
+                ))}
+            </div>
+          )}
+          {/* Read files */}
+          {readCount > 0 && (
+            <div>
+              <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
+                <Eye className="h-2.5 w-2.5" />
+                <span>Read</span>
+              </div>
+              {Object.values(reads)
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((touch) => (
+                  <WorkingSetItem
+                    key={touch.filePath}
+                    touch={touch}
+                    isWrite={false}
+                    projectPath={projectPath}
+                    onOpenFile={onOpenFile}
+                  />
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Working Set Item ──
+
+interface WorkingSetItemProps {
+  touch: FileTouch;
+  isWrite: boolean;
+  projectPath: string;
+  onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
+}
+
+function WorkingSetItem({ touch, isWrite, projectPath, onOpenFile }: WorkingSetItemProps) {
+  const parts = touch.filePath.split("/");
+  const fileName = parts.pop() ?? touch.filePath;
+  const dirPath = parts.join("/");
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenFile(projectPath, touch.filePath)}
+      className={`flex w-full items-center gap-1.5 py-[2px] pl-5 pr-2 text-[11px] text-text-secondary hover:bg-white/[0.06] transition-colors ${
+        isWrite ? "border-l-2 border-primary" : ""
+      }`}
+    >
+      <span className="truncate">{fileName}</span>
+      {dirPath && (
+        <span className="ml-auto shrink-0 truncate text-[10px] text-text-muted max-w-[120px]">
+          {dirPath}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -141,6 +274,7 @@ function FileTreeContent({
             isActive={activeFilePath === entry.path}
             onToggle={() => {}}
             onClick={() => onOpenFile(projectPath, entry.path)}
+            projectPath={projectPath}
           />
         ))}
       </>
@@ -202,6 +336,7 @@ function TreeEntries({
               isActive={!entry.isDir && activeFilePath === entry.path}
               onToggle={() => onToggle(projectPath, entry.path)}
               onClick={() => onOpenFile(projectPath, entry.path)}
+              projectPath={projectPath}
             />
             {entry.isDir && (
               <AnimatePresence initial={false}>

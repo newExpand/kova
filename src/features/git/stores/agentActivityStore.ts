@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { HookEvent } from "../../../lib/event-bridge/notification-events";
+import { getPayloadString } from "../../../lib/payload-helpers";
 
 // ---------------------------------------------------------------------------
 // Path normalization
@@ -92,17 +93,6 @@ function getToolDisplayName(toolName: string): string {
     return server ?? toolName;
   }
   return toolName;
-}
-
-function getPayloadString(
-  payload: unknown,
-  key: string,
-): string | undefined {
-  if (typeof payload === "object" && payload !== null) {
-    const val = (payload as Record<string, unknown>)[key];
-    return typeof val === "string" ? val : undefined;
-  }
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------

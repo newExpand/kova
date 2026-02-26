@@ -6,6 +6,14 @@ import { useNotificationStore } from "../../features/notification";
 import { parseHookType } from "../../features/notification/types";
 import { useAgentActivityStore, useGitStore } from "../../features/git";
 import { useProjectStore } from "../../features/project";
+import {
+  useAgentFileTrackingStore,
+  useFileStore,
+  extractFilePath,
+  resolveCanonicalFilePath,
+} from "../../features/files";
+import { useAppStore } from "../../stores/appStore";
+import { getPayloadString, getPayloadObject } from "../payload-helpers";
 
 // Superset of Rust AGENT_ACTIVITY_TYPES in event_server.rs.
 // Includes UserPromptSubmit, PermissionRequest, Stop for frontend-only realtime UX.
@@ -24,10 +32,66 @@ const AGENT_ACTIVITY_TYPES = new Set([
   "Stop",
 ]);
 
+// Tools whose PostToolUse events carry file_path for tracking
+const FILE_TRACKING_TOOLS = new Set(["Read", "Edit", "Write"]);
+const FILE_WRITE_TOOLS = new Set(["Edit", "Write"]);
+
+// ---------------------------------------------------------------------------
+// File tracking dispatch
+// ---------------------------------------------------------------------------
+
+function handleFileTracking(hookEvent: HookEvent): void {
+  try {
+    if (hookEvent.eventType !== "PostToolUse") return;
+
+    const toolName = getPayloadString(hookEvent.payload, "tool_name");
+    if (!toolName || !FILE_TRACKING_TOOLS.has(toolName)) return;
+
+    // Extract tool_input object, then file_path from it
+    const toolInput = getPayloadObject(hookEvent.payload, "tool_input");
+    if (!toolInput) return;
+
+    const absolutePath = extractFilePath(toolInput);
+    if (!absolutePath) return;
+
+    const projectPath = hookEvent.projectPath;
+    if (!projectPath) return;
+
+    const relativePath = resolveCanonicalFilePath(absolutePath, projectPath);
+    if (!relativePath) return;
+
+    const isWrite = FILE_WRITE_TOOLS.has(toolName);
+
+    // 1. Track in agent file tracking store
+    useAgentFileTrackingStore
+      .getState()
+      .trackFileTouch(projectPath, relativePath, toolName, isWrite);
+
+    // 2. Auto-sync: open file in viewer when Edit/Write and panel is visible
+    if (isWrite) {
+      const isFileViewerOpen = useAppStore.getState().isFileViewerPanelOpen;
+      if (isFileViewerOpen) {
+        useFileStore
+          .getState()
+          .openFile(projectPath, relativePath)
+          .catch((err) => {
+            console.error("[event-bridge] Auto-sync openFile failed:", relativePath, err);
+          });
+      }
+    }
+  } catch (err) {
+    console.error("[event-bridge] handleFileTracking failed:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event bridge
+// ---------------------------------------------------------------------------
+
 let unlisteners: UnlistenFn[] = [];
 
 export async function initEventBridge(): Promise<void> {
-  // 단일 리스너: notification + agent activity 모두 처리
+  // 단일 리스너: notification + agent activity + file tracking 모두 처리
   const hookUnlisten = await listen<Omit<HookEvent, "eventType"> & { eventType: string }>(
     "notification:hook-received",
     (event) => {
@@ -44,6 +108,9 @@ export async function initEventBridge(): Promise<void> {
       if (AGENT_ACTIVITY_TYPES.has(hookEvent.eventType)) {
         useAgentActivityStore.getState().pushActivity(hookEvent);
       }
+
+      // 3. File tracking (PostToolUse + Read/Edit/Write)
+      handleFileTracking(hookEvent);
     },
   );
 
