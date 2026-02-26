@@ -44,10 +44,8 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
 
     // Cmd+\ — Toggle file viewer overlay panel
     if (e.metaKey && e.key === "\\") {
-      const pathname = window.location.pathname;
       const hasProject = !!useProjectStore.getState().selectedId;
-      // Skip if on /files route or no project selected
-      if (!pathname.includes("/files") && hasProject) {
+      if (hasProject) {
         e.preventDefault();
         useAppStore.getState().toggleFileViewerPanel();
       }
