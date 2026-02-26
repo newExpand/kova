@@ -8,15 +8,23 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ projectPath }: CodeViewerProps) {
-  const { activeFile, updateFileContent, saveFile, isFileLoading } =
+  const { activeFile, updateFileContent, saveFile, isFileLoading, pendingScrollTarget, clearScrollTarget } =
     useFileStore(
       useShallow((s) => ({
         activeFile: s.getActiveFile(),
         updateFileContent: s.updateFileContent,
         saveFile: s.saveFile,
         isFileLoading: s.isFileLoading,
+        pendingScrollTarget: s.pendingScrollTarget,
+        clearScrollTarget: s.clearScrollTarget,
       })),
     );
+
+  // Only pass scroll target if it matches the active file
+  const scrollTarget =
+    pendingScrollTarget && activeFile && pendingScrollTarget.path === activeFile.path
+      ? pendingScrollTarget
+      : null;
 
   const { containerRef } = useCodeMirror({
     content: activeFile?.content ?? "",
@@ -32,6 +40,8 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
         saveFile(projectPath, activeFile.path);
       }
     },
+    scrollTarget,
+    onScrollTargetConsumed: clearScrollTarget,
   });
 
   if (isFileLoading) {
@@ -65,7 +75,7 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
       {activeFile.isDirty && (
         <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary z-10" />
       )}
-      <div ref={containerRef} className="h-full overflow-auto" />
+      <div ref={containerRef} className="h-full overflow-auto glass-scrollbar" />
     </div>
   );
 }

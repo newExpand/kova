@@ -15,6 +15,14 @@ import {
 import { useAppStore } from "../../stores/appStore";
 import { getPayloadString, getPayloadObject } from "../payload-helpers";
 
+/** Find the 1-based line number where `searchText` first appears in `content`. Returns 0 if not found. */
+function findLineOfText(content: string, searchText: string): number {
+  const idx = content.indexOf(searchText);
+  if (idx === -1) return 0;
+  const before = content.slice(0, idx);
+  return before.split("\n").length;
+}
+
 // Superset of Rust AGENT_ACTIVITY_TYPES in event_server.rs.
 // Includes UserPromptSubmit, PermissionRequest, Stop for frontend-only realtime UX.
 const AGENT_ACTIVITY_TYPES = new Set([
@@ -71,16 +79,48 @@ function handleFileTracking(hookEvent: HookEvent): void {
     if (isWrite) {
       const isFileViewerOpen = useAppStore.getState().isFileViewerPanelOpen;
       if (isFileViewerOpen) {
+        // Extract new_string for Edit tool to find the modified line
+        let searchText: string | undefined;
+        if (toolName === "Edit") {
+          const newString = toolInput.new_string;
+          if (typeof newString === "string" && newString.length > 0) {
+            searchText = newString;
+          }
+        }
+
+        // Use refreshFile to re-read from disk (agent just wrote to it)
         useFileStore
           .getState()
-          .openFile(projectPath, relativePath)
+          .refreshFile(projectPath, relativePath)
+          .then(() => {
+            if (searchText) {
+              // Find the line number of new_string in the refreshed file content
+              const activeFile = useFileStore.getState().getActiveFile();
+              if (activeFile && activeFile.path === relativePath) {
+                const lineNumber = findLineOfText(activeFile.content, searchText);
+                if (lineNumber > 0) {
+                  useFileStore.getState().setScrollTarget({
+                    path: relativePath,
+                    line: lineNumber,
+                    flashLines: Math.min(searchText.split("\n").length, 20),
+                  });
+                }
+              }
+            }
+          })
           .catch((err) => {
-            console.error("[event-bridge] Auto-sync openFile failed:", relativePath, err);
+            console.error("[event-bridge] Auto-sync refreshFile failed:", relativePath, err);
           });
       }
     }
   } catch (err) {
-    console.error("[event-bridge] handleFileTracking failed:", err);
+    console.error(
+      "[event-bridge] handleFileTracking failed for event:",
+      hookEvent.eventType,
+      "tool:",
+      getPayloadString(hookEvent.payload, "tool_name") ?? "unknown",
+      err,
+    );
   }
 }
 

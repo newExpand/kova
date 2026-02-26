@@ -10,6 +10,7 @@ import { getFontById, loadFontCss } from "../fonts";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 // Direct import to avoid circular chunk dependency (terminal ↔ settings)
 import { useSettingsStore } from "../../settings/stores/settingsStore";
+import { createFilePathLinkProvider } from "../links/filePathLinkProvider";
 
 // macOS Terminal.app / iTerm2 동작 재현: 쉘 특수문자 이스케이프
 function escapeShellPath(path: string): string {
@@ -71,6 +72,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   // Shared between DOM listeners (mousedown/mousemove) and OSC 52 handler.
   const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0, startTime: 0 });
   const dragListenersRef = useRef<{ cleanup: () => void } | null>(null);
+  const linkProviderDisposableRef = useRef<{ dispose: () => void } | null>(null);
 
   const cleanup = useCallback(() => {
     // Mark dead FIRST so callbacks stop writing
@@ -110,6 +112,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     if (dragListenersRef.current) {
       dragListenersRef.current.cleanup();
       dragListenersRef.current = null;
+    }
+
+    // Dispose file path link provider
+    if (linkProviderDisposableRef.current) {
+      linkProviderDisposableRef.current.dispose();
+      linkProviderDisposableRef.current = null;
     }
 
     // Unregister Tauri drag-drop listener
@@ -275,6 +283,13 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         term.open(container);
         termRef.current = term;
         fitAddonRef.current = fitAddon;
+
+        // ── File path link provider — makes file paths clickable ──
+        if (config.cwd) {
+          linkProviderDisposableRef.current = createFilePathLinkProvider(term, {
+            projectPath: config.cwd,
+          });
+        }
 
         // ── Drag-distance tracking for OSC 52 clipboard filter ──
         // Composite condition: mouse must be held for >= 150ms AND moved >= 5px

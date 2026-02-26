@@ -12,6 +12,7 @@ interface AppState {
   isOnboarding: boolean;
   pendingProjectNavigation: string | null;
   isFileViewerPanelOpen: boolean;
+  fileViewerPanelWidth: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -27,6 +28,7 @@ interface AppActions {
   setPendingProjectNavigation: (id: string | null) => void;
   toggleFileViewerPanel: () => void;
   setFileViewerPanelOpen: (open: boolean) => void;
+  setFileViewerPanelWidth: (width: number) => void;
   reset: () => void;
 }
 
@@ -47,6 +49,7 @@ const initialState: AppState = {
   isOnboarding: false,
   pendingProjectNavigation: null,
   isFileViewerPanelOpen: false,
+  fileViewerPanelWidth: 480,
 };
 
 // ---------------------------------------------------------------------------
@@ -93,6 +96,13 @@ export const useAppStore = create<AppStore>()(
 
       setFileViewerPanelOpen: (open) =>
         set({ isFileViewerPanelOpen: open }, undefined, "setFileViewerPanelOpen"),
+
+      setFileViewerPanelWidth: (width) =>
+        set(
+          { fileViewerPanelWidth: Math.max(320, Math.min(width, 800)) },
+          undefined,
+          "setFileViewerPanelWidth",
+        ),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

@@ -1,11 +1,51 @@
 import { useRef, useEffect, useCallback } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars } from "@codemirror/view";
+import { EditorState, Compartment, StateEffect, StateField } from "@codemirror/state";
+import { EditorView, Decoration, type DecorationSet, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { languages } from "@codemirror/language-data";
 import { glassDark } from "../themes/glassDark";
+import type { ScrollTarget } from "../types";
+
+// ---------------------------------------------------------------------------
+// Flash decoration (line highlight that fades via CSS animation)
+// ---------------------------------------------------------------------------
+
+const addFlashEffect = StateEffect.define<{ from: number; to: number }>();
+const clearFlashEffect = StateEffect.define();
+
+const flashMark = Decoration.line({ class: "cm-flash-line" });
+
+const flashField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(decos, tr) {
+    // Shift positions when document changes
+    decos = decos.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (effect.is(addFlashEffect)) {
+        const { from, to } = effect.value;
+        const ranges: ReturnType<typeof flashMark.range>[] = [];
+        const doc = tr.state.doc;
+        for (let pos = from; pos <= to; ) {
+          const line = doc.lineAt(pos);
+          ranges.push(flashMark.range(line.from));
+          pos = line.to + 1;
+        }
+        return Decoration.set(ranges);
+      }
+      if (effect.is(clearFlashEffect)) {
+        return Decoration.none;
+      }
+    }
+    return decos;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+const FLASH_DURATION_MS = 1500;
 
 interface UseCodeMirrorOptions {
   content: string;
@@ -13,6 +53,8 @@ interface UseCodeMirrorOptions {
   readOnly?: boolean;
   onChange?: (content: string) => void;
   onSave?: () => void;
+  scrollTarget?: ScrollTarget | null;
+  onScrollTargetConsumed?: () => void;
 }
 
 // Compartment for dynamic language loading
@@ -24,15 +66,19 @@ export function useCodeMirror({
   readOnly = false,
   onChange,
   onSave,
+  scrollTarget,
+  onScrollTargetConsumed,
 }: UseCodeMirrorOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onScrollTargetConsumedRef = useRef(onScrollTargetConsumed);
 
   // Keep refs in sync
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onScrollTargetConsumedRef.current = onScrollTargetConsumed;
 
   // Create/destroy editor
   useEffect(() => {
@@ -72,6 +118,7 @@ export function useCodeMirror({
         saveKeymap,
         updateListener,
         languageCompartment.of([]),
+        flashField,
         ...glassDark,
       ],
     });
@@ -101,6 +148,42 @@ export function useCodeMirror({
       });
     }
   }, [content]);
+
+  // Scroll to target line and flash
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !scrollTarget) return;
+
+    const lineCount = view.state.doc.lines;
+    const targetLine = Math.max(1, Math.min(scrollTarget.line, lineCount));
+    const lineObj = view.state.doc.line(targetLine);
+
+    // Scroll line to center of viewport
+    view.dispatch({
+      effects: EditorView.scrollIntoView(lineObj.from, { y: "center" }),
+    });
+
+    // Flash the modified line(s)
+    const flashToLine = Math.min(
+      targetLine + (scrollTarget.flashLines ?? 1) - 1,
+      lineCount,
+    );
+    const flashTo = view.state.doc.line(flashToLine).to;
+    view.dispatch({ effects: addFlashEffect.of({ from: lineObj.from, to: flashTo }) });
+
+    const timerId = setTimeout(() => {
+      if (view.dom.isConnected) {
+        view.dispatch({ effects: clearFlashEffect.of(null) });
+      }
+    }, FLASH_DURATION_MS);
+
+    // Consume AFTER successful scroll + flash dispatch
+    onScrollTargetConsumedRef.current?.();
+
+    return () => {
+      clearTimeout(timerId);
+    };
+  }, [scrollTarget]);
 
   const focus = useCallback(() => {
     viewRef.current?.focus();
@@ -132,7 +215,7 @@ async function loadLanguage(fileName: string, view: EditorView) {
         effects: languageCompartment.reconfigure(support),
       });
     }
-  } catch {
-    // Language load failure is non-critical
+  } catch (err) {
+    console.warn(`[useCodeMirror] Failed to load language for "${fileName}":`, err);
   }
 }

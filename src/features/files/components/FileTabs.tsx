@@ -24,7 +24,7 @@ export function FileTabs() {
             key={file.path}
             type="button"
             onClick={() => setActiveFile(file.path)}
-            className={`relative flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors ${
+            className={`group relative flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors ${
               isActive ? "text-text" : "text-text-muted hover:text-text-secondary"
             }`}
           >

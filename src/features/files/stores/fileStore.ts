@@ -5,7 +5,7 @@ import {
   readFile,
   writeFile,
 } from "../../../lib/tauri/commands";
-import type { OpenFile } from "../types";
+import type { OpenFile, ScrollTarget } from "../types";
 import { MAX_OPEN_FILES } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,8 @@ interface FileState {
   isFileLoading: boolean;
   isSaving: boolean;
   error: string | null;
+  // Scroll target (set by terminal links or event bridge)
+  pendingScrollTarget: ScrollTarget | null;
 }
 
 interface FileActions {
@@ -44,6 +46,10 @@ interface FileActions {
   setActiveFile: (path: string | null) => void;
   updateFileContent: (path: string, content: string) => void;
   saveFile: (projectPath: string, path: string) => Promise<void>;
+  refreshFile: (projectPath: string, relativePath: string) => Promise<void>;
+  // Scroll target
+  setScrollTarget: (target: ScrollTarget) => void;
+  clearScrollTarget: () => void;
   // Computed
   getActiveFile: () => OpenFile | undefined;
   getTreeState: (projectPath: string) => TreeState;
@@ -71,6 +77,7 @@ const initialState: FileState = {
   isFileLoading: false,
   isSaving: false,
   error: null,
+  pendingScrollTarget: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -267,6 +274,36 @@ export const useFileStore = create<FileStore>()((set, get) => ({
       set({ isSaving: false, error: String(e) });
     }
   },
+
+  // Re-read an already-open file from disk (used after agent edits)
+  refreshFile: async (projectPath, relativePath) => {
+    const { openFiles } = get();
+    const existing = openFiles.find((f) => f.path === relativePath);
+    if (!existing) {
+      // Not open — just open normally
+      return get().openFile(projectPath, relativePath);
+    }
+
+    try {
+      const content = await readFile(projectPath, relativePath);
+      set({
+        openFiles: get().openFiles.map((f) =>
+          f.path === relativePath
+            ? { ...f, content: content.content, originalContent: content.content, isDirty: false }
+            : f,
+        ),
+        activeFilePath: relativePath,
+      });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  // ── Scroll Target ──
+
+  setScrollTarget: (target) => set({ pendingScrollTarget: target }),
+
+  clearScrollTarget: () => set({ pendingScrollTarget: null }),
 
   // ── Computed ──
 

@@ -439,6 +439,56 @@ body {
   animation: agent-flash 1.5s ease-out forwards;
 }
 
+/* ---------- CodeMirror line flash ---------- */
+
+@keyframes cm-line-flash {
+  0% { background-color: oklch(0.65 0.18 250 / 0.25); }
+  100% { background-color: transparent; }
+}
+.cm-flash-line {
+  animation: cm-line-flash 1.5s ease-out forwards;
+}
+
+/* ---------- Glass scrollbar (thin, for glass panels) ---------- */
+
+.glass-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.glass-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.glass-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+}
+.glass-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ---------- Split panel divider ---------- */
+
+.split-divider-indicator {
+  position: relative;
+}
+.split-divider-indicator::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.10);
+  transition: background 150ms ease, height 150ms ease;
+}
+.split-divider-indicator:hover::after,
+.split-divider-indicator[data-resizing="true"]::after {
+  background: rgba(255, 255, 255, 0.25);
+  height: 48px;
+}
+
 /* ---------- Reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -458,8 +508,12 @@ body {
   .ssh-accordion-grid,
   .ssh-item-stagger,
   .ssh-action-icon,
-  .ssh-globe-connected {
+  .ssh-globe-connected,
+  .cm-flash-line {
     animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  .split-divider-indicator::after {
     transition-duration: 0.01ms !important;
   }
 }

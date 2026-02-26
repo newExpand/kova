@@ -9,3 +9,10 @@ export interface OpenFile {
   isDirty: boolean;
   isBinary: boolean;
 }
+
+export interface ScrollTarget {
+  path: string;       // relative file path
+  line: number;       // 1-based line number
+  col?: number;       // 1-based column
+  flashLines?: number; // number of lines to flash (default 1)
+}

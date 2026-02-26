@@ -1,5 +1,5 @@
 // Types
-export type { OpenFile } from "./types";
+export type { OpenFile, ScrollTarget } from "./types";
 export { MAX_OPEN_FILES } from "./types";
 
 // Stores

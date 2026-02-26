@@ -1,6 +1,6 @@
 import { BrowserRouter, useNavigate, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { AnimatePresence } from "motion/react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { AppProviders } from "./providers";
 import { AppRoutes } from "./routes";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -12,9 +12,14 @@ import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
 import { useAppStore } from "../stores/appStore";
+import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
 
 const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
+
+const DIVIDER_WIDTH = 6;
+const MIN_PANEL_WIDTH = 320;
+const MIN_CONTENT_WIDTH = 400;
 
 const PROJECT_ROUTE_PATTERN = /^\/projects\/([^/]+)\//;
 
@@ -43,9 +48,22 @@ function TitleBar() {
   );
 }
 
+function SplitDivider({ onMouseDown, isResizing }: { onMouseDown: (e: React.MouseEvent) => void; isResizing: boolean }) {
+  return (
+    <div
+      className="w-1.5 flex-shrink-0 cursor-col-resize split-divider-indicator transition-colors"
+      data-resizing={isResizing}
+      onMouseDown={onMouseDown}
+    />
+  );
+}
+
 function AppShell() {
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
   const isFileViewerPanelOpen = useAppStore((s) => s.isFileViewerPanelOpen);
+  const fileViewerPanelWidth = useAppStore((s) => s.fileViewerPanelWidth);
+  const setFileViewerPanelWidth = useAppStore((s) => s.setFileViewerPanelWidth);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [tmuxAvailable, setTmuxAvailable] = useState<boolean | null>(null);
   const fetchProjects = useProjectStore((s) => s.fetchProjects);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
@@ -53,6 +71,14 @@ function AppShell() {
   const pendingProjectNavigation = useAppStore(
     (s) => s.pendingProjectNavigation,
   );
+
+  const { handleMouseDown: handleDividerMouseDown, isResizing } = useSplitPanelResize({
+    panelWidth: fileViewerPanelWidth,
+    onWidthChange: setFileViewerPanelWidth,
+    minPanelWidth: MIN_PANEL_WIDTH,
+    minContentWidth: MIN_CONTENT_WIDTH,
+    containerRef: splitContainerRef,
+  });
 
   useEffect(() => {
     // Load core data on app start (survives page reloads)
@@ -96,7 +122,79 @@ function AppShell() {
         <div className="flex flex-1 min-w-0 flex-col">
           {/* Custom glass titlebar */}
           <TitleBar />
-          <AppRoutes />
+          {/* Split container: route content + file viewer panel */}
+          <div ref={splitContainerRef} className="flex flex-1 overflow-hidden">
+            {/* Route content (terminal, git, files, etc.) */}
+            <div className="flex flex-1 min-w-0 flex-col">
+              <AppRoutes />
+            </div>
+            {/* File viewer split panel */}
+            <AnimatePresence>
+              {isFileViewerPanelOpen && (
+                <motion.div
+                  key="split-panel"
+                  className="flex flex-shrink-0 overflow-hidden"
+                  initial={{ width: 0 }}
+                  animate={{ width: fileViewerPanelWidth + DIVIDER_WIDTH }}
+                  exit={{ width: 0 }}
+                  transition={{
+                    width: {
+                      duration: isResizing ? 0 : 0.35,
+                      ease: [0.16, 1, 0.3, 1],
+                    },
+                  }}
+                >
+                  <SplitDivider onMouseDown={handleDividerMouseDown} isResizing={isResizing} />
+                  <motion.div
+                    className="flex flex-1 min-w-0 overflow-hidden glass-surface border-l border-white/[0.10]"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ opacity: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } }}
+                  >
+                    <ErrorBoundary
+                      fallback={(error, reset) => (
+                        <div className="flex flex-1 items-center justify-center p-4">
+                          <div className="rounded-lg glass-elevated px-4 py-3 text-xs text-text-secondary">
+                            <p>Failed to load file viewer.</p>
+                            <p className="mt-1 text-text-muted truncate max-w-xs" title={error.message}>
+                              {error.message}
+                            </p>
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={reset}
+                                className="text-primary hover:underline"
+                              >
+                                Retry
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => useAppStore.getState().setFileViewerPanelOpen(false)}
+                                className="text-text-muted hover:underline"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    >
+                      <Suspense
+                        fallback={
+                          <div className="flex flex-1 items-center justify-center">
+                            <span className="text-sm text-text-muted animate-pulse">Loading...</span>
+                          </div>
+                        }
+                      >
+                        <FileViewerPanel />
+                      </Suspense>
+                    </ErrorBoundary>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
       <StatusBar connected={true} tmuxAvailable={tmuxAvailable} />
@@ -104,36 +202,6 @@ function AppShell() {
         open={isCommandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
       />
-      <AnimatePresence>
-        {isFileViewerPanelOpen && (
-          <ErrorBoundary
-            fallback={() => (
-              <div className="fixed right-4 bottom-12 z-50 rounded-lg glass-elevated px-4 py-3 text-xs text-text-secondary">
-                <p>Failed to load file viewer.</p>
-                <button
-                  type="button"
-                  onClick={() => useAppStore.getState().setFileViewerPanelOpen(false)}
-                  className="mt-1 text-primary hover:underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-          >
-            <Suspense
-              fallback={
-                <div className="fixed right-0 top-0 bottom-0 z-50 flex items-center justify-center glass-elevated border-l border-white/[0.10]"
-                  style={{ width: Math.max(320, window.innerWidth * 0.45) }}
-                >
-                  <span className="text-sm text-text-muted animate-pulse">Loading...</span>
-                </div>
-              }
-            >
-              <FileViewerPanel />
-            </Suspense>
-          </ErrorBoundary>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
