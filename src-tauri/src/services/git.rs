@@ -938,89 +938,29 @@ pub fn get_working_changes(worktree_path: &Path) -> Result<WorkingChanges, AppEr
         worktree_path,
         &["ls-files", "--others", "--exclude-standard"],
     )?;
-    const MAX_UNTRACKED_FILE_SIZE: u64 = 1_048_576; // 1MB
     let canonical_root = worktree_path.canonicalize().unwrap_or_else(|_| worktree_path.to_path_buf());
 
     let untracked: Vec<FileDiff> = untracked_raw
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|rel_path| {
+        .filter_map(|rel_path| {
             let full_path = worktree_path.join(rel_path);
 
             // Path traversal guard: ensure resolved path stays within worktree
             if let Ok(canonical) = full_path.canonicalize() {
                 if !canonical.starts_with(&canonical_root) {
                     warn!("Skipping suspicious path outside worktree: {}", rel_path);
-                    return FileDiff {
+                    return Some(FileDiff {
                         path: rel_path.to_string(),
                         status: FileStatus::Untracked,
                         insertions: 0,
                         deletions: 0,
                         patch: "Path outside worktree".to_string(),
-                    };
+                    });
                 }
             }
 
-            // Size guard: skip files larger than 1MB
-            match std::fs::metadata(&full_path) {
-                Ok(m) if m.len() > MAX_UNTRACKED_FILE_SIZE => {
-                    return FileDiff {
-                        path: rel_path.to_string(),
-                        status: FileStatus::Untracked,
-                        insertions: 0,
-                        deletions: 0,
-                        patch: format!("File too large to display ({:.1} KB)", m.len() as f64 / 1024.0),
-                    };
-                }
-                _ => {}
-            }
-
-            match std::fs::read(&full_path) {
-                Ok(bytes) => {
-                    // Detect binary: NUL byte in first 8KB
-                    let check_len = bytes.len().min(8192);
-                    if bytes[..check_len].contains(&0) {
-                        return FileDiff {
-                            path: rel_path.to_string(),
-                            status: FileStatus::Untracked,
-                            insertions: 0,
-                            deletions: 0,
-                            patch: "Binary file".to_string(),
-                        };
-                    }
-                    let content = String::from_utf8_lossy(&bytes);
-                    let lines: Vec<&str> = content.lines().collect();
-                    let line_count = lines.len() as u32;
-                    // Build synthetic unified diff patch
-                    let mut patch = format!(
-                        "diff --git a/{p} b/{p}\nnew file mode 100644\n--- /dev/null\n+++ b/{p}\n@@ -0,0 +1,{n} @@\n",
-                        p = rel_path,
-                        n = line_count
-                    );
-                    for line in &lines {
-                        patch.push('+');
-                        patch.push_str(line);
-                        patch.push('\n');
-                    }
-                    FileDiff {
-                        path: rel_path.to_string(),
-                        status: FileStatus::Untracked,
-                        insertions: line_count,
-                        deletions: 0,
-                        patch,
-                    }
-                }
-                Err(e) => {
-                    warn!("Failed to read untracked file {}: {}", rel_path, e);
-                    FileDiff {
-                        path: rel_path.to_string(),
-                        status: FileStatus::Untracked,
-                        insertions: 0,
-                        deletions: 0,
-                        patch: format!("Failed to read: {}", e),
-                    }
-                }
-            }
+            build_untracked_diff(rel_path, &full_path)
         })
         .collect();
 
@@ -1030,6 +970,113 @@ pub fn get_working_changes(worktree_path: &Path) -> Result<WorkingChanges, AppEr
         unstaged,
         untracked,
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Untracked file diff builder (shared by get_working_changes & get_file_diff)
+// ---------------------------------------------------------------------------
+
+const MAX_UNTRACKED_FILE_SIZE_BYTES: u64 = 1_048_576; // 1MB
+
+/// Build a synthetic unified diff for an untracked file.
+/// Returns `None` if the file cannot be read (logged as warning).
+/// Caller is responsible for path-traversal validation beforehand.
+fn build_untracked_diff(file_path: &str, full_path: &Path) -> Option<FileDiff> {
+    // Size guard
+    match std::fs::metadata(full_path) {
+        Ok(m) if m.len() > MAX_UNTRACKED_FILE_SIZE_BYTES => {
+            return Some(FileDiff {
+                path: file_path.to_string(),
+                status: FileStatus::Untracked,
+                insertions: 0,
+                deletions: 0,
+                patch: format!("File too large to display ({:.1} KB)", m.len() as f64 / 1024.0),
+            });
+        }
+        Ok(_) => {} // Size within limit, proceed
+        Err(e) => {
+            warn!("Cannot stat untracked file {}: {}", file_path, e);
+            // Fall through to read(), which will surface its own error
+        }
+    }
+
+    match std::fs::read(full_path) {
+        Ok(bytes) => {
+            // Detect binary: NUL byte in first 8KB
+            let check_len = bytes.len().min(8192);
+            if bytes[..check_len].contains(&0) {
+                return Some(FileDiff {
+                    path: file_path.to_string(),
+                    status: FileStatus::Untracked,
+                    insertions: 0,
+                    deletions: 0,
+                    patch: "Binary file".to_string(),
+                });
+            }
+            let content = String::from_utf8_lossy(&bytes);
+            let lines: Vec<&str> = content.lines().collect();
+            let line_count = lines.len() as u32;
+            let mut patch = format!(
+                "diff --git a/{p} b/{p}\nnew file mode 100644\n--- /dev/null\n+++ b/{p}\n@@ -0,0 +1,{n} @@\n",
+                p = file_path,
+                n = line_count
+            );
+            for line in &lines {
+                patch.push('+');
+                patch.push_str(line);
+                patch.push('\n');
+            }
+            Some(FileDiff {
+                path: file_path.to_string(),
+                status: FileStatus::Untracked,
+                insertions: line_count,
+                deletions: 0,
+                patch,
+            })
+        }
+        Err(e) => {
+            warn!("Failed to read untracked file {}: {}", file_path, e);
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Single-file diff
+// ---------------------------------------------------------------------------
+
+/// Get the diff for a single file (working tree vs index, or index vs HEAD).
+/// Returns `None` if the file has no uncommitted changes.
+pub fn get_file_diff(worktree_path: &Path, file_path: &str) -> Result<Option<FileDiff>, AppError> {
+    validate_worktree(worktree_path)?;
+    validate_file_path(worktree_path, file_path)?;
+
+    // 1. Check unstaged changes (working tree vs index)
+    let unstaged_raw = run_git(worktree_path, &["diff", "--", file_path])?;
+    if !unstaged_raw.trim().is_empty() {
+        let files = parse_unified_diff(&unstaged_raw);
+        return Ok(files.into_iter().next());
+    }
+
+    // 2. Check staged changes (index vs HEAD)
+    let staged_raw = run_git(worktree_path, &["diff", "--cached", "--", file_path])?;
+    if !staged_raw.trim().is_empty() {
+        let files = parse_unified_diff(&staged_raw);
+        return Ok(files.into_iter().next());
+    }
+
+    // 3. Check if untracked
+    let ls_result = run_git_raw(worktree_path, &["ls-files", "--error-unmatch", "--", file_path])?;
+    if !ls_result.success {
+        let full_path = worktree_path.join(file_path);
+        if !full_path.exists() {
+            return Ok(None);
+        }
+        Ok(build_untracked_diff(file_path, &full_path))
+    } else {
+        // Tracked file with no changes
+        Ok(None)
+    }
 }
 
 // ---------------------------------------------------------------------------

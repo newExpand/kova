@@ -1,7 +1,11 @@
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { File } from "lucide-react";
 import { useFileStore } from "../stores/fileStore";
 import { useCodeMirror } from "../hooks/useCodeMirror";
+import { FileBreadcrumb } from "./FileBreadcrumb";
+import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
+import { getFileDiff } from "../../../lib/tauri/commands";
 
 interface CodeViewerProps {
   projectPath: string;
@@ -19,6 +23,40 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
         clearScrollTarget: s.clearScrollTarget,
       })),
     );
+
+  // Always-on diff
+  const [diffPatch, setDiffPatch] = useState<string | null>(null);
+
+  const fetchDiff = useCallback(async () => {
+    if (!activeFile) {
+      setDiffPatch(null);
+      return;
+    }
+    try {
+      const diff = await getFileDiff(projectPath, activeFile.path);
+      setDiffPatch(diff?.patch ?? null);
+      // Clear user edit tracking if no more git changes
+      if (!diff) {
+        useAgentFileTrackingStore.getState().removeUserEdit(projectPath, activeFile.path);
+      }
+    } catch (e) {
+      console.error("[CodeViewer] Failed to fetch diff for", activeFile.path, e);
+      setDiffPatch(null);
+    }
+  }, [activeFile?.path, projectPath]);
+
+  // Fetch diff on file open/switch, or when dirty→clean (save / undo)
+  const prevRef = useRef<{ path?: string; isDirty?: boolean }>({});
+  useEffect(() => {
+    const prev = prevRef.current;
+    const pathChanged = prev.path !== activeFile?.path;
+    const dirtyToClean = !pathChanged && prev.isDirty === true && activeFile?.isDirty === false;
+
+    if (pathChanged || dirtyToClean) {
+      fetchDiff();
+    }
+    prevRef.current = { path: activeFile?.path, isDirty: activeFile?.isDirty };
+  }, [activeFile?.path, activeFile?.isDirty, fetchDiff]);
 
   // Only pass scroll target if it matches the active file
   const scrollTarget =
@@ -44,6 +82,7 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
     onScrollTargetConsumed: clearScrollTarget,
     projectPath,
     currentFilePath: activeFile?.path,
+    diffPatch,
   });
 
   if (isFileLoading) {
@@ -73,11 +112,14 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
   }
 
   return (
-    <div className="relative flex-1 overflow-hidden">
-      {activeFile.isDirty && (
-        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary z-10" />
-      )}
-      <div ref={containerRef} className="h-full overflow-auto glass-scrollbar" />
-    </div>
+    <>
+      <FileBreadcrumb projectPath={projectPath} />
+      <div className="relative flex-1 overflow-hidden">
+        {activeFile.isDirty && (
+          <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary z-10" />
+        )}
+        <div ref={containerRef} className="h-full overflow-auto glass-scrollbar" />
+      </div>
+    </>
   );
 }

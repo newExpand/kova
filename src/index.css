@@ -449,6 +449,17 @@ body {
   animation: cm-line-flash 1.5s ease-out forwards;
 }
 
+/* ---------- CodeMirror diff decorations ---------- */
+
+.cm-diff-added {
+  background-color: oklch(0.7 0.15 150 / 0.12);
+  border-left: 2px solid oklch(0.7 0.15 150 / 0.50);
+}
+
+.cm-diff-has-deletion {
+  border-bottom: 2px solid oklch(0.65 0.18 25 / 0.40);
+}
+
 /* ---------- Glass scrollbar (thin, for glass panels) ---------- */
 
 .glass-scrollbar::-webkit-scrollbar {

@@ -31,7 +31,10 @@ export function FileTreeItem({
     && useAgentFileTrackingStore((s) => s.isAgentRead(projectPath, entry.path));
   const isRecentFlash = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isRecentFlash(projectPath, entry.path));
+  const isUserEdited = !entry.isDir
+    && useAgentFileTrackingStore((s) => s.isUserEdited(projectPath, entry.path));
   const paddingLeft = depth * 16 + 8;
+  const hasLeftBorder = isAgentModified || isUserEdited;
 
   const handleClick = () => {
     if (entry.isDir) {
@@ -48,9 +51,10 @@ export function FileTreeItem({
       className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
         isActive ? "text-text" : "text-text-secondary"
       } ${isRecentFlash ? "agent-flash" : ""} ${
-        isAgentModified ? "border-l-2 border-primary" : ""
+        isAgentModified ? "border-l-2 border-primary" :
+        isUserEdited ? "border-l-2 border-amber-400" : ""
       }`}
-      style={{ paddingLeft: isAgentModified ? paddingLeft - 2 : paddingLeft }}
+      style={{ paddingLeft: hasLeftBorder ? paddingLeft - 2 : paddingLeft }}
     >
       {isActive && (
         <motion.div
@@ -86,6 +90,9 @@ export function FileTreeItem({
       )}
       {isAgentRead && (
         <span className="relative ml-auto mr-1 h-1 w-1 shrink-0 rounded-full bg-primary/50" />
+      )}
+      {isUserEdited && !isAgentModified && !isAgentRead && (
+        <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
       )}
     </button>
   );

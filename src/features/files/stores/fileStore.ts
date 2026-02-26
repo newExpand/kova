@@ -7,6 +7,7 @@ import {
 } from "../../../lib/tauri/commands";
 import type { OpenFile, ScrollTarget } from "../types";
 import { MAX_OPEN_FILES } from "../types";
+import { useAgentFileTrackingStore } from "./agentFileTrackingStore";
 
 // ---------------------------------------------------------------------------
 // Tree State (per project)
@@ -272,7 +273,10 @@ export const useFileStore = create<FileStore>()((set, get) => ({
       });
     } catch (e) {
       set({ isSaving: false, error: String(e) });
+      return;
     }
+    // Track as user edit (outside try-catch: save already succeeded)
+    useAgentFileTrackingStore.getState().trackUserEdit(projectPath, path);
   },
 
   // Re-read an already-open file from disk (used after agent edits)

@@ -64,7 +64,9 @@ export function FileTree({ projectPath }: FileTreeProps) {
   const filteredEntries = isSearching ? getFilteredEntries(projectPath, debouncedQuery) : [];
 
   const hasWorkingSet =
-    Object.keys(workingSet.writes).length + Object.keys(workingSet.reads).length > 0;
+    Object.keys(workingSet.writes).length +
+    Object.keys(workingSet.reads).length +
+    Object.keys(workingSet.userEdits).length > 0;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -132,9 +134,10 @@ function WorkingSetSection({
   onOpenFile,
 }: WorkingSetSectionProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { writes, reads } = workingSet;
+  const { writes, reads, userEdits } = workingSet;
   const writeCount = Object.keys(writes).length;
   const readCount = Object.keys(reads).length;
+  const userEditCount = Object.keys(userEdits).length;
 
   return (
     <div className="border-b border-border-subtle">
@@ -148,14 +151,34 @@ function WorkingSetSection({
             !isCollapsed ? "rotate-90" : ""
           }`}
         />
-        <span>Agent Working Set</span>
+        <span>Working Set</span>
         <span className="ml-auto text-[10px] opacity-60">
-          {writeCount + readCount}
+          {writeCount + readCount + userEditCount}
         </span>
       </button>
       {!isCollapsed && (
         <div className="pb-1">
-          {/* Modified files */}
+          {/* User edits (amber) */}
+          {userEditCount > 0 && (
+            <div>
+              <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
+                <Pencil className="h-2.5 w-2.5 text-amber-400" />
+                <span>Your Edits</span>
+              </div>
+              {Object.values(userEdits)
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .map((touch) => (
+                  <WorkingSetItem
+                    key={touch.filePath}
+                    touch={touch}
+                    variant="userEdit"
+                    projectPath={projectPath}
+                    onOpenFile={onOpenFile}
+                  />
+                ))}
+            </div>
+          )}
+          {/* Agent modified files (blue) */}
           {writeCount > 0 && (
             <div>
               <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
@@ -168,7 +191,7 @@ function WorkingSetSection({
                   <WorkingSetItem
                     key={touch.filePath}
                     touch={touch}
-                    isWrite
+                    variant="agentWrite"
                     projectPath={projectPath}
                     onOpenFile={onOpenFile}
                   />
@@ -188,7 +211,7 @@ function WorkingSetSection({
                   <WorkingSetItem
                     key={touch.filePath}
                     touch={touch}
-                    isWrite={false}
+                    variant="agentRead"
                     projectPath={projectPath}
                     onOpenFile={onOpenFile}
                   />
@@ -205,23 +228,28 @@ function WorkingSetSection({
 
 interface WorkingSetItemProps {
   touch: FileTouch;
-  isWrite: boolean;
+  variant: "userEdit" | "agentWrite" | "agentRead";
   projectPath: string;
   onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
 }
 
-function WorkingSetItem({ touch, isWrite, projectPath, onOpenFile }: WorkingSetItemProps) {
+function WorkingSetItem({ touch, variant, projectPath, onOpenFile }: WorkingSetItemProps) {
   const parts = touch.filePath.split("/");
   const fileName = parts.pop() ?? touch.filePath;
   const dirPath = parts.join("/");
+
+  const borderClass =
+    variant === "userEdit"
+      ? "border-l-2 border-amber-400"
+      : variant === "agentWrite"
+        ? "border-l-2 border-primary"
+        : "";
 
   return (
     <button
       type="button"
       onClick={() => onOpenFile(projectPath, touch.filePath)}
-      className={`flex w-full items-center gap-1.5 py-[2px] pl-5 pr-2 text-[11px] text-text-secondary hover:bg-white/[0.06] transition-colors ${
-        isWrite ? "border-l-2 border-primary" : ""
-      }`}
+      className={`flex w-full items-center gap-1.5 py-[2px] pl-5 pr-2 text-[11px] text-text-secondary hover:bg-white/[0.06] transition-colors ${borderClass}`}
     >
       <span className="truncate">{fileName}</span>
       {dirPath && (

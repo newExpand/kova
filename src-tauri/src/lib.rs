@@ -256,6 +256,7 @@ pub fn run() {
             commands::git::get_git_status,
             commands::git::get_commit_detail,
             commands::git::get_working_changes,
+            commands::git::get_file_diff,
             commands::git::git_stage_files,
             commands::git::git_stage_all,
             commands::git::git_unstage_files,

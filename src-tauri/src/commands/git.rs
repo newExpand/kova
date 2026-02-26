@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::git::{CommitDetail, CommitResult, GitCommitsPage, GitFetchResult, GitGraphData, GitStatus, WorkingChanges};
+use crate::models::git::{CommitDetail, CommitResult, FileDiff, GitCommitsPage, GitFetchResult, GitGraphData, GitStatus, WorkingChanges};
 use crate::services;
 
 #[tauri::command]
@@ -39,6 +39,15 @@ pub async fn get_working_changes(worktree_path: String) -> Result<WorkingChanges
         )));
     }
     services::git::get_working_changes(path)
+}
+
+#[tauri::command]
+pub async fn get_file_diff(
+    worktree_path: String,
+    file_path: String,
+) -> Result<Option<FileDiff>, AppError> {
+    let path = std::path::Path::new(&worktree_path);
+    services::git::get_file_diff(path, &file_path)
 }
 
 #[tauri::command]

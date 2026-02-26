@@ -452,6 +452,13 @@ export async function getWorkingChanges(
   return invoke<WorkingChanges>("get_working_changes", { worktreePath });
 }
 
+export async function getFileDiff(
+  worktreePath: string,
+  filePath: string,
+): Promise<FileDiff | null> {
+  return invoke<FileDiff | null>("get_file_diff", { worktreePath, filePath });
+}
+
 export interface CommitResult {
   shortHash: string;
 }

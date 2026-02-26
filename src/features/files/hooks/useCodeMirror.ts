@@ -7,6 +7,7 @@ import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { languages } from "@codemirror/language-data";
 import { glassDark } from "../themes/glassDark";
 import { importLinksExtension } from "../extensions/importLinks";
+import { diffField, setDiffEffect } from "../extensions/diffDecorations";
 import type { ScrollTarget } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,7 @@ interface UseCodeMirrorOptions {
   onScrollTargetConsumed?: () => void;
   projectPath?: string;
   currentFilePath?: string;
+  diffPatch?: string | null;
 }
 
 // Compartment for dynamic language loading
@@ -73,6 +75,7 @@ export function useCodeMirror({
   onScrollTargetConsumed,
   projectPath,
   currentFilePath,
+  diffPatch,
 }: UseCodeMirrorOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -128,6 +131,7 @@ export function useCodeMirror({
         updateListener,
         languageCompartment.of([]),
         flashField,
+        diffField,
         importLinksExtension(projectPathRef, currentFilePathRef),
         ...glassDark,
       ],
@@ -194,6 +198,13 @@ export function useCodeMirror({
       clearTimeout(timerId);
     };
   }, [scrollTarget]);
+
+  // Sync diff decorations when diffPatch changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setDiffEffect.of(diffPatch ?? null) });
+  }, [diffPatch]);
 
   const focus = useCallback(() => {
     viewRef.current?.focus();

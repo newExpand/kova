@@ -16,7 +16,7 @@ export function FileTabs() {
   if (openFiles.length === 0) return null;
 
   return (
-    <div className="flex h-7 items-center gap-1 border-b border-white/[0.06] px-2">
+    <div className="glass-scrollbar flex h-7 flex-nowrap items-center gap-1 overflow-x-auto border-b border-white/[0.06] px-2">
       {openFiles.map((file) => {
         const isActive = file.path === activeFilePath;
         return (
@@ -24,7 +24,7 @@ export function FileTabs() {
             key={file.path}
             type="button"
             onClick={() => setActiveFile(file.path)}
-            className={`group relative flex h-6 items-center gap-1.5 rounded-md px-2 text-xs transition-colors ${
+            className={`relative flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs transition-colors ${
               isActive ? "text-text" : "text-text-muted hover:text-text-secondary"
             }`}
           >
@@ -56,7 +56,7 @@ export function FileTabs() {
               {file.isDirty ? (
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
               ) : (
-                <X className="h-3 w-3 text-text-muted opacity-0 group-hover:opacity-100 hover:text-text" />
+                <X className="h-3 w-3 text-text-muted opacity-50 hover:opacity-100 hover:text-text" />
               )}
             </span>
           </button>

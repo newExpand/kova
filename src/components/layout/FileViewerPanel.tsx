@@ -3,7 +3,7 @@ import { X, Folder } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project";
 import { useResizeHandle } from "../../hooks/useResizeHandle";
-import { FileTree, FileTabs, FileBreadcrumb, CodeViewer } from "../../features/files";
+import { FileTree, FileTabs, CodeViewer } from "../../features/files";
 
 const MIN_TREE_WIDTH = 160;
 const MAX_TREE_WIDTH = 280;
@@ -87,7 +87,6 @@ export default function FileViewerPanel() {
         {/* Viewer */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <FileTabs />
-          <FileBreadcrumb projectPath={project.path} />
           <CodeViewer projectPath={project.path} />
         </div>
       </div>
