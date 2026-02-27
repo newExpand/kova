@@ -109,3 +109,17 @@ pub fn purge_project(
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn reorder_projects(
+    project_ids: Vec<String>,
+    state: State<'_, Mutex<DbConnection>>,
+) -> Result<(), AppError> {
+    let conn = state
+        .lock()
+        .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
+    project::reorder(&conn.conn, &project_ids).map_err(|e| {
+        tracing::error!("Failed to reorder projects: {}", e);
+        e
+    })
+}

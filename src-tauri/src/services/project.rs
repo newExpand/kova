@@ -5,6 +5,24 @@ use std::path::Path;
 use tracing::info;
 use uuid::Uuid;
 
+/// Shared column list for all project SELECT queries.
+/// Must stay in sync with `row_to_project`.
+const PROJECT_COLUMNS: &str = "id, name, path, color_index, sort_order, is_active, created_at, updated_at";
+
+/// Map a row (selected with `PROJECT_COLUMNS`) into a `Project`.
+fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
+    Ok(Project {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        path: row.get(2)?,
+        color_index: row.get(3)?,
+        sort_order: row.get(4)?,
+        is_active: row.get::<_, i32>(5)? == 1,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
 /// Create a new project
 pub fn create(
     conn: &Connection,
@@ -34,21 +52,32 @@ pub fn create(
         )));
     }
 
+    // Generate UUID
+    let id = Uuid::new_v4().to_string();
+
+    // Wrap purge + shift + insert in a transaction to prevent partial corruption
+    let tx = conn.unchecked_transaction()?;
+
     // Purge any soft-deleted project with the same path
     // (so the UNIQUE constraint on path doesn't block re-registration)
-    conn.execute(
+    tx.execute(
         "DELETE FROM projects WHERE path = ?1 AND is_active = 0",
         [&path_str],
     )?;
 
-    // Generate UUID
-    let id = Uuid::new_v4().to_string();
+    // Shift existing projects down to make room at top
+    tx.execute(
+        "UPDATE projects SET sort_order = sort_order + 1 WHERE is_active = 1",
+        [],
+    )?;
 
-    // Insert project
-    conn.execute(
-        "INSERT INTO projects (id, name, path, color_index) VALUES (?1, ?2, ?3, ?4)",
+    // Insert project at top (sort_order = 0)
+    tx.execute(
+        "INSERT INTO projects (id, name, path, color_index, sort_order) VALUES (?1, ?2, ?3, ?4, 0)",
         [&id, name, &path_str, &color_index.to_string()],
     )?;
+
+    tx.commit()?;
 
     info!("Created project: {} ({})", name, id);
 
@@ -58,23 +87,13 @@ pub fn create(
 
 /// List all active projects
 pub fn list(conn: &Connection) -> Result<Vec<Project>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, name, path, color_index, is_active, created_at, updated_at
-         FROM projects WHERE is_active = 1 ORDER BY created_at DESC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM projects WHERE is_active = 1 ORDER BY sort_order ASC",
+        PROJECT_COLUMNS,
+    ))?;
 
     let projects = stmt
-        .query_map([], |row| {
-            Ok(Project {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                color_index: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? == 1,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
-        })?
+        .query_map([], row_to_project)?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(projects)
@@ -83,20 +102,12 @@ pub fn list(conn: &Connection) -> Result<Vec<Project>, AppError> {
 /// Get a single active project by its canonical path
 pub fn get_by_path(conn: &Connection, path: &str) -> Result<Option<Project>, AppError> {
     match conn.query_row(
-        "SELECT id, name, path, color_index, is_active, created_at, updated_at
-         FROM projects WHERE path = ?1 AND is_active = 1",
+        &format!(
+            "SELECT {} FROM projects WHERE path = ?1 AND is_active = 1",
+            PROJECT_COLUMNS,
+        ),
         [path],
-        |row| {
-            Ok(Project {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                color_index: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? == 1,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
-        },
+        row_to_project,
     ) {
         Ok(project) => Ok(Some(project)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -107,20 +118,9 @@ pub fn get_by_path(conn: &Connection, path: &str) -> Result<Option<Project>, App
 /// Get a single project by ID
 pub fn get(conn: &Connection, id: &str) -> Result<Project, AppError> {
     match conn.query_row(
-        "SELECT id, name, path, color_index, is_active, created_at, updated_at
-         FROM projects WHERE id = ?1",
+        &format!("SELECT {} FROM projects WHERE id = ?1", PROJECT_COLUMNS),
         [id],
-        |row| {
-            Ok(Project {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                color_index: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? == 1,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
-            })
-        },
+        row_to_project,
     ) {
         Ok(project) => Ok(project),
         Err(rusqlite::Error::QueryReturnedNoRows) => {
@@ -199,6 +199,50 @@ pub fn restore(conn: &Connection, id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Reorder projects by setting sort_order based on the given ID sequence.
+/// The input must contain exactly all active project IDs.
+pub fn reorder(conn: &Connection, project_ids: &[String]) -> Result<(), AppError> {
+    // Validate uniqueness: reject duplicate IDs
+    let unique_ids: std::collections::HashSet<&String> = project_ids.iter().collect();
+    if unique_ids.len() != project_ids.len() {
+        return Err(AppError::InvalidInput(
+            "Duplicate project IDs in reorder request".to_string(),
+        ));
+    }
+
+    // Validate exhaustiveness: input must cover all active projects
+    let active_count: i32 = conn.query_row(
+        "SELECT COUNT(*) FROM projects WHERE is_active = 1",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if project_ids.len() != active_count as usize {
+        return Err(AppError::InvalidInput(format!(
+            "Expected {} project IDs, got {}",
+            active_count,
+            project_ids.len()
+        )));
+    }
+
+    let tx = conn.unchecked_transaction()?;
+
+    for (index, id) in project_ids.iter().enumerate() {
+        let count = tx.execute(
+            "UPDATE projects SET sort_order = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?2 AND is_active = 1",
+            rusqlite::params![index as i32, id],
+        )?;
+
+        if count == 0 {
+            return Err(AppError::NotFound(format!("Project not found: {}", id)));
+        }
+    }
+
+    tx.commit()?;
+    info!("Reordered {} projects", project_ids.len());
+    Ok(())
+}
+
 /// Permanently delete a project
 pub fn purge(conn: &Connection, id: &str) -> Result<(), AppError> {
     let count = conn.execute("DELETE FROM projects WHERE id = ?1", [id])?;
@@ -220,6 +264,8 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
         conn.execute_batch(include_str!("../db/migrations/001_initial.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../db/migrations/006_project_sort_order.sql"))
             .unwrap();
         conn
     }
@@ -305,6 +351,50 @@ mod tests {
 
         // Try to get deleted project
         let result = get(&conn, &project.id);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_create_project_sort_order() {
+        let conn = setup_test_db();
+
+        // Create 3 projects — each new one should be at top (sort_order=0)
+        let p1 = create(&conn, "First", "/tmp", 0).unwrap();
+        let p2 = create(&conn, "Second", "/var", 1).unwrap();
+        let p3 = create(&conn, "Third", "/etc", 2).unwrap();
+
+        // list() returns ORDER BY sort_order ASC → newest first
+        let projects = list(&conn).unwrap();
+        assert_eq!(projects.len(), 3);
+        assert_eq!(projects[0].id, p3.id); // Third created = sort_order 0
+        assert_eq!(projects[1].id, p2.id); // Second = sort_order 1
+        assert_eq!(projects[2].id, p1.id); // First = sort_order 2
+    }
+
+    #[test]
+    fn test_reorder_projects() {
+        let conn = setup_test_db();
+
+        let p1 = create(&conn, "A", "/tmp", 0).unwrap();
+        let p2 = create(&conn, "B", "/var", 1).unwrap();
+        let p3 = create(&conn, "C", "/etc", 2).unwrap();
+
+        // Reorder to: p1, p3, p2
+        reorder(&conn, &[p1.id.clone(), p3.id.clone(), p2.id.clone()]).unwrap();
+
+        let projects = list(&conn).unwrap();
+        assert_eq!(projects[0].id, p1.id);
+        assert_eq!(projects[1].id, p3.id);
+        assert_eq!(projects[2].id, p2.id);
+    }
+
+    #[test]
+    fn test_reorder_invalid_id() {
+        let conn = setup_test_db();
+        create(&conn, "A", "/tmp", 0).unwrap();
+
+        let result = reorder(&conn, &["nonexistent-id".to_string()]);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AppError::NotFound(_)));
     }

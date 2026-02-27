@@ -1,6 +1,25 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  defaultDropAnimationSideEffects,
+} from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent, DragOverEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   Plus,
   ChevronLeft,
   ChevronRight,
@@ -48,6 +67,111 @@ interface ContextMenuState {
 
 const DELETE_CONFIRM_MS = 5_000;
 
+/* ── Presentational: shared between SortableProjectItem and DragOverlay ── */
+interface ProjectItemContentProps {
+  project: Project;
+  isActive: boolean;
+  collapsed: boolean;
+  colorVar: string;
+}
+
+function ProjectItemContent({ project, isActive, collapsed, colorVar }: ProjectItemContentProps) {
+  return (
+    <>
+      <span
+        className={cn(
+          "shrink-0 rounded-sm transition-all duration-150",
+          isActive ? "h-3.5 w-3.5" : "h-3 w-3",
+        )}
+        style={{
+          backgroundColor: colorVar,
+          ...(isActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
+        }}
+      />
+      {!collapsed && (
+        <>
+          <span className="truncate flex-1">{project.name}</span>
+          <StatusIndicator active={project.isActive} className="ml-auto" />
+        </>
+      )}
+    </>
+  );
+}
+
+/* ── Sortable wrapper: hooks into @dnd-kit ── */
+interface SortableProjectItemProps {
+  project: Project;
+  isActive: boolean;
+  collapsed: boolean;
+  colorVar: string;
+  index: number;
+  dropPosition?: "above" | "below" | null;
+  onSelect: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onHover: () => void;
+}
+
+function SortableProjectItem({
+  project,
+  isActive,
+  collapsed,
+  colorVar,
+  index,
+  dropPosition,
+  onSelect,
+  onContextMenu,
+  onHover,
+}: SortableProjectItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: project.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    '--item-color': colorVar,
+    '--stagger-index': Math.min(index, 6),
+  } as React.CSSProperties;
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={onSelect}
+      onContextMenu={onContextMenu}
+      onMouseEnter={onHover}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "relative sidebar-item-stagger flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-grab active:cursor-grabbing",
+        isDragging && "border border-dashed border-white/20 rounded-lg",
+        isActive
+          ? "sidebar-item-active text-text"
+          : "sidebar-item-hover text-text-secondary hover:bg-white/[0.08] hover:text-text",
+      )}
+      style={style}
+    >
+      {dropPosition === "above" && (
+        <div className="absolute -top-px left-2 right-2 h-0.5 rounded-full bg-primary z-10" />
+      )}
+      <ProjectItemContent
+        project={project}
+        isActive={isActive}
+        collapsed={collapsed}
+        colorVar={colorVar}
+      />
+      {dropPosition === "below" && (
+        <div className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-primary z-10" />
+      )}
+    </div>
+  );
+}
+
 function Sidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -68,6 +192,60 @@ function Sidebar() {
   const confirmDelete = useProjectStore((s) => s.confirmDelete);
   const isCreating = useProjectStore((s) => s.isCreating);
   const getProjectById = useProjectStore((s) => s.getProjectById);
+  const reorderProjects = useProjectStore((s) => s.reorderProjects);
+
+  // --- @dnd-kit drag state ---
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    setOverId(event.over ? String(event.over.id) : null);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = projects.findIndex((p) => p.id === active.id);
+    const newIndex = projects.findIndex((p) => p.id === String(over.id));
+    if (oldIndex === -1 || newIndex === -1) {
+      console.warn(
+        `[Sidebar] Drag end aborted: project not found in list. ` +
+        `activeId=${String(active.id)}, overId=${String(over.id)}, ` +
+        `projects.length=${projects.length}`,
+      );
+      return;
+    }
+
+    const newOrder = arrayMove(projects, oldIndex, newIndex);
+    reorderProjects(newOrder);
+  }, [projects, reorderProjects]);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+    setOverId(null);
+  }, []);
+
+  const activeProject = useMemo(
+    () => (activeId ? projects.find((p) => p.id === activeId) : null),
+    [activeId, projects],
+  );
+
+  const activeIndex = useMemo(
+    () => (activeId ? projects.findIndex((p) => p.id === activeId) : -1),
+    [activeId, projects],
+  );
 
   // Tmux session state
   const sessions = useTmuxStore((s) => s.sessions);
@@ -344,54 +522,71 @@ function Sidebar() {
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {sidebarMode === "projects" ? (
           /* ───── Project list ───── */
-          <div key="projects" className="sidebar-list-enter-projects space-y-0.5">
-            {projects.map((project, index) => {
-              const colorVar =
-                COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
-              const isActive =
-                selectedId === project.id ||
-                location.pathname.startsWith(`/projects/${project.id}`);
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+              <div key="projects" className="sidebar-list-enter-projects space-y-0.5">
+                {projects.map((project, index) => {
+                  const colorVar =
+                    COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
+                  const isItemActive =
+                    selectedId === project.id ||
+                    location.pathname.startsWith(`/projects/${project.id}`);
 
-              return (
-                <button
-                  key={project.id}
-                  onClick={() => handleSelectProject(project.id)}
-                  onContextMenu={(e) => handleContextMenu(e, project)}
-                  onMouseEnter={preloadTerminal}
-                  className={cn(
-                    "sidebar-item-stagger flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm",
-                    isActive
-                      ? "sidebar-item-active text-text"
-                      : "sidebar-item-hover text-text-secondary hover:bg-white/[0.08] hover:text-text",
-                  )}
-                  style={{
-                    '--item-color': colorVar,
-                    '--stagger-index': Math.min(index, 6),
-                  } as React.CSSProperties}
+                  let dropPosition: "above" | "below" | null = null;
+                  if (activeId && overId === project.id && activeId !== project.id) {
+                    dropPosition = activeIndex < index ? "below" : "above";
+                  }
+
+                  return (
+                    <SortableProjectItem
+                      key={project.id}
+                      project={project}
+                      isActive={isItemActive}
+                      collapsed={collapsed}
+                      colorVar={colorVar}
+                      index={index}
+                      dropPosition={dropPosition}
+                      onSelect={() => handleSelectProject(project.id)}
+                      onContextMenu={(e) => handleContextMenu(e, project)}
+                      onHover={preloadTerminal}
+                    />
+                  );
+                })}
+              </div>
+            </SortableContext>
+
+            {/* Ghost preview — always mounted, children conditional */}
+            <DragOverlay
+              dropAnimation={{
+                duration: 200,
+                easing: "cubic-bezier(0.2, 0, 0, 1)",
+                sideEffects: defaultDropAnimationSideEffects({
+                  styles: { active: { opacity: "0.4" } },
+                }),
+              }}
+            >
+              {activeProject ? (
+                <div
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm bg-surface/90 backdrop-blur-sm border border-white/[0.15] shadow-[0_8px_32px_rgba(0,0,0,0.4)] cursor-grabbing"
+                  style={{ opacity: 0.9 }}
                 >
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-sm transition-all duration-150",
-                      isActive ? "h-3.5 w-3.5" : "h-3 w-3",
-                    )}
-                    style={{
-                      backgroundColor: colorVar,
-                      ...(isActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
-                    }}
+                  <ProjectItemContent
+                    project={activeProject}
+                    isActive={false}
+                    collapsed={collapsed}
+                    colorVar={COLOR_PALETTE[activeProject.colorIndex] ?? COLOR_PALETTE[0]}
                   />
-                  {!collapsed && (
-                    <>
-                      <span className="truncate flex-1">{project.name}</span>
-                      <StatusIndicator
-                        active={project.isActive}
-                        className="ml-auto"
-                      />
-                    </>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         ) : (
           /* ───── Sessions list ───── */
           <div key="sessions" className="sidebar-list-enter-sessions space-y-0.5">

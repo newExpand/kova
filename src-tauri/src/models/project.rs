@@ -8,6 +8,7 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub color_index: i32,
+    pub sort_order: i32,
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,

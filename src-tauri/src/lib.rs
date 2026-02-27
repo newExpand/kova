@@ -219,6 +219,7 @@ pub fn run() {
             commands::project::delete_project,
             commands::project::restore_project,
             commands::project::purge_project,
+            commands::project::reorder_projects,
             // Hooks commands
             commands::hooks::inject_project_hooks,
             commands::hooks::remove_project_hooks,

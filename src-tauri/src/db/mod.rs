@@ -142,6 +142,46 @@ impl DbConnection {
             info!("Migration 005 already applied, skipping");
         }
 
+        // Check if migration 006 has been applied
+        let version_6: Option<i32> = conn
+            .query_row(
+                "SELECT version FROM _migrations WHERE version = 6",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if version_6.is_none() {
+            info!("Running migration 006_project_sort_order.sql");
+
+            // Phase 1: DDL — Add column if not already present (idempotent)
+            // SQLite has no IF NOT EXISTS for ADD COLUMN, so check manually
+            let has_sort_order = conn
+                .prepare("SELECT sort_order FROM projects LIMIT 0")
+                .is_ok();
+
+            if !has_sort_order {
+                conn.execute_batch(
+                    "ALTER TABLE projects ADD COLUMN sort_order INTEGER DEFAULT 0;",
+                )?;
+            }
+
+            // Phase 2: DML — Backfill sort_order based on created_at DESC
+            conn.execute_batch(
+                "UPDATE projects SET sort_order = (
+                    SELECT COUNT(*) FROM projects AS p2
+                    WHERE p2.is_active = 1
+                      AND (p2.created_at > projects.created_at
+                           OR (p2.created_at = projects.created_at AND p2.id < projects.id))
+                ) WHERE is_active = 1;",
+            )?;
+
+            conn.execute("INSERT INTO _migrations (version) VALUES (6)", [])?;
+            info!("Migration 006 applied successfully");
+        } else {
+            info!("Migration 006 already applied, skipping");
+        }
+
         Ok(())
     }
 }

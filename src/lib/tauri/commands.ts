@@ -10,6 +10,7 @@ export interface Project {
   name: string;
   path: string;
   colorIndex: number;
+  sortOrder: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -238,6 +239,10 @@ export async function restoreProject(id: string): Promise<void> {
 
 export async function purgeProject(id: string): Promise<void> {
   return invoke<void>("purge_project", { id });
+}
+
+export async function reorderProjects(projectIds: string[]): Promise<void> {
+  return invoke<void>("reorder_projects", { projectIds });
 }
 
 // ---------------------------------------------------------------------------

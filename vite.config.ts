@@ -41,7 +41,10 @@ export default defineConfig(async () => ({
     },
   },
   optimizeDeps: {
-    include: ["@codemirror/state", "@codemirror/view", "@codemirror/language"],
+    include: [
+      "@codemirror/state", "@codemirror/view", "@codemirror/language",
+      "@dnd-kit/core", "@dnd-kit/sortable",
+    ],
   },
   test: {
     globals: true,

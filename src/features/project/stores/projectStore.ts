@@ -51,6 +51,9 @@ interface ProjectActions {
   createProject: (input: CreateProjectInput) => Promise<Project>;
   updateProject: (id: string, input: UpdateProjectInput) => Promise<void>;
 
+  // Reorder
+  reorderProjects: (orderedProjects: Project[]) => void;
+
   // Optimistic delete + undo
   deleteProject: (id: string) => void;
   undoDelete: (id: string) => Promise<void>;
@@ -128,7 +131,7 @@ export const useProjectStore = create<ProjectStore>()(
           );
           set(
             (state) => ({
-              projects: [...state.projects, project],
+              projects: [project, ...state.projects],
               isCreating: false,
             }),
             undefined,
@@ -164,6 +167,48 @@ export const useProjectStore = create<ProjectStore>()(
           set({ error: message }, undefined, "updateProject/error");
           throw err;
         }
+      },
+
+      // -- Reorder ----------------------------------------------------------
+
+      reorderProjects: (orderedProjects) => {
+        const previousProjects = get().projects;
+
+        // Preserve projects not in the reordered set (inactive, mid-deletion, etc.)
+        const reorderedIds = new Set(orderedProjects.map((p) => p.id));
+        const preserved = previousProjects.filter(
+          (p) => !reorderedIds.has(p.id),
+        );
+
+        set(
+          { projects: [...orderedProjects, ...preserved] },
+          undefined,
+          "reorderProjects",
+        );
+
+        // Called once on drop — no debouncing needed
+        const ids = orderedProjects.map((p) => p.id);
+        commands.reorderProjects(ids).catch(async (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("[ProjectStore] Reorder failed, re-fetching:", message);
+
+          // Re-fetch from server to avoid stale snapshot overwriting concurrent mutations
+          try {
+            const freshProjects = await commands.listProjects();
+            set(
+              { projects: freshProjects, error: `Failed to save project order: ${message}` },
+              undefined,
+              "reorderProjects/rollback",
+            );
+          } catch {
+            // If re-fetch also fails, fall back to stale snapshot as last resort
+            set(
+              { projects: previousProjects, error: `Failed to save project order: ${message}` },
+              undefined,
+              "reorderProjects/rollback-stale",
+            );
+          }
+        });
       },
 
       // -- Optimistic delete + undo ----------------------------------------
