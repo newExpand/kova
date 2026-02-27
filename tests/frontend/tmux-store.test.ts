@@ -275,9 +275,9 @@ describe("TmuxStore", () => {
     });
   });
 
-  // ── Feature: Project/External 분리 필터링 ──────────────────────────
+  // ── Feature: 세션 ownership 필터링 ──────────────────────────────────
   describe("session filtering", () => {
-    it("should separate project and external sessions", async () => {
+    it("should distinguish app and external sessions by ownership", async () => {
       mockCommands.listTmuxSessionsWithOwnership.mockResolvedValue([
         MOCK_APP_SESSION,
         MOCK_EXTERNAL_SESSION,

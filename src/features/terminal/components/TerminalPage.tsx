@@ -273,6 +273,16 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     useTerminalStore.getState().setStatus(storeKey, "idle");
   }, [storeKey]);
 
+  // --- Auto-recover when re-activated after Kill All ---
+  const prevActive = useRef(false);
+  useEffect(() => {
+    if (isActive && !prevActive.current && status === "error") {
+      console.info(`[TerminalPage] Auto-recovering '${storeKey}' from error state`);
+      handleRetry();
+    }
+    prevActive.current = isActive;
+  }, [isActive, status, handleRetry, storeKey]);
+
   // --- Auto-reconnect on session disconnect ---
   const consecutiveDisconnects = useRef(0);
 
@@ -348,11 +358,15 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         }
       };
 
-      executeAction().catch((e) =>
-        console.error(`Action ${action} failed:`, e),
-      );
-
-      refocusTerminal();
+      executeAction()
+        .catch((e) => {
+          console.error(`Action ${action} failed:`, e);
+          useTerminalStore.getState().setError(
+            storeKey,
+            `${action} 실패: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        })
+        .finally(() => refocusTerminal());
     },
     [isSshMode, pendingAction, activeConfig?.sessionName, refocusTerminal],
   );

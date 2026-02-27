@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project/stores/projectStore";
-import { useTmuxStore, useSessionClassification } from "../../features/tmux";
+import { useTmuxStore } from "../../features/tmux";
 import { useSshStore } from "../../features/ssh";
 import { SshConnectionForm } from "../../features/ssh";
 import { killTmuxSession, checkSshRemoteTmux } from "../../lib/tauri/commands";
@@ -252,8 +252,6 @@ function Sidebar() {
   const isLoadingSessions = useTmuxStore((s) => s.isLoading);
   const fetchSessions = useTmuxStore((s) => s.fetchSessions);
 
-  const { appSessions, externalSessions } = useSessionClassification(sessions);
-
   // SSH state — individual selectors to avoid re-render loops
   const sshConnections = useSshStore((s) => s.connections);
   const sshError = useSshStore((s) => s.error);
@@ -269,6 +267,7 @@ function Sidebar() {
   const [editTarget, setEditTarget] = useState<Project | null>(null);
   const [killTarget, setKillTarget] = useState<SessionInfo | null>(null);
   const [isKilling, setIsKilling] = useState(false);
+  const [killError, setKillError] = useState<string | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // SSH sidebar state
@@ -296,8 +295,8 @@ function Sidebar() {
                 useSshStore.getState().cacheTmuxCheck(conn.id, result);
               }
             })
-            .catch(() => {
-              // Silent: probe failure doesn't affect UX
+            .catch((err) => {
+              console.warn(`[SSH] Pre-warm tmux check failed for ${conn.id}:`, err);
             });
         }
       })
@@ -361,12 +360,17 @@ function Sidebar() {
   const handleKillSession = async () => {
     if (!killTarget) return;
     setIsKilling(true);
+    setKillError(null);
     try {
       await killTmuxSession(killTarget.name);
       await fetchSessions();
+      setKillTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Sidebar] Failed to kill session '${killTarget.name}':`, err);
+      setKillError(`'${killTarget.name}' 종료 실패: ${message}`);
     } finally {
       setIsKilling(false);
-      setKillTarget(null);
     }
   };
 
@@ -596,12 +600,7 @@ function Sidebar() {
               </p>
             )}
 
-            {appSessions.length > 0 && !collapsed && (
-              <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                App Sessions
-              </p>
-            )}
-            {appSessions.map((session, index) => {
+            {sessions.map((session, index) => {
               const projName = session.projectId
                 ? getProjectById(session.projectId)?.name
                 : null;
@@ -637,43 +636,6 @@ function Sidebar() {
                 </div>
               );
             })}
-
-            {externalSessions.length > 0 && !collapsed && (
-              <p className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-                External Sessions
-              </p>
-            )}
-            {externalSessions.map((session, exIdx) => (
-              <div
-                key={session.name}
-                className="sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text"
-                style={{ '--stagger-index': Math.min(appSessions.length + exIdx, 6) } as React.CSSProperties}
-              >
-                <span
-                  className={cn(
-                    "h-2 w-2 shrink-0 rounded-full",
-                    session.attached ? "bg-success" : "bg-text-muted",
-                  )}
-                />
-                {!collapsed && (
-                  <>
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{session.name}</span>
-                      <span className="block truncate text-[10px] text-text-muted">
-                        {session.windows}w
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setKillTarget(session)}
-                      className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted hover:text-danger group-hover:flex"
-                      aria-label={`Kill session ${session.name}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
           </div>
         )}
       </nav>
@@ -910,7 +872,10 @@ function Sidebar() {
       <Dialog
         open={!!killTarget}
         onOpenChange={(open) => {
-          if (!open) setKillTarget(null);
+          if (!open) {
+            setKillTarget(null);
+            setKillError(null);
+          }
         }}
       >
         <DialogContent>
@@ -921,6 +886,9 @@ function Sidebar() {
               세션을 종료하시겠습니까?
             </DialogDescription>
           </DialogHeader>
+          {killError && (
+            <p className="text-sm text-danger">{killError}</p>
+          )}
           <DialogFooter>
             <Button
               variant="outline"

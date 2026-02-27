@@ -3,7 +3,6 @@ import { Monitor, RefreshCw, Trash2, X } from "lucide-react";
 import { useTmuxStore } from "../stores/tmuxStore";
 import { useProjectStore } from "../../project";
 import { useTerminalStore } from "../../terminal";
-import { useSessionClassification } from "../hooks/useSessionClassification";
 import { killTmuxSession } from "../../../lib/tauri/commands";
 import type { SessionInfo } from "../types";
 import { Button } from "../../../components/ui/button";
@@ -152,8 +151,6 @@ function SessionManagerPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  const { appSessions, externalSessions } = useSessionClassification(sessions);
-
   const getProjectName = useCallback(
     (projectId: string | null): string | null => {
       if (!projectId) return null;
@@ -167,14 +164,14 @@ function SessionManagerPage() {
     setKillAllError(null);
     try {
       // Set error state on matching terminals FIRST to prevent auto-reconnect
-      for (const session of appSessions) {
+      for (const session of sessions) {
         if (session.projectId) {
           useTerminalStore.getState().setError(session.projectId, "Session was terminated.");
         }
       }
       // Kill each session individually
       const failed: string[] = [];
-      for (const session of appSessions) {
+      for (const session of sessions) {
         try {
           await killTmuxSession(session.name);
         } catch (err) {
@@ -182,7 +179,9 @@ function SessionManagerPage() {
           failed.push(session.name);
           // Revert error state for failed kills — session is still alive
           if (session.projectId) {
-            useTerminalStore.getState().setStatus(session.projectId, "disconnected");
+            const store = useTerminalStore.getState();
+            store.setStatus(session.projectId, "disconnected");
+            store.setSession(session.projectId, session.name);
           }
         }
       }
@@ -190,10 +189,12 @@ function SessionManagerPage() {
         await fetchSessions();
       } catch (err) {
         console.error("[Kill All] Failed to refresh session list:", err);
+        setKillAllError("세션이 종료되었으나 목록 새로고침에 실패했습니다. Refresh를 눌러주세요.");
+        return;
       }
       if (failed.length > 0) {
         setKillAllError(
-          `${appSessions.length - failed.length}개 종료됨, ${failed.length}개 실패: ${failed.join(", ")}`,
+          `${sessions.length - failed.length}개 종료됨, ${failed.length}개 실패: ${failed.join(", ")}`,
         );
         return;
       }
@@ -237,7 +238,7 @@ function SessionManagerPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {appSessions.length > 0 && (
+          {sessions.length > 0 && (
             <Button
               variant="destructive"
               size="sm"
@@ -265,14 +266,8 @@ function SessionManagerPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <SessionGroup
-          title="App-Managed Sessions"
-          sessions={appSessions}
-          getProjectName={getProjectName}
-          onKill={setKillTarget}
-        />
-        <SessionGroup
-          title="External Sessions"
-          sessions={externalSessions}
+          title="Sessions"
+          sessions={sessions}
           getProjectName={getProjectName}
           onKill={setKillTarget}
         />
@@ -334,9 +329,9 @@ function SessionManagerPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Kill All App Sessions</DialogTitle>
+            <DialogTitle>Kill All Sessions</DialogTitle>
             <DialogDescription>
-              {appSessions.length}개의 앱 관리 세션을 모두 종료하시겠습니까? 외부 세션은 영향받지 않습니다.
+              {sessions.length}개의 세션을 모두 종료하시겠습니까?
             </DialogDescription>
           </DialogHeader>
           {killAllError && (
@@ -360,7 +355,7 @@ function SessionManagerPage() {
               onClick={handleKillAllConfirm}
               disabled={isKillingAll}
             >
-              {isKillingAll ? "종료 중..." : `${appSessions.length}개 세션 종료`}
+              {isKillingAll ? "종료 중..." : `${sessions.length}개 세션 종료`}
             </Button>
           </DialogFooter>
         </DialogContent>

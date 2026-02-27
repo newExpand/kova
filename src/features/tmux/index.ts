@@ -16,4 +16,3 @@ export { SessionManagerPage } from "./components/SessionManagerPage";
 
 // Hooks
 export { useTmuxSessions } from "./hooks/useTmuxSessions";
-export { useSessionClassification } from "./hooks/useSessionClassification";
