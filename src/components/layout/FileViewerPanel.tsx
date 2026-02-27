@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { X, Folder } from "lucide-react";
+import { X, Folder, Search } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project";
 import { useResizeHandle } from "../../hooks/useResizeHandle";
@@ -11,6 +11,7 @@ const DEFAULT_TREE_WIDTH = 200;
 
 export default function FileViewerPanel() {
   const close = useAppStore((s) => s.setFileViewerPanelOpen);
+  const setFileFinderActive = useAppStore((s) => s.setFileFinderActive);
   const project = useProjectStore((s) => {
     const id = s.selectedId;
     return id ? s.projects.find((p) => p.id === id) : undefined;
@@ -57,6 +58,14 @@ export default function FileViewerPanel() {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setFileFinderActive(true)}
+            className="rounded p-1 text-text-muted hover:bg-white/[0.06] hover:text-text transition-colors"
+            title="Find file (⌘P)"
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
           <span className="text-[10px] text-text-muted">⌘\</span>
           <button
             type="button"

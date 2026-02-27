@@ -1,6 +1,7 @@
 use crate::errors::AppError;
-use crate::models::files::{FileContent, FileEntry};
+use crate::models::files::{FileContent, FileEntry, FileSearchResult};
 use crate::services;
+use tracing::error;
 
 #[tauri::command]
 pub async fn resolve_import_path(
@@ -34,4 +35,20 @@ pub async fn write_file(
     content: String,
 ) -> Result<(), AppError> {
     services::file_service::write_file(&project_path, &relative_path, &content)
+}
+
+#[tauri::command]
+pub async fn search_project_files(
+    project_path: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<FileSearchResult>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::file_service::search_files(&project_path, &query, limit.unwrap_or(50))
+    })
+    .await
+    .map_err(|e| {
+        error!("search_project_files task panicked: {}", e);
+        AppError::Internal(format!("File search failed unexpectedly: {}", e))
+    })?
 }

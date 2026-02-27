@@ -1,5 +1,6 @@
 use crate::errors::AppError;
-use crate::models::files::{FileContent, FileEntry};
+use crate::models::files::{FileContent, FileEntry, FileSearchResult};
+use ignore::WalkBuilder;
 use std::path::Path;
 use tracing::warn;
 
@@ -368,4 +369,168 @@ pub fn detect_language(path: &str) -> String {
         _ => "text",
     }
     .to_string()
+}
+
+/// Maximum files to collect during recursive search
+const MAX_SEARCH_FILES: usize = 50_000;
+
+/// Collect all file paths under `project_root` using `ignore` crate.
+/// Automatically respects `.gitignore`, skips hidden files, and caps at `MAX_SEARCH_FILES`.
+fn collect_all_files(project_root: &Path) -> Result<Vec<String>, AppError> {
+    let mut files = Vec::with_capacity(8192);
+    let mut error_count: usize = 0;
+
+    let walker = WalkBuilder::new(project_root)
+        .hidden(true)       // skip hidden files/dirs
+        .git_ignore(true)   // respect .gitignore
+        .git_global(true)   // respect global gitignore
+        .git_exclude(true)  // respect .git/info/exclude
+        .build();
+
+    for entry in walker {
+        if files.len() >= MAX_SEARCH_FILES {
+            warn!("File search capped at {} files for {:?}", MAX_SEARCH_FILES, project_root);
+            break;
+        }
+
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Skipping unreadable entry during search: {}", e);
+                error_count += 1;
+                continue;
+            }
+        };
+
+        // Skip directories — we only want files
+        let Some(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            continue;
+        }
+
+        let rel = match entry.path().strip_prefix(project_root) {
+            Ok(r) => r.to_string_lossy().to_string(),
+            Err(_) => {
+                warn!("Path {:?} outside project root; skipping", entry.path());
+                continue;
+            }
+        };
+
+        files.push(rel);
+    }
+
+    if files.is_empty() && error_count > 0 {
+        return Err(AppError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Failed to read project files ({} errors)", error_count),
+        )));
+    }
+
+    Ok(files)
+}
+
+/// Compute a fuzzy match score for `query` against `path`.
+/// Returns None if query chars are not a subsequence of path.
+fn fuzzy_score(query: &str, path: &str) -> Option<i32> {
+    let query_lower_str = query.to_lowercase();
+    let query_lower: Vec<char> = query_lower_str.chars().collect();
+    let path_chars: Vec<char> = path.chars().collect();
+    let path_lower: Vec<char> = path.to_lowercase().chars().collect();
+
+    if query_lower.is_empty() {
+        return None;
+    }
+
+    let mut score: i32 = 0;
+    let mut qi = 0;
+    let mut prev_match_idx: Option<usize> = None;
+
+    for (pi, &pc) in path_lower.iter().enumerate() {
+        if qi < query_lower.len() && pc == query_lower[qi] {
+            score += 1;
+
+            // Bonus: match at start of path segment (after '/')
+            if pi == 0 || path_chars[pi - 1] == '/' {
+                score += 5;
+            }
+
+            // Bonus: consecutive matches
+            if let Some(prev) = prev_match_idx {
+                if pi == prev + 1 {
+                    score += 3;
+                }
+            }
+
+            // Bonus: CamelCase boundary
+            if pi > 0 && path_chars[pi].is_uppercase() && path_chars[pi - 1].is_lowercase() {
+                score += 3;
+            }
+
+            prev_match_idx = Some(pi);
+            qi += 1;
+        }
+    }
+
+    // All query chars must match
+    if qi < query_lower.len() {
+        return None;
+    }
+
+    // Bonus: filename match
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    let basename_lower = basename.to_lowercase();
+    if basename_lower.starts_with(&query_lower_str) {
+        score += 18;
+    } else if basename_lower.contains(&query_lower_str) {
+        score += 10;
+    }
+
+    // Penalty: longer paths rank lower
+    score -= (path.len() as i32) / 10;
+
+    Some(score)
+}
+
+/// Search for files matching a fuzzy query within a project directory.
+pub fn search_files(
+    project_path: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<FileSearchResult>, AppError> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
+        AppError::InvalidInput(format!("Invalid project path: {}", e))
+    })?;
+
+    let all_files = collect_all_files(&project_root)?;
+
+    let mut scored: Vec<(String, i32)> = all_files
+        .into_iter()
+        .filter_map(|path| fuzzy_score(query, &path).map(|s| (path, s)))
+        .collect();
+
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.truncate(limit);
+
+    let results = scored
+        .into_iter()
+        .map(|(path, score)| {
+            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            let extension = Path::new(&name)
+                .extension()
+                .map(|e| e.to_string_lossy().to_string());
+            FileSearchResult {
+                path,
+                name,
+                extension,
+                score,
+            }
+        })
+        .collect();
+
+    Ok(results)
 }

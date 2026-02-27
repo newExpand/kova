@@ -20,3 +20,12 @@ pub struct FileContent {
     pub size: u64,
     pub is_binary: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSearchResult {
+    pub path: String,
+    pub name: String,
+    pub extension: Option<String>,
+    pub score: i32,
+}

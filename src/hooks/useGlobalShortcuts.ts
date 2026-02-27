@@ -30,6 +30,17 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       setCommandPaletteOpen((prev) => !prev);
     }
 
+    // Cmd+P — Focus file search input (opens panel if needed)
+    if (e.metaKey && e.key === "p") {
+      const hasProject = !!useProjectStore.getState().selectedId;
+      if (hasProject) {
+        e.preventDefault();
+        const store = useAppStore.getState();
+        store.setFileViewerPanelOpen(true);
+        store.setFileFinderActive(true);
+      }
+    }
+
     // Cmd+N — New project (dispatches custom event for Sidebar to handle)
     if (e.metaKey && e.key === "n") {
       e.preventDefault();

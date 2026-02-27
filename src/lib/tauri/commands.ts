@@ -868,6 +868,13 @@ export interface FileContent {
   isBinary: boolean;
 }
 
+export interface FileSearchResult {
+  path: string;
+  name: string;
+  extension: string | null;
+  score: number;
+}
+
 // ---------------------------------------------------------------------------
 // File commands
 // ---------------------------------------------------------------------------
@@ -903,6 +910,18 @@ export async function resolveImportPath(
     projectPath,
     currentFile,
     importPath,
+  });
+}
+
+export async function searchProjectFiles(
+  projectPath: string,
+  query: string,
+  limit?: number,
+): Promise<FileSearchResult[]> {
+  return invoke<FileSearchResult[]>("search_project_files", {
+    projectPath,
+    query,
+    limit,
   });
 }
 
