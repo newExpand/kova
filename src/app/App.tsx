@@ -12,6 +12,7 @@ import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
 import { useAppStore } from "../stores/appStore";
+import { useAgentFileTrackingStore } from "../features/files";
 import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
 
@@ -84,6 +85,10 @@ function AppShell() {
     // Load core data on app start (survives page reloads)
     fetchProjects();
     fetchSettings();
+    useAgentFileTrackingStore
+      .getState()
+      .restoreWorkingSets()
+      .catch((err) => console.error("[App] failed to restore working sets:", err));
     checkTmuxAvailable()
       .then(setTmuxAvailable)
       .catch(() => setTmuxAvailable(false));

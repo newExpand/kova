@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { normalizePathKey } from "../../git";
+import { getSetting, setSetting } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -144,6 +145,7 @@ interface AgentFileTrackingActions {
   trackUserEdit: (projectPath: string, relativePath: string) => void;
   removeUserEdit: (projectPath: string, relativePath: string) => void;
   clearProject: (projectPath: string) => void;
+  restoreWorkingSets: () => Promise<void>;
   // Reset
   reset: () => void;
 }
@@ -158,6 +160,35 @@ const initialState: AgentFileTrackingState = {
   workingSets: {},
   recentFlashes: {},
 };
+
+// ---------------------------------------------------------------------------
+// Persistence (debounced, uses store via getState after initialization)
+// ---------------------------------------------------------------------------
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const PERSIST_DEBOUNCE_MS = 2_000;
+const PERSIST_STORAGE_KEY = "working_sets";
+
+function persistWorkingSets(): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(async () => {
+    try {
+      const { workingSets } = useAgentFileTrackingStore.getState();
+      const cleaned: Record<string, ProjectWorkingSet> = {};
+      const now = Date.now();
+      for (const [key, ws] of Object.entries(workingSets)) {
+        const writes = filterDecayed(ws.writes, WRITE_DECAY_MS, now);
+        const userEdits = ws.userEdits ?? {};
+        if (Object.keys(writes).length > 0 || Object.keys(userEdits).length > 0) {
+          cleaned[key] = { writes, userEdits };
+        }
+      }
+      await setSetting(PERSIST_STORAGE_KEY, JSON.stringify(cleaned));
+    } catch (err) {
+      console.error("[agentFileTracking] persist failed:", err);
+    }
+  }, PERSIST_DEBOUNCE_MS);
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -249,6 +280,8 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
           });
         }, FLASH_DURATION_MS),
       );
+
+      persistWorkingSets();
     },
 
     trackUserEdit: (projectPath, relativePath) => {
@@ -275,6 +308,8 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
           },
         };
       });
+
+      persistWorkingSets();
     },
 
     removeUserEdit: (projectPath, relativePath) => {
@@ -290,6 +325,8 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
           },
         };
       });
+
+      persistWorkingSets();
     },
 
     clearProject: (projectPath) => {
@@ -321,11 +358,69 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
         }
         return { workingSets: restWorkingSets, recentFlashes: cleanedFlashes };
       });
+
+      persistWorkingSets();
+    },
+
+    restoreWorkingSets: async () => {
+      // Cancel any pending persist that might overwrite restored data
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+
+      try {
+        const raw = await getSetting(PERSIST_STORAGE_KEY, "{}");
+        const parsed: unknown = JSON.parse(raw);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
+
+        const now = Date.now();
+        const restored: Record<string, ProjectWorkingSet> = {};
+        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof value !== "object" || value === null) continue;
+          const ws = value as Record<string, unknown>;
+
+          const rawWrites = typeof ws.writes === "object" && ws.writes !== null && !Array.isArray(ws.writes)
+            ? (ws.writes as Record<string, FileTouch>)
+            : {};
+          const rawEdits = typeof ws.userEdits === "object" && ws.userEdits !== null && !Array.isArray(ws.userEdits)
+            ? (ws.userEdits as Record<string, FileTouch>)
+            : {};
+
+          const writes = filterDecayed(rawWrites, WRITE_DECAY_MS, now);
+          const userEdits = rawEdits;
+          if (Object.keys(writes).length > 0 || Object.keys(userEdits).length > 0) {
+            restored[key] = { writes, userEdits };
+          }
+        }
+
+        // Merge with current state to preserve any writes that arrived during async restore
+        set((state) => {
+          const merged = { ...restored };
+          for (const [key, current] of Object.entries(state.workingSets)) {
+            if (merged[key]) {
+              merged[key] = {
+                writes: { ...merged[key].writes, ...current.writes },
+                userEdits: { ...merged[key].userEdits, ...current.userEdits },
+              };
+            } else {
+              merged[key] = current;
+            }
+          }
+          return { workingSets: merged };
+        });
+      } catch (err) {
+        console.error("[agentFileTracking] restore failed:", err);
+      }
     },
 
     // -- Reset --
 
     reset: () => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
       for (const timer of flashTimers.values()) clearTimeout(timer);
       flashTimers.clear();
       set(initialState);
