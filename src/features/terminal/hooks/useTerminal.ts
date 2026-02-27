@@ -517,7 +517,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             ";", "set-option", "-as", "terminal-features", ",xterm-256color:RGB",
             // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
             // NOTE: These copy-mode bindings are also configured in
-            // src-tauri/src/services/tmux.rs create_session(). Keep both in sync.
+            // src-tauri/src/services/tmux.rs create_session() and ssh.rs build_remote_tmux_command().
+            // Keep all three in sync.
             ";", "bind-key", "-T", "copy-mode", "MouseDown1Pane",
                 "select-pane", "-t", "=", "\\;", "send-keys", "-X", "clear-selection",
             ";", "bind-key", "-T", "copy-mode-vi", "MouseDown1Pane",
@@ -528,11 +529,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             ";", "bind-key", "-T", "copy-mode-vi", "MouseUp1Pane",
                 "send-keys", "-X", "cancel",
             // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
-            // (because set-clipboard is on), stay in copy mode (scroll preserved).
+            // (because set-clipboard is on), then exit copy mode to clear cursor remnant.
             ";", "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-                "send-keys", "-X", "copy-selection",
+                "send-keys", "-X", "copy-selection-and-cancel",
             ";", "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-                "send-keys", "-X", "copy-selection",
+                "send-keys", "-X", "copy-selection-and-cancel",
             // Cancel copy mode on the previously-active pane when switching panes.
             ";", "set-hook", "window-pane-changed",
                 "send-keys -t '{last}' -X cancel",

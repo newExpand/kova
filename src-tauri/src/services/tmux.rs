@@ -253,7 +253,8 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
 
     // MouseDown1Pane: focus clicked pane + clear selection (preserve scroll position for drag).
     // NOTE: These copy-mode bindings are also configured in
-    // src/features/terminal/hooks/useTerminal.ts. Keep both in sync.
+    // src/features/terminal/hooks/useTerminal.ts and ssh.rs build_remote_tmux_command().
+    // Keep all three in sync.
     for table in &["copy-mode", "copy-mode-vi"] {
         run_tmux_nonfatal(
             &["bind-key", "-T", table, "MouseDown1Pane",
@@ -272,10 +273,10 @@ pub fn create_session(name: &str, cols: u16, rows: u16) -> Result<(), AppError> 
     }
 
     // MouseDragEnd1Pane: copy text to tmux paste buffer, emit OSC 52
-    // (because set-clipboard is on), stay in copy mode (scroll preserved).
+    // (because set-clipboard is on), then exit copy mode to clear cursor remnant.
     for table in &["copy-mode", "copy-mode-vi"] {
         run_tmux_nonfatal(
-            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection"],
+            &["bind-key", "-T", table, "MouseDragEnd1Pane", "send-keys", "-X", "copy-selection-and-cancel"],
             &format!("bind MouseDragEnd1Pane ({})", table), name,
         )?;
     }

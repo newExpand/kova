@@ -487,7 +487,8 @@ pub fn check_remote_tmux(connection: &SshConnection) -> Result<Option<bool>, App
 ///   `\;`   → remote shell passes `;` to tmux → top-level command separator
 ///   `'\;'` → remote shell passes `\;` literally → bind-key inner command separator
 ///
-/// NOTE: These settings mirror `create_session()` in tmux.rs. Keep both in sync.
+/// NOTE: These settings mirror `create_session()` in tmux.rs and the inline tmux args
+/// in src/features/terminal/hooks/useTerminal.ts. Keep all three in sync.
 fn build_remote_tmux_command(session_name: &str) -> String {
     format!(
         concat!(
@@ -504,9 +505,9 @@ fn build_remote_tmux_command(session_name: &str) -> String {
             " \\; bind-key -T copy-mode-vi MouseUp1Pane",
             " send-keys -X cancel",
             " \\; bind-key -T copy-mode MouseDragEnd1Pane",
-            " send-keys -X copy-selection",
+            " send-keys -X copy-selection-and-cancel",
             " \\; bind-key -T copy-mode-vi MouseDragEnd1Pane",
-            " send-keys -X copy-selection",
+            " send-keys -X copy-selection-and-cancel",
             " \\; set-hook window-pane-changed",
             " \"send-keys -t '{{last}}' -X cancel\"",
         ),
