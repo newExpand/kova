@@ -41,7 +41,6 @@ const AGENT_ACTIVITY_TYPES = new Set([
 ]);
 
 // Tools whose PostToolUse events carry file_path for tracking
-const FILE_TRACKING_TOOLS = new Set(["Read", "Edit", "Write"]);
 const FILE_WRITE_TOOLS = new Set(["Edit", "Write"]);
 
 // ---------------------------------------------------------------------------
@@ -53,7 +52,7 @@ function handleFileTracking(hookEvent: HookEvent): void {
     if (hookEvent.eventType !== "PostToolUse") return;
 
     const toolName = getPayloadString(hookEvent.payload, "tool_name");
-    if (!toolName || !FILE_TRACKING_TOOLS.has(toolName)) return;
+    if (!toolName || !FILE_WRITE_TOOLS.has(toolName)) return;
 
     // Extract tool_input object, then file_path from it
     const toolInput = getPayloadObject(hookEvent.payload, "tool_input");
@@ -68,15 +67,13 @@ function handleFileTracking(hookEvent: HookEvent): void {
     const relativePath = resolveCanonicalFilePath(absolutePath, projectPath);
     if (!relativePath) return;
 
-    const isWrite = FILE_WRITE_TOOLS.has(toolName);
-
     // 1. Track in agent file tracking store
     useAgentFileTrackingStore
       .getState()
-      .trackFileTouch(projectPath, relativePath, toolName, isWrite);
+      .trackAgentWrite(projectPath, relativePath, toolName);
 
     // 2. Auto-sync: open file in viewer when Edit/Write and panel is visible
-    if (isWrite) {
+    {
       const isFileViewerOpen = useAppStore.getState().isFileViewerPanelOpen;
       if (isFileViewerOpen) {
         // Extract new_string for Edit tool to find the modified line

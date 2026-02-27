@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, X, ChevronRight, Pencil, Eye, FileCode, FileJson, FileText, File, Hash } from "lucide-react";
+import { Search, X, ChevronRight, Pencil, FileCode, FileJson, FileText, File, Hash } from "lucide-react";
 import { useFileStore } from "../stores/fileStore";
 import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
 import { useAppStore } from "../../../stores/appStore";
@@ -126,7 +126,6 @@ export function FileTree({ projectPath }: FileTreeProps) {
 
   const hasWorkingSet =
     Object.keys(workingSet.writes).length +
-    Object.keys(workingSet.reads).length +
     Object.keys(workingSet.userEdits).length > 0;
 
   return (
@@ -271,9 +270,8 @@ function WorkingSetSection({
   onOpenFile,
 }: WorkingSetSectionProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { writes, reads, userEdits } = workingSet;
+  const { writes, userEdits } = workingSet;
   const writeCount = Object.keys(writes).length;
-  const readCount = Object.keys(reads).length;
   const userEditCount = Object.keys(userEdits).length;
 
   return (
@@ -290,7 +288,7 @@ function WorkingSetSection({
         />
         <span>Working Set</span>
         <span className="ml-auto text-[10px] opacity-60">
-          {writeCount + readCount + userEditCount}
+          {writeCount + userEditCount}
         </span>
       </button>
       {!isCollapsed && (
@@ -320,7 +318,7 @@ function WorkingSetSection({
             <div>
               <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
                 <Pencil className="h-2.5 w-2.5" />
-                <span>Modified</span>
+                <span>AI Edits</span>
               </div>
               {Object.values(writes)
                 .sort((a, b) => b.timestamp - a.timestamp)
@@ -329,26 +327,6 @@ function WorkingSetSection({
                     key={touch.filePath}
                     touch={touch}
                     variant="agentWrite"
-                    projectPath={projectPath}
-                    onOpenFile={onOpenFile}
-                  />
-                ))}
-            </div>
-          )}
-          {/* Read files */}
-          {readCount > 0 && (
-            <div>
-              <div className="flex items-center gap-1 px-3 py-0.5 text-[10px] text-text-muted">
-                <Eye className="h-2.5 w-2.5" />
-                <span>Read</span>
-              </div>
-              {Object.values(reads)
-                .sort((a, b) => b.timestamp - a.timestamp)
-                .map((touch) => (
-                  <WorkingSetItem
-                    key={touch.filePath}
-                    touch={touch}
-                    variant="agentRead"
                     projectPath={projectPath}
                     onOpenFile={onOpenFile}
                   />
@@ -365,7 +343,7 @@ function WorkingSetSection({
 
 interface WorkingSetItemProps {
   touch: FileTouch;
-  variant: "userEdit" | "agentWrite" | "agentRead";
+  variant: "userEdit" | "agentWrite";
   projectPath: string;
   onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
 }

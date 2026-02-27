@@ -27,8 +27,6 @@ export function FileTreeItem({
   // Agent tracking state (files only -- directories skip the store lookup)
   const isAgentModified = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isAgentModified(projectPath, entry.path));
-  const isAgentRead = !entry.isDir
-    && useAgentFileTrackingStore((s) => s.isAgentRead(projectPath, entry.path));
   const isRecentFlash = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isRecentFlash(projectPath, entry.path));
   const isUserEdited = !entry.isDir
@@ -88,10 +86,7 @@ export function FileTreeItem({
       {isAgentModified && (
         <span className="agent-dot-pulse relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
       )}
-      {isAgentRead && (
-        <span className="relative ml-auto mr-1 h-1 w-1 shrink-0 rounded-full bg-primary/50" />
-      )}
-      {isUserEdited && !isAgentModified && !isAgentRead && (
+      {isUserEdited && !isAgentModified && (
         <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
       )}
     </button>

@@ -13,7 +13,6 @@ export interface FileTouch {
 
 export interface ProjectWorkingSet {
   writes: Record<string, FileTouch>;
-  reads: Record<string, FileTouch>;
   userEdits: Record<string, FileTouch>;
 }
 
@@ -21,7 +20,6 @@ export interface ProjectWorkingSet {
 // Constants
 // ---------------------------------------------------------------------------
 
-const READ_DECAY_MS = 5 * 60 * 1000; // 5 min
 const WRITE_DECAY_MS = 30 * 60 * 1000; // 30 min
 const FLASH_DURATION_MS = 1_500;
 const MAX_FILES_PER_SET = 50;
@@ -94,7 +92,6 @@ export function extractFilePath(
 
 const EMPTY_WORKING_SET: ProjectWorkingSet = Object.freeze({
   writes: Object.freeze({}) as Record<string, FileTouch>,
-  reads: Object.freeze({}) as Record<string, FileTouch>,
   userEdits: Object.freeze({}) as Record<string, FileTouch>,
 });
 
@@ -136,15 +133,13 @@ interface AgentFileTrackingActions {
   // Computed
   getWorkingSet: (projectPath: string) => ProjectWorkingSet;
   isAgentModified: (projectPath: string, relativePath: string) => boolean;
-  isAgentRead: (projectPath: string, relativePath: string) => boolean;
   isRecentFlash: (projectPath: string, relativePath: string) => boolean;
   isUserEdited: (projectPath: string, relativePath: string) => boolean;
   // Actions
-  trackFileTouch: (
+  trackAgentWrite: (
     projectPath: string,
     relativePath: string,
     toolName: string,
-    isWrite: boolean,
   ) => void;
   trackUserEdit: (projectPath: string, relativePath: string) => void;
   removeUserEdit: (projectPath: string, relativePath: string) => void;
@@ -182,7 +177,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const now = Date.now();
       return {
         writes: filterDecayed(ws.writes, WRITE_DECAY_MS, now),
-        reads: filterDecayed(ws.reads, READ_DECAY_MS, now),
         userEdits: ws.userEdits ?? {},
       };
     },
@@ -194,17 +188,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const touch = ws.writes[relativePath];
       if (!touch) return false;
       return Date.now() - touch.timestamp < WRITE_DECAY_MS;
-    },
-
-    isAgentRead: (projectPath, relativePath) => {
-      const key = normalizePathKey(projectPath);
-      const ws = get().workingSets[key];
-      if (!ws) return false;
-      // Not a read if already in writes
-      if (ws.writes[relativePath]) return false;
-      const touch = ws.reads[relativePath];
-      if (!touch) return false;
-      return Date.now() - touch.timestamp < READ_DECAY_MS;
     },
 
     isRecentFlash: (projectPath, relativePath) => {
@@ -220,7 +203,7 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
 
     // -- Actions --
 
-    trackFileTouch: (projectPath, relativePath, toolName, isWrite) => {
+    trackAgentWrite: (projectPath, relativePath, toolName) => {
       const key = normalizePathKey(projectPath);
       const now = Date.now();
       const touch: FileTouch = {
@@ -232,66 +215,40 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       set((state) => {
         const existing = state.workingSets[key] ?? {
           writes: {},
-          reads: {},
           userEdits: {},
         };
 
-        let writes = { ...existing.writes };
-        let reads = { ...existing.reads };
+        let writes = { ...existing.writes, [relativePath]: touch };
 
-        if (isWrite) {
-          writes[relativePath] = touch;
-          // Write supersedes read
-          const { [relativePath]: _, ...restReads } = reads;
-          reads = restReads;
-        } else if (!writes[relativePath]) {
-          // Only track read if not already a write
-          reads[relativePath] = touch;
-        }
-
-        // Evict oldest if over cap (reads first, then writes)
-        const writeCount = Object.keys(writes).length;
-        const readCount = Object.keys(reads).length;
-        if (writeCount + readCount > MAX_FILES_PER_SET) {
-          const overBy = writeCount + readCount - MAX_FILES_PER_SET;
-          reads = evictOldest(reads, Math.max(0, readCount - overBy));
-          const remaining = Object.keys(reads).length;
-          if (writeCount + remaining > MAX_FILES_PER_SET) {
-            writes = evictOldest(writes, MAX_FILES_PER_SET - remaining);
-          }
-        }
+        // Evict oldest if over cap
+        writes = evictOldest(writes, MAX_FILES_PER_SET);
 
         const fk = flashKey(projectPath, relativePath);
-        const recentFlashes = isWrite
-          ? { ...state.recentFlashes, [fk]: true }
-          : state.recentFlashes;
 
         return {
           workingSets: {
             ...state.workingSets,
-            [key]: { writes, reads, userEdits: existing.userEdits ?? {} },
+            [key]: { writes, userEdits: existing.userEdits ?? {} },
           },
-          recentFlashes,
+          recentFlashes: { ...state.recentFlashes, [fk]: true },
         };
       });
 
       // Flash timer (external)
-      if (isWrite) {
-        const fk = flashKey(projectPath, relativePath);
-        const existingTimer = flashTimers.get(fk);
-        if (existingTimer) clearTimeout(existingTimer);
+      const fk = flashKey(projectPath, relativePath);
+      const existingTimer = flashTimers.get(fk);
+      if (existingTimer) clearTimeout(existingTimer);
 
-        flashTimers.set(
-          fk,
-          setTimeout(() => {
-            flashTimers.delete(fk);
-            set((state) => {
-              const { [fk]: _, ...rest } = state.recentFlashes;
-              return { recentFlashes: rest };
-            });
-          }, FLASH_DURATION_MS),
-        );
-      }
+      flashTimers.set(
+        fk,
+        setTimeout(() => {
+          flashTimers.delete(fk);
+          set((state) => {
+            const { [fk]: _, ...rest } = state.recentFlashes;
+            return { recentFlashes: rest };
+          });
+        }, FLASH_DURATION_MS),
+      );
     },
 
     trackUserEdit: (projectPath, relativePath) => {
@@ -306,7 +263,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       set((state) => {
         const existing = state.workingSets[key] ?? {
           writes: {},
-          reads: {},
           userEdits: {},
         };
         return {
@@ -342,7 +298,7 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
 
       // Clear flash timers for files in this project's working set
       if (ws) {
-        const allFiles = [...Object.keys(ws.writes), ...Object.keys(ws.reads), ...Object.keys(ws.userEdits ?? {})];
+        const allFiles = [...Object.keys(ws.writes), ...Object.keys(ws.userEdits ?? {})];
         for (const filePath of allFiles) {
           const fk = flashKey(projectPath, filePath);
           const timer = flashTimers.get(fk);
@@ -359,7 +315,7 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
         let cleanedFlashes = state.recentFlashes;
         if (ws) {
           cleanedFlashes = { ...state.recentFlashes };
-          for (const filePath of [...Object.keys(ws.writes), ...Object.keys(ws.reads), ...Object.keys(ws.userEdits ?? {})]) {
+          for (const filePath of [...Object.keys(ws.writes), ...Object.keys(ws.userEdits ?? {})]) {
             delete cleanedFlashes[flashKey(projectPath, filePath)];
           }
         }
