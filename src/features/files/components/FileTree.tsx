@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, X, ChevronRight, Pencil, Eye, FileCode, FileJson, FileText, File, Hash } from "lucide-react";
@@ -36,8 +36,15 @@ export function FileTree({ projectPath }: FileTreeProps) {
   const tree = useFileStore((s) => s.getTreeState(projectPath));
 
   // Agent file tracking — working set for the summary section
+  // Subscribe to raw workingSets (stable ref, only changes on set() that modifies tracking data).
+  // Then compute filtered result in useMemo to avoid infinite loop from getWorkingSet's new-object-per-call.
+  const workingSets = useAgentFileTrackingStore((s) => s.workingSets);
   const getWorkingSet = useAgentFileTrackingStore((s) => s.getWorkingSet);
-  const workingSet = getWorkingSet(projectPath);
+  const workingSet = useMemo(
+    () => getWorkingSet(projectPath),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workingSets, projectPath],
+  );
 
   // Search state
   const [localQuery, setLocalQuery] = useState("");

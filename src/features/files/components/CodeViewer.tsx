@@ -45,18 +45,25 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
     }
   }, [activeFile?.path, projectPath]);
 
-  // Fetch diff on file open/switch, or when dirty→clean (save / undo)
-  const prevRef = useRef<{ path?: string; isDirty?: boolean }>({});
+  // Fetch diff on file open/switch, dirty→clean (save/undo), or external refresh (agent edit)
+  const prevRef = useRef<{ path?: string; isDirty?: boolean; originalContent?: string }>({});
   useEffect(() => {
     const prev = prevRef.current;
     const pathChanged = prev.path !== activeFile?.path;
     const dirtyToClean = !pathChanged && prev.isDirty === true && activeFile?.isDirty === false;
+    const externalRefresh = !pathChanged
+      && prev.originalContent !== undefined
+      && prev.originalContent !== activeFile?.originalContent;
 
-    if (pathChanged || dirtyToClean) {
+    if (pathChanged || dirtyToClean || externalRefresh) {
       fetchDiff();
     }
-    prevRef.current = { path: activeFile?.path, isDirty: activeFile?.isDirty };
-  }, [activeFile?.path, activeFile?.isDirty, fetchDiff]);
+    prevRef.current = {
+      path: activeFile?.path,
+      isDirty: activeFile?.isDirty,
+      originalContent: activeFile?.originalContent,
+    };
+  }, [activeFile?.path, activeFile?.isDirty, activeFile?.originalContent, fetchDiff]);
 
   // Only pass scroll target if it matches the active file
   const scrollTarget =
