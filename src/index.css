@@ -449,6 +449,14 @@ body {
   animation: cm-line-flash 1.5s ease-out forwards;
 }
 
+/* ---------- CodeMirror import link hover (Cmd+hover) ---------- */
+
+.cm-import-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* ---------- CodeMirror diff decorations ---------- */
 
 .cm-diff-added {
