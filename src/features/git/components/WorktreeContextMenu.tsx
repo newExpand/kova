@@ -68,6 +68,24 @@ export function WorktreeContextMenu({
 
   const closeMenu = useCallback(() => setMenuPos(null), []);
 
+  // Adjust menu position to stay within viewport
+  useEffect(() => {
+    if (!menuPos || !menuRef.current) return;
+    const menu = menuRef.current;
+    const rect = menu.getBoundingClientRect();
+    const pad = 8;
+    let { x, y } = menuPos;
+    if (rect.right > window.innerWidth - pad) {
+      x = Math.max(pad, window.innerWidth - rect.width - pad);
+    }
+    if (rect.bottom > window.innerHeight - pad) {
+      y = Math.max(pad, window.innerHeight - rect.height - pad);
+    }
+    if (x !== menuPos.x || y !== menuPos.y) {
+      setMenuPos({ x, y });
+    }
+  }, [menuPos]);
+
   // Close on outside click or Escape
   useEffect(() => {
     if (!menuPos) return;
