@@ -1260,5 +1260,26 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     };
   }, [cleanup]);
 
+  // Sleep/wake recovery: log wake event for terminal debugging.
+  // The actual PTY read resilience is handled in Rust (nix::poll with timeout loop).
+  // This handler just ensures the terminal UI refreshes after wake.
+  useEffect(() => {
+    const handleWake = () => {
+      if (!termRef.current || !ptyRef.current) {
+        console.warn("[useTerminal] Wake detected but terminal/PTY refs are null — skipping refresh");
+        return;
+      }
+      console.info("[useTerminal] Wake detected — refreshing terminal display");
+      try {
+        termRef.current.refresh(0, termRef.current.rows - 1);
+      } catch (e) {
+        console.error("[useTerminal] Terminal refresh after wake failed:", e);
+      }
+    };
+
+    window.addEventListener("app:wake", handleWake);
+    return () => window.removeEventListener("app:wake", handleWake);
+  }, []);
+
   return { containerRef, connect, disconnect, refit };
 }

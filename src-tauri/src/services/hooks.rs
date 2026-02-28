@@ -167,6 +167,14 @@ pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
 /// Each worktree gets hooks that send the worktree's own path (not the parent project path),
 /// enabling the frontend to track agent activity per-worktree.
 pub fn inject_hooks_for_worktrees(project_path: &Path, port: u16) -> Result<u32, AppError> {
+    // Skip non-git directories — project may be a plain folder without git init.
+    if !project_path.join(".git").exists() {
+        tracing::debug!(
+            "Skipping worktree hook injection for non-git directory: {}",
+            project_path.display()
+        );
+        return Ok(0);
+    }
     let worktrees = crate::services::git::get_worktrees(project_path)?;
     let mut count = 0u32;
 

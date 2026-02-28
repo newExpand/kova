@@ -15,6 +15,10 @@ const FETCH_EVERY_N_TICKS = 3; // 3 × 10s = 30s
  * - Every tick: compare status fingerprint → refresh graph if changed.
  * - Every Nth tick: run `git fetch --all --prune` then refresh graph
  *   unconditionally so remote tracking refs are up-to-date.
+ *
+ * Sleep/wake resilience:
+ * - `inFlightRef` prevents callback stacking when stale IPC calls pile up after wake.
+ * - Listens for `app:wake` to clear and restart the interval, avoiding burst execution.
  */
 export function useGitPolling(
   projectId: string,
@@ -27,6 +31,7 @@ export function useGitPolling(
   const fetchRemote = useGitStore((s) => s.fetchRemote);
   const lastFingerprintRef = useRef<string | null>(null);
   const tickRef = useRef(0);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (!isActive || !projectPath) return;
@@ -38,39 +43,75 @@ export function useGitPolling(
       console.error("[useGitPolling] Initial fetch failed:", e);
     });
 
-    const id = setInterval(async () => {
-      tickRef.current += 1;
-      const isFetchTick = tickRef.current % FETCH_EVERY_N_TICKS === 0;
+    // ── Polling tick ──────────────────────────────────────────────
+    const tick = async () => {
+      if (inFlightRef.current) return; // prevent overlapping async callbacks
+      inFlightRef.current = true;
+      try {
+        tickRef.current += 1;
+        const isFetchTick = tickRef.current % FETCH_EVERY_N_TICKS === 0;
 
-      if (isFetchTick) {
-        // Fetch from remotes, then unconditionally refresh graph
-        await fetchRemote(projectPath);
-        await fetchGraphData(projectId, projectPath).catch((e) => {
-          console.error("[useGitPolling] Post-fetch graph refresh failed:", e);
-        });
-        // Update fingerprint baseline so the next normal tick doesn't
-        // trigger a redundant refresh
-        const status = await refreshStatus(projectPath);
-        if (status) {
-          lastFingerprintRef.current = statusFingerprint(status);
-        }
-      } else {
-        // Normal tick: only refresh if local status changed
-        const status = await refreshStatus(projectPath);
-        if (!status) return;
-
-        const fp = statusFingerprint(status);
-        const changed = lastFingerprintRef.current !== fp;
-        lastFingerprintRef.current = fp;
-
-        if (changed) {
-          fetchGraphData(projectId, projectPath).catch((e) => {
-            console.error("[useGitPolling] Graph refresh failed:", e);
+        if (isFetchTick) {
+          // Fetch from remotes, then unconditionally refresh graph
+          await fetchRemote(projectPath);
+          await fetchGraphData(projectId, projectPath).catch((e) => {
+            console.error("[useGitPolling] Post-fetch graph refresh failed:", e);
           });
-        }
-      }
-    }, intervalMs);
+          // Update fingerprint baseline so the next normal tick doesn't
+          // trigger a redundant refresh
+          const status = await refreshStatus(projectPath);
+          if (status) {
+            lastFingerprintRef.current = statusFingerprint(status);
+          }
+        } else {
+          // Normal tick: only refresh if local status changed
+          const status = await refreshStatus(projectPath);
+          if (!status) return;
 
-    return () => clearInterval(id);
+          const fp = statusFingerprint(status);
+          const changed = lastFingerprintRef.current !== fp;
+          lastFingerprintRef.current = fp;
+
+          if (changed) {
+            fetchGraphData(projectId, projectPath).catch((e) => {
+              console.error("[useGitPolling] Graph refresh failed:", e);
+            });
+          }
+        }
+      } finally {
+        inFlightRef.current = false;
+      }
+    };
+
+    // ── Interval management with wake recovery ───────────────────
+    // Use a mutable ref-holder so the wake handler can clear & restart.
+    let intervalId = setInterval(tick, intervalMs);
+    let wakeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const handleWake = () => {
+      console.info("[useGitPolling] Wake detected — resetting interval");
+      clearInterval(intervalId);
+      if (wakeTimeoutId !== null) clearTimeout(wakeTimeoutId);
+      tickRef.current = 0;
+      // Do NOT force inFlightRef to false — let any in-flight tick complete
+      // naturally via its finally block to avoid concurrent tick execution.
+      // Small delay lets the system stabilise before resuming IPC calls
+      wakeTimeoutId = setTimeout(() => {
+        wakeTimeoutId = null;
+        intervalId = setInterval(tick, intervalMs);
+        // Trigger one immediate refresh after wake
+        tick().catch((e) => {
+          console.error("[useGitPolling] Post-wake tick failed:", e);
+        });
+      }, 1000);
+    };
+
+    window.addEventListener("app:wake", handleWake);
+
+    return () => {
+      clearInterval(intervalId);
+      if (wakeTimeoutId !== null) clearTimeout(wakeTimeoutId);
+      window.removeEventListener("app:wake", handleWake);
+    };
   }, [projectId, projectPath, isActive, intervalMs, fetchGraphData, refreshStatus, fetchRemote]);
 }

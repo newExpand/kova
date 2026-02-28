@@ -1,7 +1,11 @@
 // Local fork of tauri-plugin-pty 0.1.1
 // Changed: read() returns Vec<u8> instead of String::from_utf8_lossy
 // This prevents multi-byte UTF-8 sequences (Korean, CJK, emoji) from being
-// corrupted when split across 1024-byte read buffer boundaries.
+// corrupted when split across read buffer boundaries.
+//
+// Sleep/wake resilience: read() uses nix::poll with a 5s timeout on Unix
+// to prevent infinite blocking when the PTY master fd becomes stale
+// (e.g., after macOS sleep kills the SSH connection).
 
 use std::{
     collections::BTreeMap,
@@ -31,6 +35,12 @@ struct Session {
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     writer: Mutex<Box<dyn std::io::Write + Send>>,
     reader: Mutex<Box<dyn std::io::Read + Send>>,
+    /// Raw file descriptor of the PTY master (Unix only).
+    /// Used by `nix::poll` to add a timeout to the blocking `read()`.
+    /// Obtained from `MasterPty::as_raw_fd()`; shares the same kernel file
+    /// description as the cloned reader, so polling it detects data for `read()`.
+    #[cfg(unix)]
+    reader_fd: Option<std::os::unix::io::RawFd>,
 }
 
 type PtyHandler = u32;
@@ -69,6 +79,10 @@ async fn spawn<R: Runtime>(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
 
+    // Extract raw fd BEFORE destructuring the pair (as_raw_fd needs the master).
+    #[cfg(unix)]
+    let reader_fd = pair.master.as_raw_fd();
+
     let mut cmd = CommandBuilder::new(file);
     cmd.args(args);
     if let Some(ref name) = term_name {
@@ -96,6 +110,8 @@ async fn spawn<R: Runtime>(
         child_killer: Mutex::new(child_killer),
         writer: Mutex::new(writer),
         reader: Mutex::new(reader),
+        #[cfg(unix)]
+        reader_fd,
     });
     state.sessions.write().await.insert(handler, session);
     Ok(handler)
@@ -123,10 +139,24 @@ async fn write(
     Ok(())
 }
 
+/// Poll timeout for read() in milliseconds.
+/// Each poll iteration waits this long before checking fd health (POLLHUP/POLLERR).
+/// The loop retries automatically — only returns on data ready, EOF, or fd death.
+#[cfg(unix)]
+const READ_POLL_TIMEOUT_MS: u16 = 5000;
+
 // CHANGED: Returns Vec<u8> instead of String.
 // The original used String::from_utf8_lossy which corrupts multi-byte UTF-8
 // characters (Korean, CJK, emoji) that are split across read buffer boundaries.
 // Returning raw bytes lets xterm.js's byte parser handle partial sequences correctly.
+//
+// Sleep/wake resilience: on Unix, uses poll() with a timeout loop instead of a raw
+// blocking read(). After each timeout, POLLHUP/POLLERR are checked to detect dead fds
+// (e.g., SSH connection died during macOS sleep). This prevents spawn_blocking threads
+// from being permanently occupied by stale reads.
+// IMPORTANT: "Timeout" must NOT be returned as an error — the tauri-pty JS readData()
+// loop exits on ANY error (EOF exits silently, all others terminate the loop permanently).
+// Poll retries must happen entirely inside Rust.
 #[tauri::command]
 async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<Vec<u8>, String> {
     let session = match state.sessions.read().await.get(&pid) {
@@ -138,6 +168,53 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
     // readData() calls this in a tight loop; without spawn_blocking,
     // each iteration permanently occupies a tokio worker thread.
     tauri::async_runtime::spawn_blocking(move || {
+        // On Unix, use poll() with a timeout loop to prevent infinite blocking
+        // when the PTY fd becomes stale (e.g., after macOS sleep).
+        #[cfg(unix)]
+        if let Some(fd) = session.reader_fd {
+            use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+            use std::os::unix::io::BorrowedFd;
+
+            // SAFETY: fd is valid because this closure holds an Arc<Session>, keeping the
+            // MasterPty (and its underlying fd) alive. Even if kill() removes the session
+            // from the map, our Arc clone prevents the drop until this closure completes.
+            let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+
+            loop {
+                let mut fds = [PollFd::new(borrowed, PollFlags::POLLIN)];
+                match poll(&mut fds, PollTimeout::from(READ_POLL_TIMEOUT_MS)) {
+                    Ok(0) => {
+                        // Timeout — no data yet. Retry poll; the next iteration will
+                        // detect POLLHUP/POLLERR/POLLNVAL if the fd has become dead.
+                        continue;
+                    }
+                    Ok(_) => {
+                        if let Some(revents) = fds[0].revents() {
+                            // POLLERR / POLLNVAL: unrecoverable fd error → EOF immediately.
+                            // POLLNVAL can occur if kill() races with read() and the fd
+                            // becomes invalid between session lookup and poll().
+                            if revents.contains(PollFlags::POLLERR)
+                                || revents.contains(PollFlags::POLLNVAL)
+                            {
+                                return Err("EOF".to_string());
+                            }
+                            // POLLHUP without POLLIN: child exited, no data left → EOF
+                            // POLLHUP *with* POLLIN: child exited but buffered data remains
+                            // — fall through to read the final output first.
+                            if revents.contains(PollFlags::POLLHUP)
+                                && !revents.contains(PollFlags::POLLIN)
+                            {
+                                return Err("EOF".to_string());
+                            }
+                        }
+                        break; // data ready (possibly with pending hangup) — proceed to read
+                    }
+                    Err(nix::errno::Errno::EINTR) => continue, // interrupted by signal, retry
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
+        }
+
         let mut buf = [0u8; 4096];
         let n = session
             .reader
@@ -196,7 +273,7 @@ async fn kill(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<(
     // Neither should run on the tokio async runtime.
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(e) = session.child_killer.blocking_lock().kill() {
-            eprintln!("[tauri-plugin-pty] Failed to kill child process: {}", e);
+            tracing::warn!("[tauri-plugin-pty] Failed to kill child process: {}", e);
         }
         drop(session);
     });
