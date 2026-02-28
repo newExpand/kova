@@ -14,8 +14,12 @@ export interface TerminalConfig {
   initialCommand?: string;
   /** SSH arguments for direct PTY spawn (bypasses local tmux) */
   sshArgs?: string[];
-  /** Explicit SSH mode flag */
+  /** When true, the terminal connects to a remote server via SSH PTY spawn instead of a local tmux session */
   isSshMode?: boolean;
+  /** Remote tmux session name (set when SSH + remote tmux is active) */
+  remoteTmuxSessionName?: string;
+  /** SSH connection ID for remote tmux commands */
+  sshConnectionId?: string;
 }
 
 export type PaneAction = "split-vertical" | "split-horizontal" | "new-window";

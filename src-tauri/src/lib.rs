@@ -296,6 +296,17 @@ pub fn run() {
             commands::ssh::check_ssh_remote_tmux,
             commands::ssh::test_ssh_connection,
             commands::ssh::test_ssh_connection_params,
+            // Remote tmux commands (via SSH)
+            commands::ssh_tmux::remote_tmux_split_pane_vertical,
+            commands::ssh_tmux::remote_tmux_split_pane_horizontal,
+            commands::ssh_tmux::remote_tmux_close_pane,
+            commands::ssh_tmux::remote_tmux_create_window,
+            commands::ssh_tmux::remote_tmux_close_window,
+            commands::ssh_tmux::remote_tmux_next_window,
+            commands::ssh_tmux::remote_tmux_previous_window,
+            commands::ssh_tmux::remote_tmux_list_windows,
+            commands::ssh_tmux::remote_tmux_list_panes,
+            commands::ssh_tmux::remote_tmux_send_keys,
             // File commands
             commands::files::list_directory,
             commands::files::read_file,

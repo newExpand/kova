@@ -9,6 +9,8 @@ interface PaneToolbarProps {
   disabled: boolean;
   onRequestAction: (action: PaneAction) => void;
   onToggleThemePicker?: () => void;
+  /** Override: close pane (remote mode) */
+  onClosePane?: () => void;
 }
 
 const TOOLBAR_BTN = "h-[26px] px-2 text-xs text-text-muted";
@@ -18,6 +20,7 @@ export const PaneToolbar = memo(function PaneToolbar({
   disabled,
   onRequestAction,
   onToggleThemePicker,
+  onClosePane,
 }: PaneToolbarProps) {
   const handleSplitVertical = useCallback(
     () => onRequestAction("split-vertical"),
@@ -30,10 +33,14 @@ export const PaneToolbar = memo(function PaneToolbar({
   );
 
   const handleClosePane = useCallback(() => {
-    closeTmuxPane(sessionName).catch((e) =>
-      console.error("Close pane failed:", e),
-    );
-  }, [sessionName]);
+    if (onClosePane) {
+      onClosePane();
+    } else {
+      closeTmuxPane(sessionName).catch((e) =>
+        console.error("Close pane failed:", e),
+      );
+    }
+  }, [sessionName, onClosePane]);
 
   return (
     <div

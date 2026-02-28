@@ -848,6 +848,112 @@ export async function testSshConnectionParams(
 }
 
 // ---------------------------------------------------------------------------
+// Remote tmux commands (via SSH)
+// ---------------------------------------------------------------------------
+
+export async function remoteTmuxSplitPaneVertical(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_split_pane_vertical", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxSplitPaneHorizontal(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_split_pane_horizontal", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxClosePane(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_close_pane", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxCreateWindow(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_create_window", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxCloseWindow(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_close_window", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxNextWindow(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_next_window", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxPreviousWindow(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_previous_window", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxListWindows(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<TmuxWindow[]> {
+  return invoke<TmuxWindow[]>("remote_tmux_list_windows", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxListPanes(
+  connectionId: string,
+  remoteSessionName: string,
+): Promise<TmuxPane[]> {
+  return invoke<TmuxPane[]>("remote_tmux_list_panes", {
+    connectionId,
+    remoteSessionName,
+  });
+}
+
+export async function remoteTmuxSendKeys(
+  connectionId: string,
+  remoteSessionName: string,
+  keys: string,
+): Promise<void> {
+  return invoke<void>("remote_tmux_send_keys", {
+    connectionId,
+    remoteSessionName,
+    keys,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // File types
 // ---------------------------------------------------------------------------
 

@@ -404,8 +404,8 @@ pub fn connect_with_profile(
 }
 
 /// Build a non-interactive SSH probe command (BatchMode=yes, ConnectTimeout=5).
-/// Used by both `check_remote_tmux` and `test_connection_with_profile`.
-fn build_ssh_probe_cmd(connection: &SshConnection) -> Result<std::process::Command, AppError> {
+/// Used by `check_remote_tmux`, `test_connection_with_profile`, and `ssh_tmux` service.
+pub(crate) fn build_ssh_probe_cmd(connection: &SshConnection) -> Result<std::process::Command, AppError> {
     validate_ssh_field(&connection.host, "host")?;
     validate_ssh_field(&connection.username, "username")?;
 

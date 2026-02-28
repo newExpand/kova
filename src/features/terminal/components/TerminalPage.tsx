@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Loader2 } from "lucide-react";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useSshStore } from "../../ssh";
@@ -17,6 +17,15 @@ import {
   sendTmuxKeys,
   restoreWorktreeWindows,
   checkSshRemoteTmux,
+  remoteTmuxSplitPaneVertical,
+  remoteTmuxSplitPaneHorizontal,
+  remoteTmuxCreateWindow,
+  remoteTmuxClosePane,
+  remoteTmuxCloseWindow,
+  remoteTmuxNextWindow,
+  remoteTmuxPreviousWindow,
+  remoteTmuxListWindows,
+  remoteTmuxSendKeys,
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
 
@@ -99,6 +108,8 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         rows: 24,
         sshArgs,
         isSshMode: true,
+        sshConnectionId: sshActiveResult.connectionId,
+        remoteTmuxSessionName: sshActiveResult.remoteSessionName ?? undefined,
       });
       return;
     }
@@ -114,6 +125,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       rows: 24,
       sshArgs: [...(sshActiveResult.sshArgs ?? [])],
       isSshMode: true,
+      sshConnectionId: sshActiveResult.connectionId,
     });
 
     // Background tmux check
@@ -163,6 +175,8 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       rows: 24,
       sshArgs,
       isSshMode: true,
+      sshConnectionId: sshActiveResult.connectionId,
+      remoteTmuxSessionName: sshActiveResult.remoteSessionName ?? undefined,
     });
   }, [sshTmuxStatus, isSshMode, sshActiveResult, handleConnect, storeKey, sshConnectionId]);
 
@@ -331,30 +345,85 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     setPendingAction(action);
   }, []);
 
+  // Remote tmux availability (SSH + confirmed remote tmux)
+  const hasRemoteTmux =
+    isSshMode &&
+    sshTmuxStatus === "available" &&
+    !!activeConfig?.remoteTmuxSessionName &&
+    !!activeConfig?.sshConnectionId;
+
+  // Build remote tmux callback overrides once, to avoid repetition in JSX props.
+  // When hasRemoteTmux is false, all callbacks are undefined (local tmux used instead).
+  // Callbacks return Promises so the toolbar can chain fetchWindows after completion.
+  const remoteCallbacks = useMemo(() => {
+    if (!hasRemoteTmux) return {};
+    const cid = activeConfig?.sshConnectionId;
+    const rsn = activeConfig?.remoteTmuxSessionName;
+    if (!cid || !rsn) return {};
+    // Capture narrowed values so closures see `string`, not `string | undefined`
+    const connId: string = cid;
+    const remoteSN: string = rsn;
+    function withErrorSurface(
+      fn: (c: string, s: string) => Promise<void>,
+      label: string,
+    ): () => Promise<void> {
+      return () =>
+        fn(connId, remoteSN).catch((e) => {
+          console.error(`Remote ${label} failed:`, e);
+          useTerminalStore.getState().setError(
+            storeKey,
+            `${label} failed: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        });
+    }
+    return {
+      onCloseWindow: withErrorSurface(remoteTmuxCloseWindow, "Close window"),
+      onNextWindow: withErrorSurface(remoteTmuxNextWindow, "Next window"),
+      onPrevWindow: withErrorSurface(remoteTmuxPreviousWindow, "Previous window"),
+      onFetchWindows: () => remoteTmuxListWindows(connId, remoteSN),
+      onClosePane: withErrorSurface(remoteTmuxClosePane, "Close pane"),
+    };
+  }, [hasRemoteTmux, activeConfig, storeKey]);
+
   const handleConfirmAction = useCallback(
     (startClaude: boolean) => {
-      if (isSshMode) return; // SSH mode: no local tmux actions
       const action = pendingAction;
       const sessionName = activeConfig?.sessionName;
+      const remoteSN = activeConfig?.remoteTmuxSessionName;
+      const connId = activeConfig?.sshConnectionId;
       setPendingAction(null);
 
       if (!action || !sessionName) return;
 
+      // Dispatch maps: action -> command for remote vs local tmux
+      const remoteActions: Record<PaneAction, () => Promise<void>> = {
+        "split-vertical": () => remoteTmuxSplitPaneVertical(connId!, remoteSN!),
+        "split-horizontal": () => remoteTmuxSplitPaneHorizontal(connId!, remoteSN!),
+        "new-window": () => remoteTmuxCreateWindow(connId!, remoteSN!),
+      };
+      const localActions: Record<PaneAction, () => Promise<void>> = {
+        "split-vertical": () => splitTmuxPaneVertical(sessionName),
+        "split-horizontal": () => splitTmuxPaneHorizontal(sessionName),
+        "new-window": () => createTmuxWindow(sessionName),
+      };
+
       const executeAction = async () => {
-        switch (action) {
-          case "split-vertical":
-            await splitTmuxPaneVertical(sessionName);
-            break;
-          case "split-horizontal":
-            await splitTmuxPaneHorizontal(sessionName);
-            break;
-          case "new-window":
-            await createTmuxWindow(sessionName);
-            break;
-        }
-        if (startClaude) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          await sendTmuxKeys(sessionName, "claude --dangerously-skip-permissions");
+        if (remoteSN && connId) {
+          await remoteActions[action]();
+          if (startClaude) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            await remoteTmuxSendKeys(connId, remoteSN, "claude --dangerously-skip-permissions");
+          }
+        } else if (!isSshMode) {
+          await localActions[action]();
+          if (startClaude) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            await sendTmuxKeys(sessionName, "claude --dangerously-skip-permissions");
+          }
+        } else {
+          throw new Error(
+            "Cannot execute tmux action: SSH mode is active but remote tmux is not configured",
+          );
         }
       };
 
@@ -368,7 +437,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         })
         .finally(() => refocusTerminal());
     },
-    [isSshMode, pendingAction, activeConfig?.sessionName, refocusTerminal],
+    [isSshMode, pendingAction, activeConfig, refocusTerminal, storeKey],
   );
 
   const handleCancelAction = useCallback(() => {
@@ -504,19 +573,24 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           ref={terminalContainerRef}
           style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
         >
-          {!isSshMode && (
+          {(!isSshMode || hasRemoteTmux) && (
             <>
               <WindowToolbar
                 sessionName={activeConfig.sessionName}
                 disabled={status !== "connected"}
                 isActive={isActive}
                 onRequestAction={handleRequestAction}
+                onCloseWindow={remoteCallbacks.onCloseWindow}
+                onNextWindow={remoteCallbacks.onNextWindow}
+                onPrevWindow={remoteCallbacks.onPrevWindow}
+                onFetchWindows={remoteCallbacks.onFetchWindows}
               />
               <PaneToolbar
                 sessionName={activeConfig.sessionName}
                 disabled={status !== "connected"}
                 onRequestAction={handleRequestAction}
                 onToggleThemePicker={handleToggleThemePicker}
+                onClosePane={remoteCallbacks.onClosePane}
               />
             </>
           )}
@@ -536,7 +610,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           </div>
         </div>
       ) : null}
-      {isActive && !isSshMode && (
+      {isActive && (!isSshMode || hasRemoteTmux) && (
         <NewPaneDialog
           action={pendingAction}
           onConfirm={handleConfirmAction}

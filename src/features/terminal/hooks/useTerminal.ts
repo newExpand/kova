@@ -878,10 +878,33 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 return false;
               }
 
-              // ── Pane/window shortcuts (local tmux only, skip in SSH mode) ──
-              if (config.isSshMode) return true;
+              // ── Pane/window shortcuts (skip in SSH mode without remote tmux) ──
+              if (config.isSshMode && !config.remoteTmuxSessionName) return true;
+
               const sName = config.sessionName;
-              if (sName) {
+              const remoteSN = config.remoteTmuxSessionName;
+              const connId = config.sshConnectionId;
+              const isRemote = !!(remoteSN && connId);
+
+              // Dispatch a tmux command to remote or local, surfacing errors to UI.
+              function runTmuxCmd(
+                localFn: (s: string) => Promise<void>,
+                remoteFn: (c: string, s: string) => Promise<void>,
+                label: string,
+              ): void {
+                const promise = isRemote
+                  ? remoteFn(connId!, remoteSN!)
+                  : localFn(sName);
+                promise.catch((e) => {
+                  console.error(`${isRemote ? "Remote " : ""}${label} failed:`, e);
+                  useTerminalStore.getState().setError(
+                    config.projectId,
+                    `${label} failed: ${e instanceof Error ? e.message : String(e)}`,
+                  );
+                });
+              }
+
+              if (sName || isRemote) {
                 // ⌘T — New window (via dialog)
                 if (event.key.toLowerCase() === "t" && !event.shiftKey) {
                   event.preventDefault();
@@ -891,25 +914,19 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                 // ⌘⇧W — Close window (check before ⌘W pane close)
                 if (event.key.toLowerCase() === "w" && event.shiftKey) {
                   event.preventDefault();
-                  commands.closeTmuxWindow(sName).catch((e) =>
-                    console.error("Close window failed:", e),
-                  );
+                  runTmuxCmd(commands.closeTmuxWindow, commands.remoteTmuxCloseWindow, "close window");
                   return false;
                 }
                 // ⌘⇧] — Next window (event.code for keyboard layout independence)
                 if (event.code === "BracketRight" && event.shiftKey) {
                   event.preventDefault();
-                  commands.nextTmuxWindow(sName).catch((e) =>
-                    console.error("Next window failed:", e),
-                  );
+                  runTmuxCmd(commands.nextTmuxWindow, commands.remoteTmuxNextWindow, "next window");
                   return false;
                 }
                 // ⌘⇧[ — Previous window
                 if (event.code === "BracketLeft" && event.shiftKey) {
                   event.preventDefault();
-                  commands.previousTmuxWindow(sName).catch((e) =>
-                    console.error("Previous window failed:", e),
-                  );
+                  runTmuxCmd(commands.previousTmuxWindow, commands.remoteTmuxPreviousWindow, "previous window");
                   return false;
                 }
                 // ⌘⇧D — Split horizontal (via dialog)
@@ -924,11 +941,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
                   onRequestPaneActionRef.current?.("split-vertical");
                   return false;
                 }
+                // ⌘W — Close pane
                 if (event.key.toLowerCase() === "w" && !event.shiftKey) {
                   event.preventDefault();
-                  commands.closeTmuxPane(sName).catch((e) =>
-                    console.error("Close pane failed:", e),
-                  );
+                  runTmuxCmd(commands.closeTmuxPane, commands.remoteTmuxClosePane, "close pane");
                   return false;
                 }
               }

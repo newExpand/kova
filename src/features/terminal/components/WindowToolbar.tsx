@@ -15,6 +15,14 @@ interface WindowToolbarProps {
   disabled: boolean;
   isActive: boolean;
   onRequestAction: (action: PaneAction) => void;
+  /** Override: close window (remote mode). Must return a Promise for chaining. */
+  onCloseWindow?: () => Promise<void>;
+  /** Override: next window (remote mode). Must return a Promise for chaining. */
+  onNextWindow?: () => Promise<void>;
+  /** Override: prev window (remote mode). Must return a Promise for chaining. */
+  onPrevWindow?: () => Promise<void>;
+  /** Override: fetch window list (remote mode) */
+  onFetchWindows?: () => Promise<TmuxWindow[]>;
 }
 
 const TOOLBAR_BTN = "h-[26px] px-1.5 text-xs text-text-muted";
@@ -24,9 +32,14 @@ export const WindowToolbar = memo(function WindowToolbar({
   disabled,
   isActive,
   onRequestAction,
+  onCloseWindow,
+  onNextWindow,
+  onPrevWindow,
+  onFetchWindows,
 }: WindowToolbarProps) {
   const [windows, setWindows] = useState<TmuxWindow[]>([]);
   const mountedRef = useRef(true);
+  const consecutiveFailures = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -35,12 +48,23 @@ export const WindowToolbar = memo(function WindowToolbar({
   }, []);
 
   const fetchWindows = useCallback(() => {
-    listTmuxWindows(sessionName)
+    const fetcher = onFetchWindows
+      ? onFetchWindows()
+      : listTmuxWindows(sessionName);
+    fetcher
       .then((data) => {
-        if (mountedRef.current) setWindows(data);
+        if (mountedRef.current) {
+          setWindows(data);
+          consecutiveFailures.current = 0;
+        }
       })
-      .catch((e) => console.error("List windows failed:", e));
-  }, [sessionName]);
+      .catch((e) => {
+        consecutiveFailures.current += 1;
+        if (consecutiveFailures.current <= 3) {
+          console.error("List windows failed:", e);
+        }
+      });
+  }, [sessionName, onFetchWindows]);
 
   // Initial fetch
   useEffect(() => {
@@ -59,23 +83,35 @@ export const WindowToolbar = memo(function WindowToolbar({
     [onRequestAction],
   );
 
-  const handleClose = useCallback(() => {
-    closeTmuxWindow(sessionName)
-      .then(fetchWindows)
-      .catch((e) => console.error("Close window failed:", e));
-  }, [sessionName, fetchWindows]);
+  // Shared handler: use remote override (Promise chained) or local tmux command.
+  const handleWindowAction = useCallback(
+    (
+      overrideFn: (() => Promise<void>) | undefined,
+      localFn: () => Promise<void>,
+      label: string,
+    ) => {
+      const action = overrideFn ?? localFn;
+      action()
+        .then(fetchWindows)
+        .catch((e) => console.error(`${label} failed:`, e));
+    },
+    [fetchWindows],
+  );
 
-  const handleNext = useCallback(() => {
-    nextTmuxWindow(sessionName)
-      .then(fetchWindows)
-      .catch((e) => console.error("Next window failed:", e));
-  }, [sessionName, fetchWindows]);
+  const handleClose = useCallback(
+    () => handleWindowAction(onCloseWindow, () => closeTmuxWindow(sessionName), "Close window"),
+    [handleWindowAction, onCloseWindow, sessionName],
+  );
 
-  const handlePrev = useCallback(() => {
-    previousTmuxWindow(sessionName)
-      .then(fetchWindows)
-      .catch((e) => console.error("Previous window failed:", e));
-  }, [sessionName, fetchWindows]);
+  const handleNext = useCallback(
+    () => handleWindowAction(onNextWindow, () => nextTmuxWindow(sessionName), "Next window"),
+    [handleWindowAction, onNextWindow, sessionName],
+  );
+
+  const handlePrev = useCallback(
+    () => handleWindowAction(onPrevWindow, () => previousTmuxWindow(sessionName), "Previous window"),
+    [handleWindowAction, onPrevWindow, sessionName],
+  );
 
   return (
     <div
