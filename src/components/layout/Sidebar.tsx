@@ -671,7 +671,8 @@ function Sidebar() {
                   </p>
                 )}
                 {sshConnections.map((conn, i) => {
-                  const isActive = location.pathname === `/ssh/${conn.id}/terminal`;
+                  const isActive = location.pathname.startsWith(`/ssh/${conn.id}/`);
+
                   return (
                     <div
                       key={conn.id}
@@ -688,10 +689,6 @@ function Sidebar() {
                             : "text-text-secondary hover:bg-white/[0.08]",
                         )}
                       >
-                        <Globe className={cn(
-                          "h-3 w-3 shrink-0 transition-colors duration-200",
-                          isActive ? "ssh-globe-connected" : "text-text-muted",
-                        )} />
                         <div className="min-w-0 flex-1">
                           <p className="text-xs truncate">{conn.name}</p>
                           <p className="text-[10px] text-text-muted truncate">

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, CheckCircle2, FolderOpen, Wifi } from "lucide-react";
-import { testSshConnectionParams } from "../../../lib/tauri/commands";
+import { AlertCircle, CheckCircle2, FolderOpen, Search, Wifi } from "lucide-react";
+import { testSshConnectionParams, detectRemoteGitPaths } from "../../../lib/tauri/commands";
 import type { SshTestResult } from "../../../lib/tauri/commands";
 import {
   Dialog,
@@ -51,9 +51,14 @@ export function SshConnectionForm({
     editConnection?.authType ?? "key",
   );
   const [keyPath, setKeyPath] = useState(editConnection?.keyPath ?? "");
+  const [remoteProjectPath, setRemoteProjectPath] = useState(
+    editConnection?.remoteProjectPath ?? "",
+  );
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<SshTestResult | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectedPaths, setDetectedPaths] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isEdit = !!editConnection;
@@ -67,8 +72,10 @@ export function SshConnectionForm({
       setUsername(editConnection?.username ?? "");
       setAuthType(editConnection?.authType ?? "key");
       setKeyPath(editConnection?.keyPath ?? "");
+      setRemoteProjectPath(editConnection?.remoteProjectPath ?? "");
       setError(null);
       setTestResult(null);
+      setDetectedPaths(null);
     }
   }, [isOpen, editConnection]);
 
@@ -89,6 +96,33 @@ export function SshConnectionForm({
       setTestResult({ success: false, message: String(e) });
     } finally {
       setTesting(false);
+    }
+  }, [host, port, username, authType, keyPath]);
+
+  const handleDetect = useCallback(async () => {
+    setError(null);
+    setDetectedPaths(null);
+    setDetecting(true);
+    try {
+      const paths = await detectRemoteGitPaths(
+        host,
+        Number(port),
+        username,
+        authType,
+        authType === "key" ? keyPath || undefined : undefined,
+      );
+      if (paths.length === 0) {
+        setDetectedPaths([]);
+      } else if (paths.length === 1 && paths[0]) {
+        setRemoteProjectPath(paths[0]);
+        setDetectedPaths(null);
+      } else {
+        setDetectedPaths(paths);
+      }
+    } catch (e) {
+      setError(`Detect failed: ${String(e)}`);
+    } finally {
+      setDetecting(false);
     }
   }, [host, port, username, authType, keyPath]);
 
@@ -128,6 +162,10 @@ export function SshConnectionForm({
             keyPath !== (editConnection.keyPath ?? "")
               ? keyPath || null
               : undefined,
+          remoteProjectPath:
+            remoteProjectPath !== (editConnection.remoteProjectPath ?? "")
+              ? remoteProjectPath || null
+              : undefined,
         };
         await updateConnection(editConnection.id, input);
       } else {
@@ -139,6 +177,7 @@ export function SshConnectionForm({
           authType,
           keyPath: authType === "key" ? keyPath : undefined,
           projectId: projectId ?? undefined,
+          remoteProjectPath: remoteProjectPath || undefined,
         };
         await createConnection(input);
       }
@@ -157,6 +196,7 @@ export function SshConnectionForm({
     username,
     authType,
     keyPath,
+    remoteProjectPath,
     projectId,
     createConnection,
     updateConnection,
@@ -270,6 +310,58 @@ export function SshConnectionForm({
               </div>
             </div>
           )}
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="ssh-remote-path">Remote Project Path</Label>
+            <div className="relative">
+              <Input
+                id="ssh-remote-path"
+                placeholder="/home/user/project"
+                value={remoteProjectPath}
+                onChange={(e) => {
+                  setRemoteProjectPath(e.target.value);
+                  setDetectedPaths(null);
+                }}
+                className="pr-9"
+              />
+              <button
+                type="button"
+                onClick={handleDetect}
+                disabled={!canTest || detecting}
+                title="Detect git repositories on remote server"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors disabled:opacity-40"
+              >
+                <Search className={`h-4 w-4 ${detecting ? "animate-pulse" : ""}`} />
+              </button>
+            </div>
+            {detectedPaths !== null && detectedPaths.length === 0 && (
+              <p className="text-[10px] text-text-muted">
+                No git repositories found in home directory
+              </p>
+            )}
+            {detectedPaths !== null && detectedPaths.length > 1 && (
+              <div className="flex flex-col gap-0.5">
+                {detectedPaths.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setRemoteProjectPath(p);
+                      setDetectedPaths(null);
+                    }}
+                    className="text-left text-[11px] text-text-muted hover:text-text hover:bg-white/[0.06] rounded px-1.5 py-0.5 transition-colors truncate"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!detectedPaths && (
+              <p className="text-[10px] text-text-muted">
+                Absolute path to a git repository on the remote server (enables Git Graph)
+              </p>
+            )}
+          </div>
 
           {error && (
             <div className="flex items-center gap-1.5 text-xs text-red-400">

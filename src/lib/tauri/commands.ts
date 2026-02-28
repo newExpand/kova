@@ -734,6 +734,7 @@ export interface SshConnection {
   keyPath: string | null;
   projectId: string | null;
   isDefault: boolean;
+  remoteProjectPath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -747,6 +748,7 @@ export interface CreateSshConnectionInput {
   keyPath?: string;
   projectId?: string;
   isDefault?: boolean;
+  remoteProjectPath?: string;
 }
 
 export interface UpdateSshConnectionInput {
@@ -758,6 +760,7 @@ export interface UpdateSshConnectionInput {
   keyPath?: string | null;
   projectId?: string | null;
   isDefault?: boolean;
+  remoteProjectPath?: string | null;
 }
 
 export interface SshConnectResult {
@@ -950,6 +953,55 @@ export async function remoteTmuxSendKeys(
     connectionId,
     remoteSessionName,
     keys,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Remote git commands (via SSH)
+// ---------------------------------------------------------------------------
+
+export async function getRemoteGitGraph(
+  connectionId: string,
+  limit?: number,
+): Promise<GitGraphData> {
+  return invoke<GitGraphData>("get_remote_git_graph", { connectionId, limit });
+}
+
+export async function getRemoteGitCommitsPage(
+  connectionId: string,
+  skip: number,
+  limit?: number,
+): Promise<GitCommitsPage> {
+  return invoke<GitCommitsPage>("get_remote_git_commits_page", {
+    connectionId,
+    skip,
+    limit,
+  });
+}
+
+export async function getRemoteCommitDetail(
+  connectionId: string,
+  hash: string,
+): Promise<CommitDetail> {
+  return invoke<CommitDetail>("get_remote_commit_detail", {
+    connectionId,
+    hash,
+  });
+}
+
+export async function detectRemoteGitPaths(
+  host: string,
+  port: number,
+  username: string,
+  authType: SshAuthType,
+  keyPath?: string,
+): Promise<string[]> {
+  return invoke<string[]>("detect_remote_git_paths", {
+    host,
+    port,
+    username,
+    authType,
+    keyPath,
   });
 }
 

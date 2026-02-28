@@ -14,7 +14,7 @@ const SHELL_METACHAR: &[char] = &[
 ];
 
 /// Validate a field against shell metacharacters
-fn validate_ssh_field(value: &str, field_name: &str) -> Result<(), AppError> {
+pub(crate) fn validate_ssh_field(value: &str, field_name: &str) -> Result<(), AppError> {
     if value.is_empty() {
         return Err(AppError::InvalidInput(format!(
             "{} cannot be empty",
@@ -71,7 +71,7 @@ fn validate_key_path(auth_type: &SshAuthType, key_path: &Option<String>) -> Resu
 }
 
 /// Expand ~ to home directory
-fn expand_tilde(path: &str) -> Result<String, AppError> {
+pub(crate) fn expand_tilde(path: &str) -> Result<String, AppError> {
     if path.starts_with('~') {
         let home = std::env::var("HOME")
             .map_err(|_| AppError::Internal("HOME environment variable is not set".into()))?;
@@ -116,8 +116,9 @@ fn row_to_connection(row: &rusqlite::Row) -> rusqlite::Result<SshConnection> {
         key_path: row.get(6)?,
         project_id: row.get(7)?,
         is_default: row.get::<_, i32>(8)? == 1,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        remote_project_path: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 
@@ -143,8 +144,8 @@ pub fn create(
     let id = Uuid::new_v4().to_string();
 
     conn.execute(
-        "INSERT INTO ssh_connections (id, name, host, port, username, auth_type, key_path, project_id, is_default)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO ssh_connections (id, name, host, port, username, auth_type, key_path, project_id, is_default, remote_project_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             id,
             input.name.trim(),
@@ -155,6 +156,7 @@ pub fn create(
             input.key_path,
             input.project_id,
             input.is_default as i32,
+            input.remote_project_path,
         ],
     )?;
 
@@ -165,7 +167,7 @@ pub fn create(
 /// List all SSH connections
 pub fn list(conn: &Connection) -> Result<Vec<SshConnection>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, created_at, updated_at
+        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, remote_project_path, created_at, updated_at
          FROM ssh_connections ORDER BY created_at DESC",
     )?;
 
@@ -182,7 +184,7 @@ pub fn list_by_project(
     project_id: &str,
 ) -> Result<Vec<SshConnection>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, created_at, updated_at
+        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, remote_project_path, created_at, updated_at
          FROM ssh_connections WHERE project_id = ?1 ORDER BY is_default DESC, created_at DESC",
     )?;
 
@@ -196,7 +198,7 @@ pub fn list_by_project(
 /// Get a single SSH connection by ID
 pub fn get(conn: &Connection, id: &str) -> Result<SshConnection, AppError> {
     match conn.query_row(
-        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, created_at, updated_at
+        "SELECT id, name, host, port, username, auth_type, key_path, project_id, is_default, remote_project_path, created_at, updated_at
          FROM ssh_connections WHERE id = ?1",
         [id],
         row_to_connection,
@@ -278,6 +280,10 @@ pub fn update(
     if let Some(is_default) = input.is_default {
         updates.push("is_default = ?");
         params.push(Box::new(is_default as i32));
+    }
+    if input.remote_project_path.is_some() {
+        updates.push("remote_project_path = ?");
+        params.push(Box::new(input.remote_project_path.clone()));
     }
 
     if updates.is_empty() {

@@ -182,6 +182,25 @@ impl DbConnection {
             info!("Migration 006 already applied, skipping");
         }
 
+        // Check if migration 007 has been applied
+        let version_7: Option<i32> = conn
+            .query_row(
+                "SELECT version FROM _migrations WHERE version = 7",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if version_7.is_none() {
+            info!("Running migration 007_ssh_remote_path.sql");
+            let migration_sql = include_str!("migrations/007_ssh_remote_path.sql");
+            conn.execute_batch(migration_sql)?;
+            conn.execute("INSERT INTO _migrations (version) VALUES (7)", [])?;
+            info!("Migration 007 applied successfully");
+        } else {
+            info!("Migration 007 already applied, skipping");
+        }
+
         Ok(())
     }
 }

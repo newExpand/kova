@@ -40,6 +40,7 @@ pub struct SshConnection {
     pub key_path: Option<String>,
     pub project_id: Option<String>,
     pub is_default: bool,
+    pub remote_project_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -59,6 +60,7 @@ pub struct CreateSshConnectionInput {
     pub project_id: Option<String>,
     #[serde(default)]
     pub is_default: bool,
+    pub remote_project_path: Option<String>,
 }
 
 /// Input for updating an existing SSH connection
@@ -73,6 +75,7 @@ pub struct UpdateSshConnectionInput {
     pub key_path: Option<String>,
     pub project_id: Option<String>,
     pub is_default: Option<bool>,
+    pub remote_project_path: Option<String>,
 }
 
 /// Result of an SSH connect action.

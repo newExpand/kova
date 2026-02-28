@@ -15,6 +15,8 @@ import { useAppStore } from "../stores/appStore";
 import { useAgentFileTrackingStore } from "../features/files";
 import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
+import { SshTabSwitcher } from "../features/ssh/components/SshTabSwitcher";
+import { useSshStore } from "../features/ssh/stores/sshStore";
 
 const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
 
@@ -23,11 +25,18 @@ const MIN_PANEL_WIDTH = 320;
 const MIN_CONTENT_WIDTH = 400;
 
 const PROJECT_ROUTE_PATTERN = /^\/projects\/([^/]+)\//;
+const SSH_ROUTE_PATTERN = /^\/ssh\/([^/]+)\//;
 
 function TitleBar() {
   const location = useLocation();
-  const match = location.pathname.match(PROJECT_ROUTE_PATTERN);
-  const projectId = match?.[1] ?? null;
+  const projectMatch = location.pathname.match(PROJECT_ROUTE_PATTERN);
+  const projectId = projectMatch?.[1] ?? null;
+  const sshMatch = location.pathname.match(SSH_ROUTE_PATTERN);
+  const sshConnectionId = sshMatch?.[1] ?? null;
+  const sshConnection = useSshStore((s) =>
+    sshConnectionId ? s.getConnectionById(sshConnectionId) : undefined,
+  );
+  const showSshTabs = sshConnectionId && sshConnection?.remoteProjectPath;
 
   return (
     <header
@@ -38,6 +47,8 @@ function TitleBar() {
       <div className="min-w-[80px] flex-1" />
       {projectId ? (
         <ProjectTabSwitcher projectId={projectId} />
+      ) : showSshTabs ? (
+        <SshTabSwitcher connectionId={sshConnectionId} />
       ) : (
         <span className="text-xs font-medium tracking-wide text-text-muted select-none">
           Clew

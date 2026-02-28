@@ -14,9 +14,15 @@ const GitGraphPage = lazy(
   () => import("../features/git/components/GitGraphPage"),
 );
 
+// Lazy-load SshGitGraphPage (SSH remote git graph)
+const SshGitGraphPage = lazy(
+  () => import("../features/ssh/components/SshGitGraphPage"),
+);
+
 const TERMINAL_ROUTE_PATTERN = /^\/projects\/([^/]+)\/terminal$/;
 const GIT_ROUTE_PATTERN = /^\/projects\/([^/]+)\/git$/;
 const SSH_TERMINAL_ROUTE_PATTERN = /^\/ssh\/([^/]+)\/terminal$/;
+const SSH_GIT_ROUTE_PATTERN = /^\/ssh\/([^/]+)\/git$/;
 
 function useTerminalRouteMatch(): {
   isTerminalRoute: boolean;
@@ -50,6 +56,18 @@ function useSshTerminalRouteMatch(): {
   const match = location.pathname.match(SSH_TERMINAL_ROUTE_PATTERN);
   return {
     isSshTerminalRoute: !!match,
+    activeConnectionId: match?.[1] ?? null,
+  };
+}
+
+function useSshGitRouteMatch(): {
+  isSshGitRoute: boolean;
+  activeConnectionId: string | null;
+} {
+  const location = useLocation();
+  const match = location.pathname.match(SSH_GIT_ROUTE_PATTERN);
+  return {
+    isSshGitRoute: !!match,
     activeConnectionId: match?.[1] ?? null,
   };
 }
@@ -244,11 +262,58 @@ function GitGraphPool() {
   );
 }
 
+/** Layout-level SSH git graph pool — survives route navigation (mirrors GitGraphPool for SSH) */
+function SshGitGraphPool() {
+  const { isSshGitRoute, activeConnectionId } = useSshGitRouteMatch();
+  const [visitedConnections, setVisitedConnections] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (activeConnectionId) {
+      setVisitedConnections((prev) =>
+        prev.includes(activeConnectionId) ? prev : [...prev, activeConnectionId],
+      );
+    }
+  }, [activeConnectionId]);
+
+  return (
+    <div
+      className="flex flex-1 min-w-0 flex-col overflow-hidden"
+      style={isSshGitRoute ? undefined : { display: "none" }}
+    >
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-text-muted">Loading git graph...</p>
+          </div>
+        }
+      >
+        {visitedConnections.map((cid) => (
+          <div
+            key={cid}
+            style={{
+              display: cid === activeConnectionId ? "flex" : "none",
+              flex: 1,
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <SshGitGraphPage
+              connectionId={cid}
+              isActive={cid === activeConnectionId}
+            />
+          </div>
+        ))}
+      </Suspense>
+    </div>
+  );
+}
+
 function AppRoutes() {
   const { isTerminalRoute } = useTerminalRouteMatch();
   const { isGitRoute } = useGitRouteMatch();
   const { isSshTerminalRoute } = useSshTerminalRouteMatch();
-  const isPoolRoute = isTerminalRoute || isGitRoute || isSshTerminalRoute;
+  const { isSshGitRoute } = useSshGitRouteMatch();
+  const isPoolRoute = isTerminalRoute || isGitRoute || isSshTerminalRoute || isSshGitRoute;
 
   return (
     <>
@@ -264,12 +329,14 @@ function AppRoutes() {
           <Route path="/projects/:projectId/terminal" element={<></>} />
           <Route path="/projects/:projectId/git" element={<></>} />
           <Route path="/ssh/:connectionId/terminal" element={<></>} />
+          <Route path="/ssh/:connectionId/git" element={<></>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <TerminalPool />
       <SshTerminalPool />
       <GitGraphPool />
+      <SshGitGraphPool />
     </>
   );
 }

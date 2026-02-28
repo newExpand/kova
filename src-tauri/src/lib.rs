@@ -296,6 +296,11 @@ pub fn run() {
             commands::ssh::check_ssh_remote_tmux,
             commands::ssh::test_ssh_connection,
             commands::ssh::test_ssh_connection_params,
+            // Remote git commands (via SSH)
+            commands::remote_git::get_remote_git_graph,
+            commands::remote_git::get_remote_git_commits_page,
+            commands::remote_git::get_remote_commit_detail,
+            commands::remote_git::detect_remote_git_paths,
             // Remote tmux commands (via SSH)
             commands::ssh_tmux::remote_tmux_split_pane_vertical,
             commands::ssh_tmux::remote_tmux_split_pane_horizontal,

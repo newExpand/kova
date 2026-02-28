@@ -86,7 +86,7 @@ fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, AppError> {
 
 /// Detect if a commit body contains a Co-Authored-By line referencing Claude,
 /// indicating an agent-authored commit.
-fn detect_agent_commit(body: &str) -> bool {
+pub(crate) fn detect_agent_commit(body: &str) -> bool {
     body.lines().any(|line| {
         let lower = line.to_lowercase();
         lower.contains("co-authored-by:") && lower.contains("claude")
@@ -98,7 +98,7 @@ fn detect_agent_commit(body: &str) -> bool {
 /// and Co-Authored-By trailer value (valueonly format — no key prefix).
 /// See `GIT_LOG_FORMAT` for the exact format string.
 /// Shared by `get_log()` and `get_log_page()` to avoid duplication.
-fn parse_log_output(output: &str) -> Vec<GitCommit> {
+pub(crate) fn parse_log_output(output: &str) -> Vec<GitCommit> {
     output
         .lines()
         .filter(|line| !line.is_empty())
@@ -140,7 +140,7 @@ fn parse_log_output(output: &str) -> Vec<GitCommit> {
         .collect()
 }
 
-const GIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D%x00%(trailers:key=Co-Authored-By,valueonly,separator=%x20)";
+pub(crate) const GIT_LOG_FORMAT: &str = "--format=%H%x00%h%x00%s%x00%an%x00%ae%x00%aI%x00%P%x00%D%x00%(trailers:key=Co-Authored-By,valueonly,separator=%x20)";
 
 pub fn get_log(repo_path: &Path, limit: u32) -> Result<Vec<GitCommit>, AppError> {
     let limit_str = limit.to_string();
@@ -180,7 +180,7 @@ pub fn get_log_page(repo_path: &Path, skip: u32, limit: u32) -> Result<GitCommit
     Ok(GitCommitsPage { commits, has_more })
 }
 
-fn parse_refs(decorations: &str) -> Vec<GitRef> {
+pub(crate) fn parse_refs(decorations: &str) -> Vec<GitRef> {
     decorations
         .split(", ")
         .filter(|s| !s.is_empty())
@@ -1084,7 +1084,7 @@ pub fn get_file_diff(worktree_path: &Path, file_path: &str) -> Result<Option<Fil
 // ---------------------------------------------------------------------------
 
 /// Parse a unified diff output into a list of per-file diffs.
-fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
+pub(crate) fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
     // Split on "diff --git " boundaries
     let sections: Vec<&str> = {
         let mut result = Vec::new();

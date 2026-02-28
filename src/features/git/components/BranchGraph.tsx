@@ -16,8 +16,8 @@ const EDGE_OVERSCAN = 20;
 
 interface BranchGraphProps {
   layout: GraphLayout;
-  projectId: string;
-  projectPath: string;
+  projectId?: string;
+  projectPath?: string;
   highlightBranch: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
@@ -25,22 +25,30 @@ interface BranchGraphProps {
   onLoadMore: () => void;
   hasMore: boolean;
   isFetchingMore: boolean;
+  readOnly?: boolean;
+  selectedHash?: string | null;
+  onSelectCommit?: (hash: string) => void;
 }
 
-export function BranchGraph({
-  layout,
-  projectId,
-  projectPath,
-  highlightBranch,
-  onHoverBranch,
-  onLeaveBranch,
-  scrollContainerRef,
-  onLoadMore,
-  hasMore,
-  isFetchingMore,
-}: BranchGraphProps) {
-  const selectedHash = useGitStore((s) => s.selectedCommitHash);
-  const selectCommit = useGitStore((s) => s.selectCommit);
+export function BranchGraph(props: BranchGraphProps) {
+  const {
+    layout,
+    projectId,
+    projectPath,
+    highlightBranch,
+    onHoverBranch,
+    onLeaveBranch,
+    scrollContainerRef,
+    onLoadMore,
+    hasMore,
+    isFetchingMore,
+    readOnly = false,
+  } = props;
+
+  const gitSelectedHash = useGitStore((s) => s.selectedCommitHash);
+  const gitSelectCommit = useGitStore((s) => s.selectCommit);
+  const selectedHash = readOnly ? (props.selectedHash ?? null) : gitSelectedHash;
+  const selectCommit = readOnly ? (props.onSelectCommit ?? (() => {})) : gitSelectCommit;
 
   // CreateBranchDialog state
   const [createBranchTarget, setCreateBranchTarget] = useState<{
@@ -175,75 +183,90 @@ export function BranchGraph({
               const isDimmed = isHighlighting && node.color !== highlightColor;
               const branch = colorToBranch.get(node.color) ?? null;
 
+              const commitRow = (
+                onContextMenu?: (e: React.MouseEvent) => void,
+                onRefContextMenu?: (e: React.MouseEvent, branchName: string) => void,
+              ) => (
+                <button
+                  type="button"
+                  className={`flex w-full items-center gap-3 px-3 text-left select-none transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
+                    selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
+                  }`}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: ROW_HEIGHT,
+                    transform: `translateY(${virtualItem.start}px)`,
+                    opacity: isDimmed ? 0.4 : 1,
+                  }}
+                  onClick={() => selectCommit(node.commit.hash)}
+                  onContextMenu={onContextMenu}
+                  onMouseEnter={() => branch && onHoverBranch?.(branch)}
+                  onMouseLeave={() => onLeaveBranch?.()}
+                >
+                  <AuthorAvatar
+                    name={node.commit.authorName}
+                    isAgent={node.commit.isAgentCommit}
+                  />
+                  <span className="shrink-0 font-mono text-[11px] text-text-muted">
+                    {node.commit.shortHash}
+                  </span>
+                  <span className="truncate text-sm text-text-secondary">
+                    {node.commit.message}
+                  </span>
+                  {node.commit.isAgentCommit && (
+                    <span
+                      className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
+                        text-[10px] font-bold leading-none
+                        bg-purple-500/10 text-purple-300 border border-purple-400/20
+                        shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
+                      aria-label="AI Agent commit"
+                    >
+                      <Sparkles className="h-2.5 w-2.5" />
+                      AI
+                    </span>
+                  )}
+                  {/* Ref badges — right-click on a badge targets that specific branch */}
+                  {node.commit.refs.map((ref) => (
+                    <span
+                      key={ref.name}
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
+                      onContextMenu={(e) => {
+                        if (onRefContextMenu && (ref.refType === "localBranch" || ref.refType === "head")) {
+                          onRefContextMenu(e, ref.name);
+                        }
+                      }}
+                    >
+                      {ref.name}
+                    </span>
+                  ))}
+                  <span className="ml-auto shrink-0 text-[11px] text-text-muted">
+                    {formatRelativeDate(node.commit.date)}
+                  </span>
+                </button>
+              );
+
+              if (readOnly) {
+                return (
+                  <div key={node.commit.hash}>
+                    {commitRow()}
+                  </div>
+                );
+              }
+
               return (
                 <CommitContextMenu
                   key={node.commit.hash}
                   commit={node.commit}
-                  projectId={projectId}
-                  projectPath={projectPath}
+                  projectId={projectId!}
+                  projectPath={projectPath!}
                   onCreateBranch={handleCreateBranch}
                 >
-                  {({ onContextMenu, onRefContextMenu }) => (
-                    <button
-                      type="button"
-                      className={`flex w-full items-center gap-3 px-3 text-left select-none transition-all duration-200 ease-in-out border-b border-white/[0.03] hover:bg-white/[0.04] ${
-                        selectedHash === node.commit.hash ? "bg-white/[0.06]" : ""
-                      }`}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: ROW_HEIGHT,
-                        transform: `translateY(${virtualItem.start}px)`,
-                        opacity: isDimmed ? 0.4 : 1,
-                      }}
-                      onClick={() => selectCommit(node.commit.hash)}
-                      onContextMenu={onContextMenu}
-                      onMouseEnter={() => branch && onHoverBranch?.(branch)}
-                      onMouseLeave={() => onLeaveBranch?.()}
-                    >
-                      <AuthorAvatar
-                        name={node.commit.authorName}
-                        isAgent={node.commit.isAgentCommit}
-                      />
-                      <span className="shrink-0 font-mono text-[11px] text-text-muted">
-                        {node.commit.shortHash}
-                      </span>
-                      <span className="truncate text-sm text-text-secondary">
-                        {node.commit.message}
-                      </span>
-                      {node.commit.isAgentCommit && (
-                        <span
-                          className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5
-                            text-[10px] font-bold leading-none
-                            bg-purple-500/10 text-purple-300 border border-purple-400/20
-                            shadow-[0_0_4px_oklch(0.6_0.2_290/0.2)]"
-                          aria-label="AI Agent commit"
-                        >
-                          <Sparkles className="h-2.5 w-2.5" />
-                          AI
-                        </span>
-                      )}
-                      {/* Ref badges — right-click on a badge targets that specific branch */}
-                      {node.commit.refs.map((ref) => (
-                        <span
-                          key={ref.name}
-                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${refBadgeClassName(ref.refType)}`}
-                          onContextMenu={(e) => {
-                            if (ref.refType === "localBranch" || ref.refType === "head") {
-                              onRefContextMenu(e, ref.name);
-                            }
-                          }}
-                        >
-                          {ref.name}
-                        </span>
-                      ))}
-                      <span className="ml-auto shrink-0 text-[11px] text-text-muted">
-                        {formatRelativeDate(node.commit.date)}
-                      </span>
-                    </button>
-                  )}
+                  {({ onContextMenu, onRefContextMenu }) =>
+                    commitRow(onContextMenu, onRefContextMenu)
+                  }
                 </CommitContextMenu>
               );
             })}
@@ -266,15 +289,17 @@ export function BranchGraph({
       </div>
 
       {/* Create branch dialog (single instance) */}
-      <CreateBranchDialog
-        open={createBranchTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setCreateBranchTarget(null);
-        }}
-        commit={createBranchTarget ?? { hash: "", shortHash: "", message: "" }}
-        projectId={projectId}
-        projectPath={projectPath}
-      />
+      {!readOnly && (
+        <CreateBranchDialog
+          open={createBranchTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setCreateBranchTarget(null);
+          }}
+          commit={createBranchTarget ?? { hash: "", shortHash: "", message: "" }}
+          projectId={projectId!}
+          projectPath={projectPath!}
+        />
+      )}
     </>
   );
 }

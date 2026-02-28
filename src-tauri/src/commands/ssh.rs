@@ -153,6 +153,7 @@ pub fn test_ssh_connection_params(
         key_path,
         project_id: None,
         is_default: false,
+        remote_project_path: None,
         created_at: String::new(),
         updated_at: String::new(),
     };
