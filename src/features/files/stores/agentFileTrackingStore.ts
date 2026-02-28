@@ -145,6 +145,7 @@ interface AgentFileTrackingActions {
   trackUserEdit: (projectPath: string, relativePath: string) => void;
   removeUserEdit: (projectPath: string, relativePath: string) => void;
   removeAgentWrite: (projectPath: string, relativePath: string) => void;
+  removeCommittedFiles: (projectPath: string, filePaths: string[]) => void;
   clearProject: (projectPath: string) => void;
   restoreWorkingSets: () => Promise<void>;
   // Reset
@@ -375,6 +376,84 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
 
     removeAgentWrite: (projectPath, relativePath) =>
       removeFromField("writes", projectPath, relativePath),
+
+    removeCommittedFiles: (projectPath, filePaths) => {
+      if (filePaths.length === 0) return;
+      const key = normalizePathKey(projectPath);
+
+      // Normalize paths: strip leading "./" and trailing "/" for consistent matching
+      const normalized = filePaths.map((p) => p.replace(/^\.\//, "").replace(/\/$/, ""));
+
+      // Clean up flash timers for all removed files
+      for (const fp of normalized) {
+        const fk = flashKey(projectPath, fp);
+        const timer = flashTimers.get(fk);
+        if (timer) {
+          clearTimeout(timer);
+          flashTimers.delete(fk);
+        }
+      }
+
+      set((state) => {
+        const existing = state.workingSets[key];
+        if (!existing) {
+          console.info("[agentFileTracking] removeCommittedFiles: no working set for %s", key);
+          return state;
+        }
+
+        const pathSet = new Set(normalized);
+        let removedCount = 0;
+
+        // Remove from writes
+        const newWrites: Record<string, FileTouch> = {};
+        for (const [fp, touch] of Object.entries(existing.writes)) {
+          if (pathSet.has(fp)) {
+            removedCount++;
+          } else {
+            newWrites[fp] = touch;
+          }
+        }
+
+        // Remove from userEdits
+        const newUserEdits: Record<string, FileTouch> = {};
+        for (const [fp, touch] of Object.entries(existing.userEdits ?? {})) {
+          if (pathSet.has(fp)) {
+            removedCount++;
+          } else {
+            newUserEdits[fp] = touch;
+          }
+        }
+
+        if (removedCount === 0) {
+          console.info(
+            "[agentFileTracking] removeCommittedFiles: none of %d paths matched tracked files for %s",
+            normalized.length, key,
+          );
+          return state;
+        }
+
+        console.info(
+          "[agentFileTracking] removeCommittedFiles: removed %d entries from working set for %s",
+          removedCount, key,
+        );
+
+        // Clean recentFlashes
+        const newFlashes = { ...state.recentFlashes };
+        for (const fp of normalized) {
+          delete newFlashes[flashKey(projectPath, fp)];
+        }
+
+        return {
+          workingSets: {
+            ...state.workingSets,
+            [key]: { writes: newWrites, userEdits: newUserEdits },
+          },
+          recentFlashes: newFlashes,
+        };
+      });
+
+      persistWorkingSets();
+    },
 
     clearProject: (projectPath) => {
       const key = normalizePathKey(projectPath);

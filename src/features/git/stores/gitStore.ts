@@ -7,6 +7,7 @@ import {
   gitCreateBranch, gitDeleteBranch, gitSwitchBranch,
   gitFetchRemote,
 } from "../../../lib/tauri/commands";
+import { useAgentFileTrackingStore } from "../../files";
 
 // ---------------------------------------------------------------------------
 // State
@@ -370,6 +371,16 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
 
   // Critical fix: separate commit from post-commit refresh
   commitChanges: async (worktreePath, message, projectId, projectPath) => {
+    // Capture staged file paths BEFORE commit (after commit, staged list is empty)
+    const staged = get().workingChanges?.staged;
+    if (!staged) {
+      console.warn(
+        "[gitStore] commitChanges: workingChanges.staged unavailable; " +
+        "committed files will not be removed from the working set",
+      );
+    }
+    const stagedPaths = (staged ?? []).map((f) => f.path);
+
     set({ isCommitting: true, commitError: null, lastCommitHash: null });
     try {
       const result = await gitCreateCommit(worktreePath, message);
@@ -380,6 +391,16 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       return; // Do not attempt refresh if commit failed
     } finally {
       set({ isCommitting: false });
+    }
+    // Post-commit cleanup — errors must not override commit success
+    try {
+      if (stagedPaths.length > 0) {
+        useAgentFileTrackingStore
+          .getState()
+          .removeCommittedFiles(projectPath, stagedPaths);
+      }
+    } catch (e) {
+      console.error("[gitStore] post-commit working set cleanup failed (commit succeeded):", e);
     }
     // Post-commit refresh — errors here should not confuse the user
     try {
