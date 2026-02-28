@@ -26,12 +26,7 @@ src/
 └── hooks/          # useGlobalShortcuts.ts
 ```
 
-### 1.2 File Ownership Boundaries
-- **Lead-only files**: lib.rs, mod.rs, index.ts, routes.tsx, CLAUDE.md, configs
-- **Agent-owned files**: Each agent's task specifies its files (no overlap)
-- **Shared integration**: Agents provide integration notes, Lead applies them
-
-## 1.3 Platform Constraints
+### 1.2 Platform Constraints
 
 - **WKWebView**: macOS Tauri uses WKWebView which blocks external CDN resources. Always use bundled/local assets (npm packages, fontsource, etc.) instead of CDN links.
 - **Terminal**: The project uses xterm.js 6.0 with DOM renderer. `@xterm/addon-canvas` 0.7.0 is incompatible with xterm 6.0. Terminal transparency must be achieved through CSS on the DOM renderer's actual viewport elements (`.xterm-viewport`, `.xterm-screen`), not through canvas addons.
@@ -39,194 +34,42 @@ src/
 
 ## 2. Rust Coding Rules
 
-### 2.1 Error Handling
-```rust
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum AppError {
-    #[error("Not found: {0}")]
-    NotFound(String),
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-// Custom Serialize for Tauri
-impl serde::Serialize for AppError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
-        serializer.serialize_str(self.to_string().as_ref())
-    }
-}
-```
-
-- **NEVER use `unwrap()` or `expect()`** -> use `?` operator with AppError
+- **NEVER use `unwrap()` or `expect()`** — use `?` operator with `AppError`
 - Return `Result<T, AppError>` from all fallible functions
-- Log errors with `tracing::error!` before returning
-
-### 2.2 SQL Security
-```rust
-// CORRECT: Parameterized queries only
-conn.execute(
-    "INSERT INTO projects (name, path) VALUES (?1, ?2)",
-    params![name, path]
-)?;
-
-// INCORRECT: NEVER do this
-// let query = format!("SELECT * FROM projects WHERE name = '{}'", input);
-```
-
-- **ALWAYS use `?` positional or `:name` named parameters**
-- **NEVER concatenate user input into SQL strings**
-- Enable: `PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;`
-
-### 2.3 Tauri IPC Patterns
-```rust
-#[tauri::command]
-pub fn create_project(
-    name: String,           // Owned types (not &str)
-    path: String,
-    state: State<'_, Mutex<DbConnection>>,
-) -> Result<String, AppError> {
-    let conn = state.lock().map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-    services::project::create(&conn.conn, &name, &path)
-}
-```
-
-- Register ALL commands in `generate_handler![]`
-- Use `State<'_, Mutex<T>>` for shared state
-- Return `Result<T, AppError>` for proper error handling
-
-### 2.4 Serde Conventions
-```rust
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]  // REQUIRED on all IPC structs
-pub struct Project {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub color_index: i32,
-    pub is_active: bool,
-    pub created_at: String,
-}
-```
-
-### 2.5 Logging
-```rust
-use tracing::{info, warn, error};
-info!("Starting event server on port {}", port);
-warn!("Retrying tmux command (attempt {}/3)", attempt);
-error!("Database migration failed: {}", err);
-```
-- **No `println!` in production code** -- use tracing
+- Log errors with `tracing::error!` before returning. No `println!` in production code.
+- **SQL**: ALWAYS use `?` positional or `:name` named parameters. NEVER concatenate user input into SQL strings.
+- **Serde**: `#[serde(rename_all = "camelCase")]` REQUIRED on all IPC structs
+- **IPC**: Register ALL commands in `generate_handler![]`. Use `State<'_, Mutex<T>>` for shared state.
+- **PRAGMAs**: `foreign_keys = ON; journal_mode = WAL; synchronous = NORMAL;`
 
 ## 3. Frontend Coding Rules
 
-### 3.1 TypeScript Safety
-- **No `any` type** -- use explicit types or generics
-- Define all Tauri command types in `lib/tauri/commands.ts`
-- Match Rust struct field names (camelCase via serde)
+- **No `any` type** — use explicit types or generics
+- Define all Tauri command types in `lib/tauri/commands.ts`. Components NEVER call `invoke()` directly.
+- Events only via `lib/event-bridge/`. Components NEVER call `listen()` directly.
+- **Zustand** store structure: State -> Computed -> Actions -> Reset. Every async action needs `isLoading` flag + `finally` cleanup.
+- **Feature modules**: ALL imports from `features/` MUST go through `index.ts` barrel exports.
 
-### 3.2 Tauri IPC Wrappers
-```typescript
-// lib/tauri/commands.ts
-import { invoke } from '@tauri-apps/api/core';
+## 4. Event Server
 
-export async function createProject(name: string, path: string): Promise<string> {
-    return await invoke<string>('create_project', { name, path });
-}
-// Components NEVER call invoke() directly
-```
-
-### 3.3 Event Bridge Pattern
-```typescript
-// lib/event-bridge/index.ts
-import { listen } from '@tauri-apps/api/event';
-
-export function initEventBridge() {
-    listen('notification:hook-received', (event) => {
-        // update store
-    });
-}
-// Components NEVER call listen() directly
-```
-
-### 3.4 Zustand State Management
-```typescript
-interface ProjectStore {
-    // 1. State
-    projects: Project[];
-    selectedId: string | null;
-    isLoading: boolean;
-    error: string | null;
-    // 2. Computed
-    getProjectById: (id: string) => Project | undefined;
-    // 3. Actions
-    fetchProjects: () => Promise<void>;
-    createProject: (input: CreateProjectInput) => Promise<void>;
-    deleteProject: (id: string) => void;
-    // 4. Reset
-    reset: () => void;
-}
-```
-- Structure: State -> Computed -> Actions -> Reset
-- Every async action: `isLoading` flag + `finally` cleanup
-- Feature imports only through `index.ts` barrel exports
-
-### 3.5 Feature Module Pattern
-```
-features/project/
-├── components/     # UI components
-├── hooks/          # useProjects.ts
-├── stores/         # projectStore.ts
-├── types.ts        # TypeScript types
-└── index.ts        # BARREL EXPORT (public API)
-```
-- **ALL imports from features MUST go through `index.ts`**
-
-## 4. Database Schema
-
-```sql
-CREATE TABLE projects (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    path TEXT NOT NULL,
-    color_index INTEGER DEFAULT 0 CHECK (color_index >= 0 AND color_index <= 7),
-    is_active INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
-CREATE INDEX idx_projects_active ON projects(is_active) WHERE is_active = 1;
-```
-
-## 5. Event Server
-
-```
-Claude Code Hook -> curl POST http://127.0.0.1:{PORT}/hook?project={path}&type={Type}
-  -> tiny_http server (Rust thread)
-  -> app.emit("notification:hook-received", HookEvent)
-  -> Event Bridge (React) -> notificationStore
-  -> Tauri notification API -> macOS native alert
-```
+- Flow: Claude Code Hook → curl POST `127.0.0.1:{PORT}/hook` → tiny_http (Rust thread) → `app.emit` → Event Bridge → notificationStore → macOS native alert
 - Port file: `~/.flow-orche/event-server.port`
 - Server binds to `127.0.0.1` ONLY (never `0.0.0.0`)
 
-## 6. Security Rules
+## 5. Security Rules
 
-### 6.1 High Risk
+### 5.1 High Risk
 - **Event Server**: 127.0.0.1 only
 - **SQL**: ALWAYS `?` params (NEVER format!/concat)
 - **Hooks**: `serde_json::to_string()` (NEVER string concat)
 - **File Writes**: Atomic (temp + rename), permissions 0600
 
-### 6.2 Input Validation
+### 5.2 Input Validation
 - Canonicalize project paths before DB insert
 - Validate hook types against enum
 - JSON parse errors return 400 (not 500)
 
-## 7. Build Commands
+## 6. Build Commands
 
 ```bash
 cargo build                        # Rust compile
@@ -235,7 +78,7 @@ bun run build                      # Frontend build
 bun tauri dev                      # Dev mode with HMR
 ```
 
-## 8. Critical Checklist
+## 7. Critical Checklist
 
 Before committing:
 - [ ] `cargo build` passes
