@@ -15,8 +15,7 @@ import { useAppStore } from "../stores/appStore";
 import { useAgentFileTrackingStore } from "../features/files";
 import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
-import { SshTabSwitcher } from "../features/ssh/components/SshTabSwitcher";
-import { useSshStore } from "../features/ssh/stores/sshStore";
+import { SshTabSwitcher, useSshStore } from "../features/ssh";
 
 const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
 

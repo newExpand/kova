@@ -1,34 +1,43 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "motion/react";
 import { Sparkles, X, Copy, Check, AlertCircle, Maximize2, Minimize2 } from "lucide-react";
-import { useGitStore } from "../stores/gitStore";
+import type { CommitDetail, GitCommit } from "../../../lib/tauri/commands";
 import { FileDiffRow } from "./DiffViewer";
 import { AuthorAvatar } from "./AuthorAvatar";
 
 interface CommitDetailPanelProps {
-  projectPath: string;
+  selectedHash: string | null;
+  commitDetail: CommitDetail | null;
+  isDetailLoading: boolean;
+  detailError: string | null;
+  selectedCommit: GitCommit | null;
+  onFetchDetail: (hash: string) => void;
   onClose: () => void;
   maximized: boolean;
   onToggleMaximize: () => void;
 }
 
-export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMaximize }: CommitDetailPanelProps) {
-  const selectedHash = useGitStore((s) => s.selectedCommitHash);
-  const commitDetail = useGitStore((s) => s.commitDetail);
-  const isDetailLoading = useGitStore((s) => s.isDetailLoading);
-  const detailError = useGitStore((s) => s.detailError);
-  const fetchCommitDetail = useGitStore((s) => s.fetchCommitDetail);
-
+export function CommitDetailPanel({
+  selectedHash,
+  commitDetail,
+  isDetailLoading,
+  detailError,
+  selectedCommit,
+  onFetchDetail,
+  onClose,
+  maximized,
+  onToggleMaximize,
+}: CommitDetailPanelProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
 
   // Fetch commit detail when selected hash changes
   useEffect(() => {
-    if (selectedHash && projectPath) {
-      fetchCommitDetail(projectPath, selectedHash);
+    if (selectedHash) {
+      onFetchDetail(selectedHash);
     }
-  }, [selectedHash, projectPath, fetchCommitDetail]);
+  }, [selectedHash, onFetchDetail]);
 
   // Auto-expand all files when detail loads
   useEffect(() => {
@@ -39,26 +48,16 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
 
   // Escape key closes the panel (skip if dialog/modal is open)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape" && !e.defaultPrevented) {
         const activeEl = document.activeElement;
         if (activeEl?.closest("[role='dialog']")) return;
         onClose();
       }
-    };
+    }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
-
-  // Find the commit in graphData for meta info (author, date, parents)
-  const graphData = useGitStore((s) => s.graphData);
-  const selectedCommit = useMemo(() => {
-    for (const data of Object.values(graphData)) {
-      const found = data.commits.find((c) => c.hash === selectedHash);
-      if (found) return found;
-    }
-    return null;
-  }, [graphData, selectedHash]);
 
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -95,7 +94,6 @@ export function CommitDetailPanel({ projectPath, onClose, maximized, onToggleMax
       return next;
     });
   }, []);
-
 
   // Split message into subject and body
   const { subject, body } = useMemo(() => {

@@ -10,7 +10,8 @@ use tracing::{error, info, warn};
 
 /// Whitelist-based validation: only safe characters allowed in remote paths.
 /// Prevents shell injection when the path is used in a remote SSH command.
-fn validate_remote_path(path: &str) -> Result<(), AppError> {
+/// Also rejects `..` path traversal segments.
+pub(crate) fn validate_remote_path(path: &str) -> Result<(), AppError> {
     if path.is_empty() {
         return Err(AppError::InvalidInput(
             "Remote project path cannot be empty".into(),
@@ -19,6 +20,11 @@ fn validate_remote_path(path: &str) -> Result<(), AppError> {
     if !path.starts_with('/') {
         return Err(AppError::InvalidInput(
             "Remote project path must be absolute (start with /)".into(),
+        ));
+    }
+    if path.contains("..") {
+        return Err(AppError::InvalidInput(
+            "Remote project path must not contain '..' segments".into(),
         ));
     }
     if path.len() > 1024 {
@@ -126,15 +132,29 @@ pub fn detect_git_paths(connection: &SshConnection) -> Result<Vec<String>, AppEr
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Auth or connectivity failure
-        if stderr.contains("Permission denied") || stderr.contains("Connection") {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // If we got some stdout lines despite the error, `find` partially succeeded
+        // (e.g., permission denied on some subdirectories). Use the partial results.
+        if !stdout.trim().is_empty() {
+            warn!(
+                "Remote find command had partial failure for '{}': {}",
+                connection.name,
+                stderr.trim()
+            );
+            // Fall through to parse partial stdout below
+        } else {
+            // No output at all — this is a real failure
+            error!(
+                "Remote find command failed for '{}': {}",
+                connection.name,
+                stderr.trim()
+            );
             return Err(AppError::Git(format!(
-                "SSH connection failed: {}",
+                "Failed to detect git paths: {}",
                 stderr.trim()
             )));
         }
-        // find command might fail on some paths — return empty list
-        return Ok(Vec::new());
     }
 
     let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
@@ -190,6 +210,9 @@ pub fn get_remote_graph_data(
     )?;
     let branches = parse_remote_branches(&branch_output);
 
+    // Remote repos: worktrees and status are unavailable (read-only view).
+    // These dummy values mean "unknown", not "clean". The frontend's `readOnly`
+    // prop hides the status bar so the zeroed values are never displayed.
     Ok(GitGraphData {
         commits,
         branches,

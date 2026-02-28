@@ -8,7 +8,7 @@ import { WorktreePanel } from "./WorktreePanel";
 import { MergeProgressDialog } from "./MergeProgressDialog";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { GitBranch, RefreshCw } from "lucide-react";
 
 interface GitGraphPageProps {
@@ -27,6 +27,10 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const error = useGitStore((s) => s.getProjectError(projectId));
   const selectedCommitHash = useGitStore((s) => s.selectedCommitHash);
   const selectCommit = useGitStore((s) => s.selectCommit);
+  const commitDetail = useGitStore((s) => s.commitDetail);
+  const isDetailLoading = useGitStore((s) => s.isDetailLoading);
+  const detailError = useGitStore((s) => s.detailError);
+  const fetchCommitDetail = useGitStore((s) => s.fetchCommitDetail);
   const selectedWorktreePath = useGitStore((s) => s.selectedWorktreePath);
   const selectWorktree = useGitStore((s) => s.selectWorktree);
   const fetchMoreCommits = useGitStore((s) => s.fetchMoreCommits);
@@ -37,6 +41,18 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
   const togglePanel = useCallback(() => setPanelCollapsed((p) => !p), []);
   const [panelMaximized, setPanelMaximized] = useState(false);
   const togglePanelMaximize = useCallback(() => setPanelMaximized((p) => !p), []);
+
+  const selectedCommit = useMemo(() => {
+    if (!graphData || !selectedCommitHash) return null;
+    return graphData.commits.find((c) => c.hash === selectedCommitHash) ?? null;
+  }, [graphData, selectedCommitHash]);
+
+  const handleFetchDetail = useCallback(
+    (hash: string) => {
+      if (project?.path) fetchCommitDetail(project.path, hash);
+    },
+    [fetchCommitDetail, project?.path],
+  );
 
   const handleCloseCommit = useCallback(() => {
     selectCommit(null);
@@ -175,7 +191,12 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         </div>
         {isActive && selectedCommitHash && project?.path && (
           <CommitDetailPanel
-            projectPath={project.path}
+            selectedHash={selectedCommitHash}
+            commitDetail={commitDetail}
+            isDetailLoading={isDetailLoading}
+            detailError={detailError}
+            selectedCommit={selectedCommit}
+            onFetchDetail={handleFetchDetail}
             onClose={handleCloseCommit}
             maximized={panelMaximized}
             onToggleMaximize={togglePanelMaximize}

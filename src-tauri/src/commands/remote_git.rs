@@ -1,22 +1,26 @@
 use crate::db::DbConnection;
 use crate::errors::AppError;
 use crate::models::git::{CommitDetail, GitCommitsPage, GitGraphData};
+use crate::models::ssh::SshConnection;
 use crate::services::{remote_git, ssh};
 use std::sync::Mutex;
 use tauri::State;
 use tracing::error;
 
-#[tauri::command]
-pub async fn get_remote_git_graph(
-    connection_id: String,
-    limit: Option<u32>,
-    state: State<'_, Mutex<DbConnection>>,
-) -> Result<GitGraphData, AppError> {
+/// Resolve an SSH connection and its configured remote project path from a connection ID.
+/// Shared by all remote git commands to avoid repeating the lock + lookup + validation.
+fn resolve_connection_and_path(
+    state: &State<'_, Mutex<DbConnection>>,
+    connection_id: &str,
+) -> Result<(SshConnection, String), AppError> {
     let connection = {
         let conn = state
             .lock()
-            .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-        ssh::get(&conn.conn, &connection_id)?
+            .map_err(|e| {
+                error!("Database lock poisoned in resolve_connection_and_path: {}", e);
+                AppError::Internal("Internal state error. Please restart the application.".into())
+            })?;
+        ssh::get(&conn.conn, connection_id)?
     };
     let remote_path = connection
         .remote_project_path
@@ -27,7 +31,16 @@ pub async fn get_remote_git_graph(
             )
         })?
         .to_string();
+    Ok((connection, remote_path))
+}
 
+#[tauri::command]
+pub async fn get_remote_git_graph(
+    connection_id: String,
+    limit: Option<u32>,
+    state: State<'_, Mutex<DbConnection>>,
+) -> Result<GitGraphData, AppError> {
+    let (connection, remote_path) = resolve_connection_and_path(&state, &connection_id)?;
     let lim = limit.unwrap_or(200).min(10_000);
     tauri::async_runtime::spawn_blocking(move || {
         remote_git::get_remote_graph_data(&connection, &remote_path, lim)
@@ -46,22 +59,7 @@ pub async fn get_remote_git_commits_page(
     limit: Option<u32>,
     state: State<'_, Mutex<DbConnection>>,
 ) -> Result<GitCommitsPage, AppError> {
-    let connection = {
-        let conn = state
-            .lock()
-            .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-        ssh::get(&conn.conn, &connection_id)?
-    };
-    let remote_path = connection
-        .remote_project_path
-        .as_deref()
-        .ok_or_else(|| {
-            AppError::InvalidInput(
-                "SSH connection has no remote_project_path configured".into(),
-            )
-        })?
-        .to_string();
-
+    let (connection, remote_path) = resolve_connection_and_path(&state, &connection_id)?;
     let lim = limit.unwrap_or(200).min(10_000);
     tauri::async_runtime::spawn_blocking(move || {
         remote_git::get_remote_log_page(&connection, &remote_path, skip, lim)
@@ -79,22 +77,7 @@ pub async fn get_remote_commit_detail(
     hash: String,
     state: State<'_, Mutex<DbConnection>>,
 ) -> Result<CommitDetail, AppError> {
-    let connection = {
-        let conn = state
-            .lock()
-            .map_err(|_| AppError::Internal("Lock poisoned".into()))?;
-        ssh::get(&conn.conn, &connection_id)?
-    };
-    let remote_path = connection
-        .remote_project_path
-        .as_deref()
-        .ok_or_else(|| {
-            AppError::InvalidInput(
-                "SSH connection has no remote_project_path configured".into(),
-            )
-        })?
-        .to_string();
-
+    let (connection, remote_path) = resolve_connection_and_path(&state, &connection_id)?;
     tauri::async_runtime::spawn_blocking(move || {
         remote_git::get_remote_commit_detail(&connection, &remote_path, &hash)
     })

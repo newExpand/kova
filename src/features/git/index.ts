@@ -42,5 +42,6 @@ export { CommitContextMenu } from "./components/CommitContextMenu";
 export { CreateBranchDialog } from "./components/CreateBranchDialog";
 export { CommitBox } from "./components/CommitBox";
 export { BranchGraph } from "./components/BranchGraph";
+export { CommitDetailPanel } from "./components/CommitDetailPanel";
 export { AuthorAvatar, authorColor } from "./components/AuthorAvatar";
 export { FileDiffRow } from "./components/DiffViewer";

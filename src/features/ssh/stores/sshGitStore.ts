@@ -28,6 +28,8 @@ interface SshGitState {
   isDetailLoading: boolean;
   detailError: string | null;
   paginationByConnection: Record<string, PaginationState>;
+  /** Monotonically increasing counter to guard against stale fetchCommitDetail responses */
+  _detailRequestId: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,7 @@ const initialState: SshGitState = {
   isDetailLoading: false,
   detailError: null,
   paginationByConnection: {},
+  _detailRequestId: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -180,6 +183,12 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
         }));
       } catch (e) {
         console.error("[sshGitStore] fetchMoreCommits failed:", e);
+        set((state) => ({
+          errorByConnection: {
+            ...state.errorByConnection,
+            [connectionId]: `Failed to load more commits: ${toErrorMessage(e)}`,
+          },
+        }));
       } finally {
         set((state) => ({
           paginationByConnection: {
@@ -210,22 +219,24 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
     },
 
     fetchCommitDetail: async (connectionId, hash) => {
-      set({ isDetailLoading: true, detailError: null });
+      const requestId = get()._detailRequestId + 1;
+      set({ isDetailLoading: true, detailError: null, _detailRequestId: requestId });
       try {
         const detail = await getRemoteCommitDetail(connectionId, hash);
-        // Guard against stale response if user selected a different commit
-        if (get().selectedCommitHash !== hash) return;
+        if (get()._detailRequestId !== requestId) return;
         set({ commitDetail: detail });
       } catch (e) {
         console.error("[sshGitStore] fetchCommitDetail failed:", e);
-        // Guard against stale error if user selected a different commit
-        if (get().selectedCommitHash !== hash) return;
+        if (get()._detailRequestId !== requestId) return;
         set({
           commitDetail: null,
           detailError: toErrorMessage(e),
         });
       } finally {
-        set({ isDetailLoading: false });
+        // Only clear loading if this is still the latest request
+        if (get()._detailRequestId === requestId) {
+          set({ isDetailLoading: false });
+        }
       }
     },
 

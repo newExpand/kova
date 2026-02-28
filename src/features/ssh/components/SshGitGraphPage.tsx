@@ -1,10 +1,35 @@
 import { useSshGitStore } from "../stores/sshGitStore";
 import { useSshStore } from "../stores/sshStore";
-import { useGitGraph, BranchGraph } from "../../git";
-import { SshCommitDetailPanel } from "./SshCommitDetailPanel";
+import { useGitGraph, BranchGraph, CommitDetailPanel } from "../../git";
 import { useSshGitPolling } from "../hooks/useSshGitPolling";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import type { LucideIcon } from "lucide-react";
 import { GitBranch, RefreshCw, Globe } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Local helper for the repeated full-page placeholder pattern
+// ---------------------------------------------------------------------------
+
+interface FullPageMessageProps {
+  icon: LucideIcon;
+  message: string;
+  iconClassName?: string;
+}
+
+function FullPageMessage({ icon: Icon, message, iconClassName }: FullPageMessageProps) {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Icon className={`h-16 w-16 opacity-40 ${iconClassName ?? "text-text-muted"}`} strokeWidth={1} />
+        <p className="text-sm text-text-muted">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
 
 interface SshGitGraphPageProps {
   connectionId: string;
@@ -20,9 +45,23 @@ export default function SshGitGraphPage({ connectionId, isActive }: SshGitGraphP
   const error = useSshGitStore((s) => s.getConnectionError(connectionId));
   const selectedCommitHash = useSshGitStore((s) => s.selectedCommitHash);
   const selectCommit = useSshGitStore((s) => s.selectCommit);
+  const commitDetail = useSshGitStore((s) => s.commitDetail);
+  const isDetailLoading = useSshGitStore((s) => s.isDetailLoading);
+  const detailError = useSshGitStore((s) => s.detailError);
+  const fetchCommitDetail = useSshGitStore((s) => s.fetchCommitDetail);
   const fetchGraphData = useSshGitStore((s) => s.fetchGraphData);
   const fetchMoreCommits = useSshGitStore((s) => s.fetchMoreCommits);
   const pagination = useSshGitStore((s) => s.getPagination(connectionId));
+
+  const selectedCommit = useMemo(() => {
+    if (!graphData || !selectedCommitHash) return null;
+    return graphData.commits.find((c) => c.hash === selectedCommitHash) ?? null;
+  }, [graphData, selectedCommitHash]);
+
+  const handleFetchDetail = useCallback(
+    (hash: string) => fetchCommitDetail(connectionId, hash),
+    [fetchCommitDetail, connectionId],
+  );
 
   const [panelMaximized, setPanelMaximized] = useState(false);
   const togglePanelMaximize = useCallback(() => setPanelMaximized((p) => !p), []);
@@ -84,48 +123,33 @@ export default function SshGitGraphPage({ connectionId, isActive }: SshGitGraphP
   }, [fetchGraphData, connectionId, isRefreshing]);
 
   const handleLoadMore = useCallback(() => {
-    fetchMoreCommits(connectionId);
+    fetchMoreCommits(connectionId).catch((e) => {
+      console.error("[SshGitGraphPage] loadMore failed:", e);
+    });
   }, [fetchMoreCommits, connectionId]);
 
   // Connection not found
   if (!connection) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Globe className="h-16 w-16 text-text-muted opacity-40" strokeWidth={1} />
-          <p className="text-sm text-text-muted">
-            SSH connection not found
-          </p>
-        </div>
-      </div>
-    );
+    return <FullPageMessage icon={Globe} message="SSH connection not found" />;
   }
 
   // No remote project path configured
   if (!connection.remoteProjectPath) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <GitBranch className="h-16 w-16 text-text-muted opacity-40" strokeWidth={1} />
-          <p className="text-sm text-text-muted">
-            No remote project path configured for this connection
-          </p>
-        </div>
-      </div>
+      <FullPageMessage
+        icon={GitBranch}
+        message="No remote project path configured for this connection"
+      />
     );
   }
 
-  // Error — not a git repository
+  // Error -- not a git repository
   if (error && error.includes("not a git repository")) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <GitBranch className="h-16 w-16 text-text-muted opacity-40" strokeWidth={1} />
-          <p className="text-sm text-text-muted">
-            The remote directory is not a Git repository
-          </p>
-        </div>
-      </div>
+      <FullPageMessage
+        icon={GitBranch}
+        message="The remote directory is not a Git repository"
+      />
     );
   }
 
@@ -148,6 +172,14 @@ export default function SshGitGraphPage({ connectionId, isActive }: SshGitGraphP
         <div className="flex flex-col items-center gap-4">
           <GitBranch className="h-16 w-16 text-danger opacity-40" strokeWidth={1} />
           <p className="text-sm text-text-muted">{error}</p>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="text-xs text-primary hover:underline disabled:opacity-50"
+          >
+            {isRefreshing ? "Retrying..." : "Retry now"}
+          </button>
         </div>
       </div>
     );
@@ -195,8 +227,13 @@ export default function SshGitGraphPage({ connectionId, isActive }: SshGitGraphP
           )}
         </div>
         {isActive && selectedCommitHash && (
-          <SshCommitDetailPanel
-            connectionId={connectionId}
+          <CommitDetailPanel
+            selectedHash={selectedCommitHash}
+            commitDetail={commitDetail}
+            isDetailLoading={isDetailLoading}
+            detailError={detailError}
+            selectedCommit={selectedCommit}
+            onFetchDetail={handleFetchDetail}
             onClose={handleCloseCommit}
             maximized={panelMaximized}
             onToggleMaximize={togglePanelMaximize}

@@ -3,6 +3,7 @@ use crate::models::ssh::{
     CreateSshConnectionInput, SshAuthType, SshConnectResult, SshConnection, SshTestResult,
     UpdateSshConnectionInput,
 };
+use crate::services::remote_git;
 use rusqlite::Connection;
 use std::path::Path;
 use tracing::{error, info, warn};
@@ -131,6 +132,9 @@ fn validate_create_input(input: &CreateSshConnectionInput) -> Result<(), AppErro
     validate_port(input.port)?;
     validate_ssh_field(&input.username, "username")?;
     validate_key_path(&input.auth_type, &input.key_path)?;
+    if let Some(ref path) = input.remote_project_path {
+        remote_git::validate_remote_path(path)?;
+    }
     Ok(())
 }
 
@@ -238,6 +242,12 @@ pub fn update(
         &existing.key_path
     };
     validate_key_path(effective_auth_type, effective_key_path)?;
+    // Empty string means "clear the field"; only validate non-empty paths.
+    if let Some(ref path) = input.remote_project_path {
+        if !path.is_empty() {
+            remote_git::validate_remote_path(path)?;
+        }
+    }
 
     // Build dynamic UPDATE
     let mut updates = Vec::new();
@@ -281,9 +291,15 @@ pub fn update(
         updates.push("is_default = ?");
         params.push(Box::new(is_default as i32));
     }
-    if input.remote_project_path.is_some() {
+    if let Some(ref path) = input.remote_project_path {
         updates.push("remote_project_path = ?");
-        params.push(Box::new(input.remote_project_path.clone()));
+        // Empty string clears the field (sets to NULL)
+        if path.is_empty() {
+            let null_val: Option<String> = None;
+            params.push(Box::new(null_val));
+        } else {
+            params.push(Box::new(path.clone()));
+        }
     }
 
     if updates.is_empty() {
