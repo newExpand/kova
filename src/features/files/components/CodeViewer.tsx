@@ -35,9 +35,11 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
     try {
       const diff = await getFileDiff(projectPath, activeFile.path);
       setDiffPatch(diff?.patch ?? null);
-      // Clear user edit tracking if no more git changes
+      // Clear edit tracking if no more git changes
       if (!diff) {
-        useAgentFileTrackingStore.getState().removeUserEdit(projectPath, activeFile.path);
+        const tracking = useAgentFileTrackingStore.getState();
+        tracking.removeUserEdit(projectPath, activeFile.path);
+        tracking.removeAgentWrite(projectPath, activeFile.path);
       }
     } catch (e) {
       console.error("[CodeViewer] Failed to fetch diff for", activeFile.path, e);

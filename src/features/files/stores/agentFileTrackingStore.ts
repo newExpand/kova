@@ -21,7 +21,7 @@ export interface ProjectWorkingSet {
 // Constants
 // ---------------------------------------------------------------------------
 
-const WRITE_DECAY_MS = 30 * 60 * 1000; // 30 min
+const STALE_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24h — persist/restore 시 오래된 항목 정리용
 const FLASH_DURATION_MS = 1_500;
 const MAX_FILES_PER_SET = 50;
 
@@ -144,6 +144,7 @@ interface AgentFileTrackingActions {
   ) => void;
   trackUserEdit: (projectPath: string, relativePath: string) => void;
   removeUserEdit: (projectPath: string, relativePath: string) => void;
+  removeAgentWrite: (projectPath: string, relativePath: string) => void;
   clearProject: (projectPath: string) => void;
   restoreWorkingSets: () => Promise<void>;
   // Reset
@@ -166,8 +167,10 @@ const initialState: AgentFileTrackingState = {
 // ---------------------------------------------------------------------------
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistFailCount = 0;
 const PERSIST_DEBOUNCE_MS = 2_000;
 const PERSIST_STORAGE_KEY = "working_sets";
+const MAX_SILENT_PERSIST_FAILURES = 3;
 
 function persistWorkingSets(): void {
   if (persistTimer) clearTimeout(persistTimer);
@@ -177,15 +180,28 @@ function persistWorkingSets(): void {
       const cleaned: Record<string, ProjectWorkingSet> = {};
       const now = Date.now();
       for (const [key, ws] of Object.entries(workingSets)) {
-        const writes = filterDecayed(ws.writes, WRITE_DECAY_MS, now);
+        // writes: 24h stale cleanup; userEdits: no decay (cleaned via git-clean in CodeViewer)
+        const writes = filterDecayed(ws.writes, STALE_CLEANUP_MS, now);
+        const staleCount = Object.keys(ws.writes).length - Object.keys(writes).length;
+        if (staleCount > 0) {
+          console.info("[agentFileTracking] persist: pruned %d stale writes (>24h) for %s", staleCount, key);
+        }
         const userEdits = ws.userEdits ?? {};
         if (Object.keys(writes).length > 0 || Object.keys(userEdits).length > 0) {
           cleaned[key] = { writes, userEdits };
         }
       }
       await setSetting(PERSIST_STORAGE_KEY, JSON.stringify(cleaned));
+      persistFailCount = 0;
     } catch (err) {
-      console.error("[agentFileTracking] persist failed:", err);
+      persistFailCount++;
+      console.error("[agentFileTracking] persist failed (attempt %d):", persistFailCount, err);
+      if (persistFailCount >= MAX_SILENT_PERSIST_FAILURES) {
+        console.warn(
+          "[agentFileTracking] Working set persistence has failed %d consecutive times. Data may be lost on restart.",
+          persistFailCount,
+        );
+      }
     }
   }, PERSIST_DEBOUNCE_MS);
 }
@@ -195,8 +211,53 @@ function persistWorkingSets(): void {
 // ---------------------------------------------------------------------------
 
 export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
-  (set, get) => ({
-    ...initialState,
+  (set, get) => {
+    /** Shared helper: remove a single entry from a working-set field. */
+    function removeFromField(
+      field: "writes" | "userEdits",
+      projectPath: string,
+      relativePath: string,
+    ): void {
+      const key = normalizePathKey(projectPath);
+
+      // Clean up flash timer if removing an agent write
+      if (field === "writes") {
+        const fk = flashKey(projectPath, relativePath);
+        const timer = flashTimers.get(fk);
+        if (timer) {
+          clearTimeout(timer);
+          flashTimers.delete(fk);
+        }
+      }
+
+      set((state) => {
+        const existing = state.workingSets[key];
+        if (!existing?.[field]?.[relativePath]) return state;
+        const { [relativePath]: _, ...rest } = existing[field];
+
+        // Also clean recentFlashes if removing an agent write
+        let recentFlashes = state.recentFlashes;
+        if (field === "writes") {
+          const fk = flashKey(projectPath, relativePath);
+          if (state.recentFlashes[fk]) {
+            const { [fk]: __, ...restFlashes } = state.recentFlashes;
+            recentFlashes = restFlashes;
+          }
+        }
+
+        return {
+          workingSets: {
+            ...state.workingSets,
+            [key]: { ...existing, [field]: rest },
+          },
+          recentFlashes,
+        };
+      });
+      persistWorkingSets();
+    }
+
+    return {
+      ...initialState,
 
     // -- Computed --
 
@@ -205,9 +266,8 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const ws = get().workingSets[key];
       if (!ws) return EMPTY_WORKING_SET;
 
-      const now = Date.now();
       return {
-        writes: filterDecayed(ws.writes, WRITE_DECAY_MS, now),
+        writes: ws.writes ?? {},
         userEdits: ws.userEdits ?? {},
       };
     },
@@ -216,9 +276,7 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const key = normalizePathKey(projectPath);
       const ws = get().workingSets[key];
       if (!ws) return false;
-      const touch = ws.writes[relativePath];
-      if (!touch) return false;
-      return Date.now() - touch.timestamp < WRITE_DECAY_MS;
+      return !!ws.writes[relativePath];
     },
 
     isRecentFlash: (projectPath, relativePath) => {
@@ -312,22 +370,11 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       persistWorkingSets();
     },
 
-    removeUserEdit: (projectPath, relativePath) => {
-      const key = normalizePathKey(projectPath);
-      set((state) => {
-        const existing = state.workingSets[key];
-        if (!existing?.userEdits?.[relativePath]) return state;
-        const { [relativePath]: _, ...restEdits } = existing.userEdits;
-        return {
-          workingSets: {
-            ...state.workingSets,
-            [key]: { ...existing, userEdits: restEdits },
-          },
-        };
-      });
+    removeUserEdit: (projectPath, relativePath) =>
+      removeFromField("userEdits", projectPath, relativePath),
 
-      persistWorkingSets();
-    },
+    removeAgentWrite: (projectPath, relativePath) =>
+      removeFromField("writes", projectPath, relativePath),
 
     clearProject: (projectPath) => {
       const key = normalizePathKey(projectPath);
@@ -377,7 +424,10 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
         const now = Date.now();
         const restored: Record<string, ProjectWorkingSet> = {};
         for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-          if (typeof value !== "object" || value === null) continue;
+          if (typeof value !== "object" || value === null) {
+            console.warn("[agentFileTracking] restore: skipping malformed entry for key=%s", key);
+            continue;
+          }
           const ws = value as Record<string, unknown>;
 
           const rawWrites = typeof ws.writes === "object" && ws.writes !== null && !Array.isArray(ws.writes)
@@ -387,7 +437,12 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
             ? (ws.userEdits as Record<string, FileTouch>)
             : {};
 
-          const writes = filterDecayed(rawWrites, WRITE_DECAY_MS, now);
+          const writes = filterDecayed(rawWrites, STALE_CLEANUP_MS, now);
+          const staleCount = Object.keys(rawWrites).length - Object.keys(writes).length;
+          if (staleCount > 0) {
+            console.info("[agentFileTracking] restore: pruned %d stale writes (>24h) for %s", staleCount, key);
+          }
+          // userEdits: no decay — cleaned via git-clean check in CodeViewer
           const userEdits = rawEdits;
           if (Object.keys(writes).length > 0 || Object.keys(userEdits).length > 0) {
             restored[key] = { writes, userEdits };
@@ -425,5 +480,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       flashTimers.clear();
       set(initialState);
     },
-  }),
+    };
+  },
 );
