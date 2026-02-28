@@ -12,7 +12,7 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useSettingsStore } from "../../settings/stores/settingsStore";
 import { createFilePathLinkProvider } from "../links/filePathLinkProvider";
 
-// macOS Terminal.app / iTerm2 동작 재현: 쉘 특수문자 이스케이프
+// Replicate macOS Terminal.app / iTerm2 behavior: escape shell special characters
 function escapeShellPath(path: string): string {
   if (/[ '"\\$`!#&|;(){}]/.test(path)) {
     return "'" + path.replace(/'/g, "'\\''") + "'";

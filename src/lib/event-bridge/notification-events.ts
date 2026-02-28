@@ -10,7 +10,7 @@ export interface HookEvent {
   timestamp: string;
 }
 
-/** notification:clicked 리스너만 설정 (hook-received는 index.ts에서 통합) */
+/** Sets up only the notification:clicked listener (hook-received is unified in index.ts) */
 export async function setupNotificationClickEvents(): Promise<UnlistenFn[]> {
   const clickUnlisten = await listen<string>(
     "notification:clicked",

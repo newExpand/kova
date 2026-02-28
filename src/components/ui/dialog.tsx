@@ -33,7 +33,7 @@ const DialogContent = forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
-    {/* Flex centering wrapper — translate/inset 방식의 WKWebView 호환성 문제 우회 */}
+    {/* Flex centering wrapper — avoids WKWebView compatibility issues with translate/inset */}
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <DialogPrimitive.Content
         ref={ref}

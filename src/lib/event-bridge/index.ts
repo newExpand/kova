@@ -128,7 +128,7 @@ function handleFileTracking(hookEvent: HookEvent): void {
 let unlisteners: UnlistenFn[] = [];
 
 export async function initEventBridge(): Promise<void> {
-  // 단일 리스너: notification + agent activity + file tracking 모두 처리
+  // Single listener: handles notification + agent activity + file tracking
   const hookUnlisten = await listen<Omit<HookEvent, "eventType"> & { eventType: string }>(
     "notification:hook-received",
     (event) => {
@@ -138,10 +138,10 @@ export async function initEventBridge(): Promise<void> {
         eventType: parseHookType(event.payload.eventType),
       };
 
-      // 1. Notification store (모든 이벤트)
+      // 1. Notification store (all events)
       useNotificationStore.getState().pushRealtimeEvent(hookEvent);
 
-      // 2. Agent activity store (해당 타입만)
+      // 2. Agent activity store (matching types only)
       if (AGENT_ACTIVITY_TYPES.has(hookEvent.eventType)) {
         useAgentActivityStore.getState().pushActivity(hookEvent);
       }
@@ -151,7 +151,7 @@ export async function initEventBridge(): Promise<void> {
     },
   );
 
-  // worktree:ready — Rust 백그라운드 스레드에서 worktree 디렉토리 감지 시 emit
+  // worktree:ready — emitted when Rust background thread detects a worktree directory
   const worktreeReadyUnlisten = await listen<{
     projectPath: string;
     taskName: string;
@@ -172,7 +172,7 @@ export async function initEventBridge(): Promise<void> {
     }
   });
 
-  // notification:clicked는 별도 리스너 유지
+  // notification:clicked keeps a separate listener
   const clickUnlisteners = await setupNotificationClickEvents();
   unlisteners.push(hookUnlisten, worktreeReadyUnlisten, ...clickUnlisteners);
 }

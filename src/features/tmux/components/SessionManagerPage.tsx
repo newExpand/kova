@@ -189,19 +189,19 @@ function SessionManagerPage() {
         await fetchSessions();
       } catch (err) {
         console.error("[Kill All] Failed to refresh session list:", err);
-        setKillAllError("세션이 종료되었으나 목록 새로고침에 실패했습니다. Refresh를 눌러주세요.");
+        setKillAllError("Sessions killed but failed to refresh the list. Please click Refresh.");
         return;
       }
       if (failed.length > 0) {
         setKillAllError(
-          `${sessions.length - failed.length}개 종료됨, ${failed.length}개 실패: ${failed.join(", ")}`,
+          `${sessions.length - failed.length} killed, ${failed.length} failed: ${failed.join(", ")}`,
         );
         return;
       }
       setShowKillAllDialog(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setKillAllError(`세션 종료 중 오류: ${message}`);
+      setKillAllError(`Error killing sessions: ${message}`);
     } finally {
       setIsKillingAll(false);
     }
@@ -217,7 +217,7 @@ function SessionManagerPage() {
       setKillTarget(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setKillError(`'${killTarget.name}' 종료 실패: ${message}`);
+      setKillError(`Failed to kill '${killTarget.name}': ${message}`);
     } finally {
       setIsKilling(false);
     }
@@ -288,7 +288,7 @@ function SessionManagerPage() {
             <DialogTitle>Kill Session</DialogTitle>
             <DialogDescription>
               {`'${killTarget?.name ?? ""}' `}
-              세션을 종료하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+              Are you sure you want to kill this session? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           {killError && (
@@ -304,7 +304,7 @@ function SessionManagerPage() {
               }}
               disabled={isKilling}
             >
-              취소
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -312,7 +312,7 @@ function SessionManagerPage() {
               onClick={handleKillConfirm}
               disabled={isKilling}
             >
-              {isKilling ? "종료 중..." : "종료"}
+              {isKilling ? "Killing..." : "Kill"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -331,7 +331,7 @@ function SessionManagerPage() {
           <DialogHeader>
             <DialogTitle>Kill All Sessions</DialogTitle>
             <DialogDescription>
-              {sessions.length}개의 세션을 모두 종료하시겠습니까?
+              Are you sure you want to kill all {sessions.length} sessions?
             </DialogDescription>
           </DialogHeader>
           {killAllError && (
@@ -347,7 +347,7 @@ function SessionManagerPage() {
               }}
               disabled={isKillingAll}
             >
-              취소
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -355,7 +355,7 @@ function SessionManagerPage() {
               onClick={handleKillAllConfirm}
               disabled={isKillingAll}
             >
-              {isKillingAll ? "종료 중..." : `${sessions.length}개 세션 종료`}
+              {isKillingAll ? "Killing..." : `Kill ${sessions.length} Sessions`}
             </Button>
           </DialogFooter>
         </DialogContent>

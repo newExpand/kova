@@ -368,7 +368,7 @@ function Sidebar() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[Sidebar] Failed to kill session '${killTarget.name}':`, err);
-      setKillError(`'${killTarget.name}' 종료 실패: ${message}`);
+      setKillError(`Failed to kill '${killTarget.name}': ${message}`);
     } finally {
       setIsKilling(false);
     }
@@ -883,7 +883,7 @@ function Sidebar() {
             <DialogTitle>Kill Session</DialogTitle>
             <DialogDescription>
               {`'${killTarget?.name ?? ""}' `}
-              세션을 종료하시겠습니까?
+              Are you sure you want to kill this session?
             </DialogDescription>
           </DialogHeader>
           {killError && (
@@ -896,7 +896,7 @@ function Sidebar() {
               onClick={() => setKillTarget(null)}
               disabled={isKilling}
             >
-              취소
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -904,7 +904,7 @@ function Sidebar() {
               onClick={handleKillSession}
               disabled={isKilling}
             >
-              {isKilling ? "종료 중..." : "종료"}
+              {isKilling ? "Killing..." : "Kill"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -21,7 +21,7 @@ export interface ProjectWorkingSet {
 // Constants
 // ---------------------------------------------------------------------------
 
-const STALE_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24h — persist/restore 시 오래된 항목 정리용
+const STALE_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24h — cleans up stale entries on persist/restore
 const FLASH_DURATION_MS = 1_500;
 const MAX_FILES_PER_SET = 50;
 

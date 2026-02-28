@@ -363,7 +363,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           console.error(`Action ${action} failed:`, e);
           useTerminalStore.getState().setError(
             storeKey,
-            `${action} 실패: ${e instanceof Error ? e.message : String(e)}`,
+            `${action} failed: ${e instanceof Error ? e.message : String(e)}`,
           );
         })
         .finally(() => refocusTerminal());

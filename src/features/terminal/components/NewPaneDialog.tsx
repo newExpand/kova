@@ -11,9 +11,9 @@ import { Button } from "../../../components/ui/button";
 import type { PaneAction } from "../types";
 
 const ACTION_LABELS: Record<PaneAction, string> = {
-  "split-vertical": "좌우 분할",
-  "split-horizontal": "상하 분할",
-  "new-window": "새 윈도우",
+  "split-vertical": "Split Vertical",
+  "split-horizontal": "Split Horizontal",
+  "new-window": "New Window",
 };
 
 interface NewPaneDialogProps {
@@ -38,18 +38,18 @@ export function NewPaneDialog({
             {action ? ACTION_LABELS[action] : ""}
           </DialogTitle>
           <DialogDescription>
-            새 {action ? ACTION_LABELS[action] : "세션"}을 어떻게 시작할까요?
+            How would you like to start the new {action ? ACTION_LABELS[action].toLowerCase() : "session"}?
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-row gap-2 sm:justify-end">
           <Button variant="ghost" onClick={onCancel}>
-            취소
+            Cancel
           </Button>
           <Button variant="secondary" onClick={handleEmptyShell}>
-            빈 셸
+            Empty Shell
           </Button>
           <Button autoFocus onClick={handleStartClaude}>
-            Claude로 시작
+            Start with Claude
           </Button>
         </DialogFooter>
       </DialogContent>
