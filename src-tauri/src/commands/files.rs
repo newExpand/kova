@@ -1,5 +1,5 @@
 use crate::errors::AppError;
-use crate::models::files::{FileContent, FileEntry, FileSearchResult};
+use crate::models::files::{ContentSearchResult, FileContent, FileEntry, FileSearchResult};
 use crate::services;
 use tracing::error;
 
@@ -50,5 +50,29 @@ pub async fn search_project_files(
     .map_err(|e| {
         error!("search_project_files task panicked: {}", e);
         AppError::Internal(format!("File search failed unexpectedly: {}", e))
+    })?
+}
+
+#[tauri::command]
+pub async fn search_file_contents(
+    project_path: String,
+    query: String,
+    case_sensitive: bool,
+    is_regex: bool,
+    max_results: Option<u32>,
+) -> Result<ContentSearchResult, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::file_service::search_file_contents(
+            &project_path,
+            &query,
+            case_sensitive,
+            is_regex,
+            max_results,
+        )
+    })
+    .await
+    .map_err(|e| {
+        error!("search_file_contents task panicked: {}", e);
+        AppError::Internal(format!("Content search failed unexpectedly: {}", e))
     })?
 }

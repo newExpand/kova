@@ -1111,6 +1111,7 @@ dependencies = [
  "dirs 5.0.1",
  "ignore",
  "objc2",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

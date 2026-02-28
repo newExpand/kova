@@ -5,6 +5,7 @@ export { MAX_OPEN_FILES } from "./types";
 // Stores
 export { useFileStore } from "./stores/fileStore";
 export { useAgentFileTrackingStore } from "./stores/agentFileTrackingStore";
+export { useContentSearchStore } from "./stores/contentSearchStore";
 export {
   extractFilePath,
   resolveCanonicalFilePath,
@@ -17,3 +18,4 @@ export { FileTree } from "./components/FileTree";
 export { FileTabs } from "./components/FileTabs";
 export { FileBreadcrumb } from "./components/FileBreadcrumb";
 export { CodeViewer } from "./components/CodeViewer";
+export { ContentSearchPanel } from "./components/ContentSearchPanel";

@@ -1,17 +1,26 @@
 import { useEffect } from "react";
-import { X, Folder, Search } from "lucide-react";
+import { X, FolderTree, Search } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project";
 import { useResizeHandle } from "../../hooks/useResizeHandle";
-import { FileTree, FileTabs, CodeViewer } from "../../features/files";
+import { FileTree, FileTabs, CodeViewer, ContentSearchPanel } from "../../features/files";
 
 const MIN_TREE_WIDTH = 160;
 const MAX_TREE_WIDTH = 280;
 const DEFAULT_TREE_WIDTH = 200;
 
+function modeButtonClass(active: boolean): string {
+  const base = "flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors";
+  if (active) return `${base} bg-white/[0.08] text-text-secondary`;
+  return `${base} text-text-muted hover:text-text hover:bg-white/[0.04]`;
+}
+
 export default function FileViewerPanel() {
   const close = useAppStore((s) => s.setFileViewerPanelOpen);
   const setFileFinderActive = useAppStore((s) => s.setFileFinderActive);
+  const fileViewerMode = useAppStore((s) => s.fileViewerMode);
+  const setFileViewerMode = useAppStore((s) => s.setFileViewerMode);
+  const setContentSearchActive = useAppStore((s) => s.setContentSearchActive);
   const project = useProjectStore((s) => {
     const id = s.selectedId;
     return id ? s.projects.find((p) => p.id === id) : undefined;
@@ -51,21 +60,34 @@ export default function FileViewerPanel() {
     <div className="flex h-full w-full flex-col">
       {/* Header */}
       <div className="flex h-[38px] shrink-0 items-center justify-between border-b border-white/[0.06] px-3">
-        <div className="flex items-center gap-1.5">
-          <Folder className="h-3.5 w-3.5 text-text-muted" />
-          <span className="text-xs font-medium text-text-secondary truncate">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setFileViewerMode("tree");
+              setFileFinderActive(true);
+            }}
+            className={modeButtonClass(fileViewerMode === "tree")}
+            title="File Explorer (⌘P)"
+          >
+            <FolderTree className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFileViewerMode("search");
+              setContentSearchActive(true);
+            }}
+            className={modeButtonClass(fileViewerMode === "search")}
+            title="Search in Files (⌘⇧F)"
+          >
+            <Search className="h-3 w-3" />
+          </button>
+          <span className="ml-1 text-xs font-medium text-text-secondary truncate">
             {project.name}
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setFileFinderActive(true)}
-            className="rounded p-1 text-text-muted hover:bg-white/[0.06] hover:text-text transition-colors"
-            title="Find file (⌘P)"
-          >
-            <Search className="h-3.5 w-3.5" />
-          </button>
           <span className="text-[10px] text-text-muted">⌘\</span>
           <button
             type="button"
@@ -79,12 +101,16 @@ export default function FileViewerPanel() {
 
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Tree */}
+        {/* Tree / Search */}
         <div
           className="flex flex-col border-r border-white/[0.06] overflow-hidden glass-scrollbar"
           style={{ width: treeWidth, minWidth: MIN_TREE_WIDTH }}
         >
-          <FileTree projectPath={project.path} />
+          {fileViewerMode === "search" ? (
+            <ContentSearchPanel projectPath={project.path} />
+          ) : (
+            <FileTree projectPath={project.path} />
+          )}
         </div>
 
         {/* Resize handle */}

@@ -29,3 +29,29 @@ pub struct FileSearchResult {
     pub extension: Option<String>,
     pub score: i32,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchMatch {
+    pub line_number: u32,
+    pub line_content: String,
+    pub match_start: u32,
+    pub match_end: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchFileResult {
+    pub path: String,
+    pub matches: Vec<ContentSearchMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchResult {
+    pub files: Vec<ContentSearchFileResult>,
+    pub total_matches: u32,
+    pub total_files: u32,
+    pub truncated: bool,
+    pub duration_ms: u64,
+}

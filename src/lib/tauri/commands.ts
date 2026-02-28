@@ -875,6 +875,26 @@ export interface FileSearchResult {
   score: number;
 }
 
+export interface ContentSearchMatch {
+  lineNumber: number;
+  lineContent: string;
+  matchStart: number;
+  matchEnd: number;
+}
+
+export interface ContentSearchFileResult {
+  path: string;
+  matches: ContentSearchMatch[];
+}
+
+export interface ContentSearchResult {
+  files: ContentSearchFileResult[];
+  totalMatches: number;
+  totalFiles: number;
+  truncated: boolean;
+  durationMs: number;
+}
+
 // ---------------------------------------------------------------------------
 // File commands
 // ---------------------------------------------------------------------------
@@ -922,6 +942,22 @@ export async function searchProjectFiles(
     projectPath,
     query,
     limit,
+  });
+}
+
+export async function searchFileContents(
+  projectPath: string,
+  query: string,
+  caseSensitive: boolean,
+  isRegex: boolean,
+  maxResults?: number,
+): Promise<ContentSearchResult> {
+  return invoke<ContentSearchResult>("search_file_contents", {
+    projectPath,
+    query,
+    caseSensitive,
+    isRegex,
+    maxResults,
   });
 }
 

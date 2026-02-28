@@ -14,6 +14,8 @@ interface AppState {
   isFileViewerPanelOpen: boolean;
   isFileFinderActive: boolean;
   fileViewerPanelWidth: number;
+  fileViewerMode: "tree" | "search";
+  isContentSearchActive: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -31,6 +33,8 @@ interface AppActions {
   setFileViewerPanelOpen: (open: boolean) => void;
   setFileFinderActive: (active: boolean) => void;
   setFileViewerPanelWidth: (width: number) => void;
+  setFileViewerMode: (mode: "tree" | "search") => void;
+  setContentSearchActive: (active: boolean) => void;
   reset: () => void;
 }
 
@@ -53,6 +57,8 @@ const initialState: AppState = {
   isFileViewerPanelOpen: false,
   isFileFinderActive: false,
   fileViewerPanelWidth: 480,
+  fileViewerMode: "tree",
+  isContentSearchActive: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -95,6 +101,7 @@ export const useAppStore = create<AppStore>()(
           (state) => ({
             isFileViewerPanelOpen: !state.isFileViewerPanelOpen,
             isFileFinderActive: false,
+            isContentSearchActive: false,
           }),
           undefined,
           "toggleFileViewerPanel",
@@ -102,7 +109,7 @@ export const useAppStore = create<AppStore>()(
 
       setFileViewerPanelOpen: (open) =>
         set(
-          { isFileViewerPanelOpen: open, isFileFinderActive: false },
+          { isFileViewerPanelOpen: open, isFileFinderActive: false, isContentSearchActive: false },
           undefined,
           "setFileViewerPanelOpen",
         ),
@@ -116,6 +123,12 @@ export const useAppStore = create<AppStore>()(
           undefined,
           "setFileViewerPanelWidth",
         ),
+
+      setFileViewerMode: (mode) =>
+        set({ fileViewerMode: mode }, undefined, "setFileViewerMode"),
+
+      setContentSearchActive: (active) =>
+        set({ isContentSearchActive: active }, undefined, "setContentSearchActive"),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

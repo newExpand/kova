@@ -1,6 +1,10 @@
 use crate::errors::AppError;
-use crate::models::files::{FileContent, FileEntry, FileSearchResult};
+use crate::models::files::{
+    ContentSearchFileResult, ContentSearchMatch, ContentSearchResult, FileContent, FileEntry,
+    FileSearchResult,
+};
 use ignore::WalkBuilder;
+use regex::RegexBuilder;
 use std::path::Path;
 use tracing::warn;
 
@@ -533,4 +537,176 @@ pub fn search_files(
         .collect();
 
     Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// Content Search
+// ---------------------------------------------------------------------------
+
+/// Maximum total matches to return
+const MAX_CONTENT_MATCHES: u32 = 1000;
+/// Maximum files with matches to return
+const MAX_CONTENT_FILES: u32 = 100;
+/// Maximum characters for a single line display
+const MAX_LINE_DISPLAY_LEN: usize = 500;
+
+/// Truncate a line around the match position, returning the truncated content
+/// and adjusted match offsets.
+fn truncate_line_around_match(
+    line: &str,
+    match_start: usize,
+    match_end: usize,
+) -> (String, u32, u32) {
+    let char_count = line.chars().count();
+
+    if char_count <= MAX_LINE_DISPLAY_LEN {
+        return (line.to_string(), match_start as u32, match_end as u32);
+    }
+
+    // Center a window around the match
+    let window_start = match_start.saturating_sub(100);
+    let window_end = (window_start + MAX_LINE_DISPLAY_LEN).min(char_count);
+    let window_start = if window_end == char_count {
+        char_count.saturating_sub(MAX_LINE_DISPLAY_LEN)
+    } else {
+        window_start
+    };
+
+    let truncated: String = line
+        .chars()
+        .skip(window_start)
+        .take(window_end - window_start)
+        .collect();
+
+    let adj_start = (match_start - window_start) as u32;
+    let adj_end = (match_end - window_start).min(window_end - window_start) as u32;
+
+    (truncated, adj_start, adj_end)
+}
+
+/// Search for text content across all files in a project directory.
+///
+/// Supports both literal string and regex modes, with case sensitivity toggle.
+/// Respects `.gitignore`, skips binary files and files larger than `MAX_FILE_SIZE`.
+pub fn search_file_contents(
+    project_path: &str,
+    query: &str,
+    case_sensitive: bool,
+    is_regex: bool,
+    max_results: Option<u32>,
+) -> Result<ContentSearchResult, AppError> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err(AppError::InvalidInput(
+            "Search query cannot be empty".to_string(),
+        ));
+    }
+
+    let pattern = if is_regex {
+        query.to_string()
+    } else {
+        regex::escape(query)
+    };
+
+    let re = RegexBuilder::new(&pattern)
+        .case_insensitive(!case_sensitive)
+        .build()
+        .map_err(|e| AppError::InvalidInput(format!("Invalid regex: {}", e)))?;
+
+    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
+        AppError::InvalidInput(format!("Invalid project path: {}", e))
+    })?;
+
+    let all_files = collect_all_files(&project_root)?;
+    let match_limit = max_results.unwrap_or(MAX_CONTENT_MATCHES);
+
+    let start = std::time::Instant::now();
+
+    let mut files: Vec<ContentSearchFileResult> = Vec::new();
+    let mut total_matches: u32 = 0;
+    let mut truncated = false;
+
+    for rel_path in &all_files {
+        if total_matches >= match_limit || files.len() as u32 >= MAX_CONTENT_FILES {
+            truncated = true;
+            break;
+        }
+
+        let abs_path = project_root.join(rel_path);
+
+        // Skip files that are too large
+        let metadata = match std::fs::metadata(&abs_path) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!("Skipping file with unreadable metadata '{}': {}", rel_path, e);
+                continue;
+            }
+        };
+        if metadata.len() > MAX_FILE_SIZE || !metadata.is_file() {
+            continue;
+        }
+
+        // Read raw bytes and skip binary content
+        let raw = match std::fs::read(&abs_path) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Failed to read file '{}': {}", rel_path, e);
+                continue;
+            }
+        };
+        if is_binary_content(&raw) {
+            continue;
+        }
+
+        let content = String::from_utf8_lossy(&raw);
+
+        let mut file_matches: Vec<ContentSearchMatch> = Vec::new();
+
+        for (line_idx, line) in content.lines().enumerate() {
+            for m in re.find_iter(line) {
+                if total_matches + file_matches.len() as u32 >= match_limit {
+                    truncated = true;
+                    break;
+                }
+
+                // Use char offsets for proper Unicode handling
+                let byte_start = m.start();
+                let byte_end = m.end();
+                let char_start = line[..byte_start].chars().count();
+                let char_end = char_start + line[byte_start..byte_end].chars().count();
+
+                let (display_content, adj_start, adj_end) =
+                    truncate_line_around_match(line, char_start, char_end);
+
+                file_matches.push(ContentSearchMatch {
+                    line_number: (line_idx + 1) as u32,
+                    line_content: display_content,
+                    match_start: adj_start,
+                    match_end: adj_end,
+                });
+            }
+
+            if truncated {
+                break;
+            }
+        }
+
+        if !file_matches.is_empty() {
+            total_matches += file_matches.len() as u32;
+            files.push(ContentSearchFileResult {
+                path: rel_path.clone(),
+                matches: file_matches,
+            });
+        }
+    }
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    Ok(ContentSearchResult {
+        total_matches,
+        total_files: files.len() as u32,
+        truncated,
+        duration_ms,
+        files,
+    })
 }

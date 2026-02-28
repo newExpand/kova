@@ -302,6 +302,7 @@ pub fn run() {
             commands::files::write_file,
             commands::files::resolve_import_path,
             commands::files::search_project_files,
+            commands::files::search_file_contents,
             // Environment commands
             commands::environment::check_environment,
         ])

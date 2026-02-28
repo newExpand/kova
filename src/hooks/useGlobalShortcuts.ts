@@ -30,13 +30,14 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       setCommandPaletteOpen((prev) => !prev);
     }
 
-    // Cmd+P — Focus file search input (opens panel if needed)
+    // Cmd+P — Focus file search input (opens panel if needed, switches to tree mode)
     if (e.metaKey && e.key === "p") {
       const hasProject = !!useProjectStore.getState().selectedId;
       if (hasProject) {
         e.preventDefault();
         const store = useAppStore.getState();
         store.setFileViewerPanelOpen(true);
+        store.setFileViewerMode("tree");
         store.setFileFinderActive(true);
       }
     }
@@ -51,6 +52,18 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
     if (e.metaKey && e.shiftKey && e.key === "g") {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent("flow-orche:toggle-git"));
+    }
+
+    // Cmd+Shift+F — Search in Files (content search)
+    if (e.metaKey && e.shiftKey && e.key === "f") {
+      const hasProject = !!useProjectStore.getState().selectedId;
+      if (hasProject) {
+        e.preventDefault();
+        const store = useAppStore.getState();
+        store.setFileViewerPanelOpen(true);
+        store.setFileViewerMode("search");
+        store.setContentSearchActive(true);
+      }
     }
 
     // Cmd+\ — Toggle file viewer overlay panel
