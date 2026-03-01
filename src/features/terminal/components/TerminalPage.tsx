@@ -144,7 +144,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           setSshTmuxStatus("indeterminate");
         });
     }
-  }, [isSshMode, sshActiveResult, handleConnect, storeKey, sshConnectionId]);
+  }, [isSshMode, sshActiveResult, handleConnect, storeKey, sshConnectionId, autoConnectDone]);
 
   // SSH mode: reconnect with tmux when background check confirms availability
   useEffect(() => {
@@ -280,12 +280,49 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     }
   }, [isSshMode, sshStillActive, activeConfig, storeKey]);
 
+  // --- SSH wake-triggered reconnect tracking ---
+  // When macOS wakes from sleep, SSH TCP connections are usually dead.
+  // This flag allows auto-reconnect only for wake-triggered disconnects,
+  // not for general SSH failures (which would cause spawn loops).
+  const wakePending = useRef(false);
+  const wakePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleRetry = useCallback(() => {
     autoConnectAttempted.current = false;
+    tmuxReconnectAttempted.current = false;
+    wakePending.current = false;
+    if (wakePendingTimerRef.current) {
+      clearTimeout(wakePendingTimerRef.current);
+      wakePendingTimerRef.current = null;
+    }
     setAutoConnectDone(false);
     setActiveConfig(null);
+    setSshTmuxStatus("pending");
     useTerminalStore.getState().setStatus(storeKey, "idle");
   }, [storeKey]);
+
+  useEffect(() => {
+    if (!isSshMode) return;
+    const handleWake = () => {
+      console.info(`[TerminalPage] Wake detected — arming SSH auto-reconnect for '${storeKey}'`);
+      wakePending.current = true;
+      // Auto-clear after 60s in case disconnect never fires (e.g., connection survived sleep)
+      if (wakePendingTimerRef.current) clearTimeout(wakePendingTimerRef.current);
+      wakePendingTimerRef.current = setTimeout(() => {
+        console.info(`[TerminalPage] Wake auto-reconnect expired (no disconnect within 60s) for '${storeKey}'`);
+        wakePending.current = false;
+        wakePendingTimerRef.current = null;
+      }, 60_000);
+    };
+    window.addEventListener("app:wake", handleWake);
+    return () => {
+      window.removeEventListener("app:wake", handleWake);
+      if (wakePendingTimerRef.current) {
+        clearTimeout(wakePendingTimerRef.current);
+        wakePendingTimerRef.current = null;
+      }
+    };
+  }, [isSshMode]);
 
   // --- Auto-recover when re-activated after Kill All ---
   const prevActive = useRef(false);
@@ -303,26 +340,53 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   useEffect(() => {
     if (status === "connected") {
       consecutiveDisconnects.current = 0;
+      wakePending.current = false;
     }
   }, [status]);
 
   useEffect(() => {
-    // SSH mode: no auto-reconnect (prevents SSH process spawn loop on network failure)
-    if (isSshMode) return;
     if (status === "disconnected") {
+      // SSH mode: only auto-reconnect after wake events (sleep killed TCP).
+      // Non-wake SSH disconnects (server down, user action) stay manual to prevent spawn loops.
+      if (isSshMode) {
+        if (!wakePending.current) return;
+        // Don't consume wakePending here — keep it armed for retry chain.
+        // It's consumed on success (status=connected) or max retries below.
+
+        // Verify SSH session data is still available before attempting reconnect
+        const activeResult = useSshStore.getState().getActiveResult(sshConnectionId!);
+        if (!activeResult) {
+          console.warn(`[TerminalPage] SSH wake-reconnect for '${storeKey}' aborted: session data lost`);
+          wakePending.current = false;
+          useTerminalStore.getState().setError(
+            storeKey,
+            "SSH session data was lost during sleep. Click Retry to reconnect.",
+          );
+          return;
+        }
+
+        console.info(`[TerminalPage] SSH disconnect after wake — auto-reconnecting '${storeKey}'`);
+      }
+
       consecutiveDisconnects.current += 1;
       if (consecutiveDisconnects.current > 3) {
+        wakePending.current = false;
         useTerminalStore.getState().setError(
           storeKey,
-          "Session keeps disconnecting. Click Retry to try again.",
+          isSshMode
+            ? "SSH connection lost after sleep. Click Retry to reconnect."
+            : "Session keeps disconnecting. Click Retry to try again.",
         );
         consecutiveDisconnects.current = 0;
         return;
       }
-      const timer = setTimeout(() => handleRetry(), 500);
+      // SSH: 2s delay for network stabilization (Wi-Fi reconnect after wake).
+      // Local tmux: 500ms is sufficient.
+      const delay = isSshMode ? 2000 : 500;
+      const timer = setTimeout(handleRetry, delay);
       return () => clearTimeout(timer);
     }
-  }, [status, isSshMode, handleRetry, storeKey]);
+  }, [status, isSshMode, handleRetry, storeKey, sshConnectionId]);
 
   const refocusTerminal = useCallback(() => {
     requestAnimationFrame(() => {

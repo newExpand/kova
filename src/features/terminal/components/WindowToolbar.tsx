@@ -66,17 +66,19 @@ export const WindowToolbar = memo(function WindowToolbar({
       });
   }, [sessionName, onFetchWindows]);
 
-  // Initial fetch
+  // Initial fetch — skip when not connected (avoids wasting failure budget)
   useEffect(() => {
-    fetchWindows();
-  }, [fetchWindows]);
+    if (!disabled) {
+      fetchWindows();
+    }
+  }, [fetchWindows, disabled]);
 
-  // Polling every 3s — only when active (visible tab)
+  // Polling every 3s — only when active (visible tab) and connected
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || disabled) return;
     const interval = setInterval(fetchWindows, 3000);
     return () => clearInterval(interval);
-  }, [fetchWindows, isActive]);
+  }, [fetchWindows, isActive, disabled]);
 
   const handleNew = useCallback(
     () => onRequestAction("new-window"),

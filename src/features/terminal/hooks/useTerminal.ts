@@ -27,6 +27,18 @@ function escapeShellPath(path: string): string {
 // Button code bits: 0-1=button, 2=shift, 3=meta, 4=ctrl, 5=motion(32), 6=scroll(64), 7=extended(128)
 const MOUSE_MODIFIER_MASK = ~(4 | 8 | 16); // strip shift, meta, ctrl bits
 
+// Attempt a PTY resize. Expected to fail when PTY has already exited (post-sleep, etc.).
+// Unexpected errors (IPC failures, invalid dimensions) are logged for debugging.
+function safePtyResize(pty: IPty, cols: number, rows: number): void {
+  try {
+    pty.resize(cols, rows);
+  } catch (e) {
+    if (e instanceof Error && !e.message.includes("exit")) {
+      console.warn("[useTerminal] Unexpected PTY resize error:", e);
+    }
+  }
+}
+
 function parseMouseButtonCode(data: string): number | null {
   if (data.length < 6) return null;
   if (data[0] !== '\x1b' || data[1] !== '[') return null;
@@ -125,6 +137,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   // sequences in onData so tmux copy-mode isn't canceled on link click.
   const linkHoverRef = useRef(false);
   const linkHoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track active TerminalConfig for wake handler (needs SSH mode check)
+  const configRef = useRef<TerminalConfig | null>(null);
+  // Timeout for resize restore after wake probe
+  const wakeResizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanup = useCallback(() => {
     // Mark dead FIRST so callbacks stop writing
@@ -153,6 +169,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
       clearTimeout(clipboardToastTimeoutRef.current);
       clipboardToastTimeoutRef.current = null;
     }
+    if (wakeResizeTimeoutRef.current) {
+      clearTimeout(wakeResizeTimeoutRef.current);
+      wakeResizeTimeoutRef.current = null;
+    }
+    configRef.current = null;
 
     // Unsubscribe from theme changes
     if (themeUnsubRef.current) {
@@ -220,6 +241,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
       cleanup();
       // Track projectId for disconnect()
       projectIdRef.current = config.projectId;
+      // Track config for wake handler (SSH mode check + resize)
+      configRef.current = config;
       // Capture this connection's ID — if it changes, we're stale
       const myId = connectIdRef.current;
       const isStale = () => connectIdRef.current !== myId;
@@ -1261,9 +1284,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const refit = useCallback(() => {
     if (fitAddonRef.current && termRef.current && ptyRef.current && aliveRef.current) {
       fitAddonRef.current.fit();
-      try {
-        ptyRef.current.resize(termRef.current.cols, termRef.current.rows);
-      } catch { /* PTY exited */ }
+      safePtyResize(ptyRef.current, termRef.current.cols, termRef.current.rows);
       termRef.current.refresh(0, termRef.current.rows - 1);
       termRef.current.focus();
     }
@@ -1276,21 +1297,47 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
     };
   }, [cleanup]);
 
-  // Sleep/wake recovery: log wake event for terminal debugging.
-  // The actual PTY read resilience is handled in Rust (nix::poll with timeout loop).
-  // This handler just ensures the terminal UI refreshes after wake.
+  // Sleep/wake recovery:
+  // 1. Refreshes terminal UI after wake (cosmetic)
+  // 2. SSH mode: sends resize probe to accelerate dead-connection detection
+  //    (faster than waiting for ServerAliveInterval keepalive timeout).
   useEffect(() => {
     const handleWake = () => {
-      if (!termRef.current || !ptyRef.current) {
-        console.warn("[useTerminal] Wake detected but terminal/PTY refs are null — skipping refresh");
+      const term = termRef.current;
+      const pty = ptyRef.current;
+      if (!term || !pty) {
+        console.warn("[useTerminal] Wake detected but terminal/PTY refs are null — skipping");
         return;
       }
-      console.info("[useTerminal] Wake detected — refreshing terminal display");
+
+      // Always refresh display
       try {
-        termRef.current.refresh(0, termRef.current.rows - 1);
+        term.refresh(0, term.rows - 1);
       } catch (e) {
         console.error("[useTerminal] Terminal refresh after wake failed:", e);
       }
+
+      // SSH mode: resize probe to force immediate server communication.
+      // The resize sends SIGWINCH -> SSH window-change request -> TCP write.
+      // If TCP is dead (post-sleep), this accelerates keepalive failure detection.
+      if (!configRef.current?.isSshMode || !aliveRef.current) {
+        console.info("[useTerminal] Wake detected — refreshed terminal display");
+        return;
+      }
+
+      console.info("[useTerminal] Wake detected in SSH mode — sending resize probe");
+      safePtyResize(pty, Math.max(1, term.cols - 1), term.rows);
+
+      // Restore original size after 100ms
+      if (wakeResizeTimeoutRef.current) {
+        clearTimeout(wakeResizeTimeoutRef.current);
+      }
+      wakeResizeTimeoutRef.current = setTimeout(() => {
+        wakeResizeTimeoutRef.current = null;
+        if (aliveRef.current && ptyRef.current && termRef.current) {
+          safePtyResize(ptyRef.current, termRef.current.cols, termRef.current.rows);
+        }
+      }, 100);
     };
 
     window.addEventListener("app:wake", handleWake);

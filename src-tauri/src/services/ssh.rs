@@ -345,6 +345,13 @@ pub fn build_ssh_args(connection: &SshConnection) -> Result<Vec<String>, AppErro
         "StrictHostKeyChecking=accept-new".into(),
         "-o".into(),
         "ConnectTimeout=10".into(),
+        // Keepalive: detect dead connections after macOS sleep/wake.
+        // Worst-case detection = ServerAliveInterval × ServerAliveCountMax = 45s.
+        // After 3 missed responses, SSH exits → PTY master gets POLLHUP → read loop returns EOF.
+        "-o".into(),
+        "ServerAliveInterval=15".into(),
+        "-o".into(),
+        "ServerAliveCountMax=3".into(),
     ];
 
     if connection.port != 22 {
@@ -625,6 +632,8 @@ mod tests {
             .unwrap();
         conn.execute_batch(include_str!("../db/migrations/005_ssh_connections.sql"))
             .unwrap();
+        conn.execute_batch(include_str!("../db/migrations/007_ssh_remote_path.sql"))
+            .unwrap();
         conn
     }
 
@@ -676,11 +685,12 @@ mod tests {
             is_default: false,
             created_at: String::new(),
             updated_at: String::new(),
+            remote_project_path: None,
         };
         let cmd = build_ssh_command(&conn).unwrap();
         assert_eq!(
             cmd,
-            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 user@example.com"
+            "ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 user@example.com"
         );
     }
 
@@ -698,10 +708,13 @@ mod tests {
             is_default: false,
             created_at: String::new(),
             updated_at: String::new(),
+            remote_project_path: None,
         };
         let cmd = build_ssh_command(&conn).unwrap();
         assert!(cmd.contains("-p 2222"));
         assert!(cmd.contains("admin@example.com"));
+        assert!(cmd.contains("ServerAliveInterval=15"));
+        assert!(cmd.contains("ServerAliveCountMax=3"));
     }
 
     #[test]
@@ -718,6 +731,7 @@ mod tests {
             is_default: false,
             created_at: String::new(),
             updated_at: String::new(),
+            remote_project_path: None,
         };
         assert!(build_ssh_command(&conn).is_err());
     }
@@ -734,6 +748,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: false,
+            remote_project_path: None,
         };
 
         let created = create(&conn, &input).unwrap();
@@ -757,6 +772,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: false,
+            remote_project_path: None,
         };
         let input2 = CreateSshConnectionInput {
             name: "Server B".into(),
@@ -767,6 +783,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: false,
+            remote_project_path: None,
         };
         create(&conn, &input1).unwrap();
         create(&conn, &input2).unwrap();
@@ -785,6 +802,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: false,
+            remote_project_path: None,
         };
         let created = create(&conn, &input).unwrap();
         let update_input = UpdateSshConnectionInput {
@@ -796,6 +814,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: None,
+            remote_project_path: None,
         };
         let updated = update(&conn, &created.id, &update_input).unwrap();
         assert_eq!(updated.name, "Updated");
@@ -816,6 +835,7 @@ mod tests {
             key_path: None,
             project_id: None,
             is_default: false,
+            remote_project_path: None,
         };
         let created = create(&conn, &input).unwrap();
         delete(&conn, &created.id).unwrap();
@@ -848,6 +868,7 @@ mod tests {
             key_path: None,
             project_id: Some("proj1".into()),
             is_default: false,
+            remote_project_path: None,
         };
         create(&conn, &input1).unwrap();
         create(
@@ -861,6 +882,7 @@ mod tests {
                 key_path: None,
                 project_id: None,
                 is_default: false,
+                remote_project_path: None,
             },
         )
         .unwrap();
@@ -888,6 +910,7 @@ mod tests {
                 key_path: None,
                 project_id: Some("proj1".into()),
                 is_default: false,
+                remote_project_path: None,
             },
         )
         .unwrap();
@@ -912,6 +935,7 @@ mod tests {
                 key_path: None,
                 project_id: None,
                 is_default: false,
+                remote_project_path: None,
             }
         )
         .is_err());
@@ -927,6 +951,7 @@ mod tests {
                 key_path: None,
                 project_id: None,
                 is_default: false,
+                remote_project_path: None,
             }
         )
         .is_err());
