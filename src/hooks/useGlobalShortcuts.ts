@@ -66,12 +66,16 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       }
     }
 
-    // Cmd+\ — Toggle file viewer overlay panel
+    // Cmd+\ / Cmd+Shift+\ — Toggle file viewer panel / maximize
     if (e.metaKey && e.key === "\\") {
       const hasProject = !!useProjectStore.getState().selectedId;
       if (hasProject) {
         e.preventDefault();
-        useAppStore.getState().toggleFileViewerPanel();
+        if (e.shiftKey) {
+          useAppStore.getState().toggleFileViewerMaximize();
+        } else {
+          useAppStore.getState().toggleFileViewerPanel();
+        }
       }
     }
   }, []);

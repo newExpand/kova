@@ -16,6 +16,7 @@ interface AppState {
   fileViewerPanelWidth: number;
   fileViewerMode: "tree" | "search";
   isContentSearchActive: boolean;
+  isFileViewerMaximized: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,7 @@ interface AppActions {
   setFileViewerPanelWidth: (width: number) => void;
   setFileViewerMode: (mode: "tree" | "search") => void;
   setContentSearchActive: (active: boolean) => void;
+  toggleFileViewerMaximize: () => void;
   reset: () => void;
 }
 
@@ -59,6 +61,7 @@ const initialState: AppState = {
   fileViewerPanelWidth: 480,
   fileViewerMode: "tree",
   isContentSearchActive: false,
+  isFileViewerMaximized: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -98,18 +101,30 @@ export const useAppStore = create<AppStore>()(
 
       toggleFileViewerPanel: () =>
         set(
-          (state) => ({
-            isFileViewerPanelOpen: !state.isFileViewerPanelOpen,
-            isFileFinderActive: false,
-            isContentSearchActive: false,
-          }),
+          (state) => {
+            // Maximized → restore to split mode (don't close)
+            if (state.isFileViewerPanelOpen && state.isFileViewerMaximized) {
+              return { isFileViewerMaximized: false };
+            }
+            // Otherwise toggle panel open/close
+            return {
+              isFileViewerPanelOpen: !state.isFileViewerPanelOpen,
+              isFileFinderActive: false,
+              isContentSearchActive: false,
+            };
+          },
           undefined,
           "toggleFileViewerPanel",
         ),
 
       setFileViewerPanelOpen: (open) =>
         set(
-          { isFileViewerPanelOpen: open, isFileFinderActive: false, isContentSearchActive: false },
+          (state) => ({
+            isFileViewerPanelOpen: open,
+            isFileFinderActive: false,
+            isContentSearchActive: false,
+            isFileViewerMaximized: open ? state.isFileViewerMaximized : false,
+          }),
           undefined,
           "setFileViewerPanelOpen",
         ),
@@ -129,6 +144,21 @@ export const useAppStore = create<AppStore>()(
 
       setContentSearchActive: (active) =>
         set({ isContentSearchActive: active }, undefined, "setContentSearchActive"),
+
+      toggleFileViewerMaximize: () =>
+        set(
+          (state) => {
+            const closing = state.isFileViewerPanelOpen && state.isFileViewerMaximized;
+            return {
+              isFileViewerPanelOpen: !closing,
+              isFileViewerMaximized: !closing,
+              isFileFinderActive: false,
+              isContentSearchActive: false,
+            };
+          },
+          undefined,
+          "toggleFileViewerMaximize",
+        ),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

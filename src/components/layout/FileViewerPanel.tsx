@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { X, FolderTree, Search } from "lucide-react";
+import { X, FolderTree, Search, Maximize2, Minimize2 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project";
 import { useResizeHandle } from "../../hooks/useResizeHandle";
@@ -21,6 +21,9 @@ export default function FileViewerPanel() {
   const fileViewerMode = useAppStore((s) => s.fileViewerMode);
   const setFileViewerMode = useAppStore((s) => s.setFileViewerMode);
   const setContentSearchActive = useAppStore((s) => s.setContentSearchActive);
+  const isFileViewerMaximized = useAppStore((s) => s.isFileViewerMaximized);
+  const toggleFileViewerMaximize = useAppStore((s) => s.toggleFileViewerMaximize);
+  const toggleFileViewerPanel = useAppStore((s) => s.toggleFileViewerPanel);
   const project = useProjectStore((s) => {
     const id = s.selectedId;
     return id ? s.projects.find((p) => p.id === id) : undefined;
@@ -89,6 +92,19 @@ export default function FileViewerPanel() {
         </div>
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-text-muted">⌘\</span>
+          <button
+            type="button"
+            onClick={isFileViewerMaximized ? toggleFileViewerPanel : toggleFileViewerMaximize}
+            className="rounded p-1 text-text-muted hover:bg-white/[0.06] hover:text-text transition-colors"
+            aria-label={isFileViewerMaximized ? "Restore panel" : "Maximize panel"}
+            title={isFileViewerMaximized ? "Restore (⌘⇧\\)" : "Maximize (⌘⇧\\)"}
+          >
+            {isFileViewerMaximized ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
           <button
             type="button"
             onClick={() => close(false)}

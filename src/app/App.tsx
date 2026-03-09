@@ -16,6 +16,7 @@ import { useAgentFileTrackingStore } from "../features/files";
 import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
 import { SshTabSwitcher, useSshStore } from "../features/ssh";
+import { cn } from "../lib/utils";
 
 const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
 
@@ -72,6 +73,7 @@ function SplitDivider({ onMouseDown, isResizing }: { onMouseDown: (e: React.Mous
 function AppShell() {
   const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
   const isFileViewerPanelOpen = useAppStore((s) => s.isFileViewerPanelOpen);
+  const isFileViewerMaximized = useAppStore((s) => s.isFileViewerMaximized);
   const fileViewerPanelWidth = useAppStore((s) => s.fileViewerPanelWidth);
   const setFileViewerPanelWidth = useAppStore((s) => s.setFileViewerPanelWidth);
   const splitContainerRef = useRef<HTMLDivElement>(null);
@@ -139,8 +141,13 @@ function AppShell() {
           <TitleBar />
           {/* Split container: route content + file viewer panel */}
           <div ref={splitContainerRef} className="flex flex-1 overflow-hidden">
-            {/* Route content (terminal, git, files, etc.) */}
-            <div className="flex flex-1 min-w-0 flex-col">
+            {/* Route content (terminal, git, files, etc.) — hidden (not unmounted) when maximized */}
+            <div
+              className={cn(
+                "flex flex-1 min-w-0 flex-col",
+                isFileViewerMaximized && isFileViewerPanelOpen && "hidden",
+              )}
+            >
               <AppRoutes />
             </div>
             {/* File viewer split panel */}
@@ -148,18 +155,25 @@ function AppShell() {
               {isFileViewerPanelOpen && (
                 <motion.div
                   key="split-panel"
-                  className="flex flex-shrink-0 overflow-hidden"
+                  className={cn(
+                    "flex overflow-hidden",
+                    isFileViewerMaximized ? "flex-1" : "flex-shrink-0",
+                  )}
                   initial={{ width: 0 }}
-                  animate={{ width: fileViewerPanelWidth + DIVIDER_WIDTH }}
+                  animate={{
+                    width: isFileViewerMaximized ? "100%" : fileViewerPanelWidth + DIVIDER_WIDTH,
+                  }}
                   exit={{ width: 0 }}
                   transition={{
                     width: {
-                      duration: isResizing ? 0 : 0.35,
+                      duration: isResizing || isFileViewerMaximized ? 0 : 0.35,
                       ease: [0.16, 1, 0.3, 1],
                     },
                   }}
                 >
-                  <SplitDivider onMouseDown={handleDividerMouseDown} isResizing={isResizing} />
+                  {!isFileViewerMaximized && (
+                    <SplitDivider onMouseDown={handleDividerMouseDown} isResizing={isResizing} />
+                  )}
                   <motion.div
                     className="flex flex-1 min-w-0 overflow-hidden glass-surface border-l border-white/[0.10]"
                     initial={{ opacity: 0 }}
