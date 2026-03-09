@@ -106,10 +106,14 @@ impl ThrottleState {
     }
 
     /// Returns true if 30 minutes have elapsed since last prune.
+    /// Also evicts stale throttle entries (older than 1 hour) to prevent unbounded HashMap growth.
     fn should_prune(&mut self) -> bool {
         let now = Instant::now();
         if now.duration_since(self.last_prune).as_secs() >= 1800 {
             self.last_prune = now;
+            // Evict stale throttle entries (older than 1 hour) to prevent unbounded growth
+            self.last_native
+                .retain(|_, last_time| now.duration_since(*last_time).as_secs() < 3600);
             return true;
         }
         false

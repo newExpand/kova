@@ -1,10 +1,36 @@
 use crate::errors::AppError;
 use crate::models::notification::NotificationRecord;
 use rusqlite::Connection;
+use std::collections::HashMap;
+use std::io::Read as _;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
+
+/// Active alerter PID per group. Keys are formatted as `"flow-orche:{group_id}"`.
+/// Prevents alerter process accumulation by killing the previous process before spawning a new one.
+static ACTIVE_ALERTER_PIDS: LazyLock<Mutex<HashMap<String, u32>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Maximum time an alerter process can live before being killed via SIGKILL.
+const ALERTER_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
+/// Polling interval for checking alerter process exit status.
+const ALERTER_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Lock the active alerters map, recovering from mutex poisoning.
+/// A poisoned mutex means a thread panicked while holding it, but the data is likely still valid.
+fn lock_alerter_pids() -> std::sync::MutexGuard<'static, HashMap<String, u32>> {
+    match ACTIVE_ALERTER_PIDS.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("ACTIVE_ALERTER_PIDS mutex was poisoned, recovering");
+            poisoned.into_inner()
+        }
+    }
+}
 
 /// Send a native macOS notification.
 /// On macOS, always uses osascript/alerter because tauri-plugin-notification
@@ -62,6 +88,30 @@ fn escape_alerter_arg(s: &str) -> String {
     }
 }
 
+/// Kill a previous alerter process for the given group (if any) and remove it from the map.
+/// Uses SIGTERM via external kill command (we only store PIDs, not Child handles,
+/// since the Child is owned by the reaper thread).
+fn kill_previous_alerter(group: &str) {
+    let mut map = lock_alerter_pids();
+    if let Some(pid) = map.remove(group) {
+        match std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                info!("Sent SIGTERM to previous alerter (PID {}) for group: {}", pid, group);
+            }
+            Ok(_) => {
+                info!("SIGTERM for alerter PID {} returned non-zero (likely already exited)", pid);
+            }
+            Err(e) => {
+                warn!("Failed to kill previous alerter (PID {}): {}", pid, e);
+            }
+        }
+    }
+}
+
 fn send_via_alerter_or_osascript(
     title: &str,
     body: &str,
@@ -71,6 +121,10 @@ fn send_via_alerter_or_osascript(
 ) -> Result<(), AppError> {
     // body가 비어있으면 title을 message로 사용 (방어적 폴백)
     let alert_message = if body.is_empty() { title } else { body };
+    let alerter_group = format!("flow-orche:{}", group_id);
+
+    // Kill previous alerter for this group to prevent process accumulation
+    kill_previous_alerter(&alerter_group);
 
     match std::process::Command::new("alerter")
         .arg("-title")
@@ -80,16 +134,57 @@ fn send_via_alerter_or_osascript(
         .arg("-sound")
         .arg("default")
         .arg("-group")
-        .arg(format!("flow-orche:{}", group_id))
+        .arg(&alerter_group)
         .stdout(std::process::Stdio::piped())
         .spawn()
     {
-        Ok(child) => {
-            // Reap child + capture stdout to detect user click
+        Ok(mut child) => {
+            let child_pid = child.id();
+
+            lock_alerter_pids().insert(alerter_group.clone(), child_pid);
+
+            // Reap child with timeout + capture stdout to detect user click
             thread::spawn(move || {
-                if let Ok(output) = child.wait_with_output() {
-                    let result = String::from_utf8_lossy(&output.stdout);
-                    if result.contains("@CONTENTCLICKED") || result.contains("@ACTIONCLICKED") {
+                let start = Instant::now();
+
+                // Poll for process exit with timeout instead of infinite wait_with_output()
+                // Only user-initiated exit (exit code 0) counts as "clicked"
+                let user_exited = loop {
+                    match child.try_wait() {
+                        Ok(Some(status)) => break status.success(),
+                        Ok(None) => {
+                            if start.elapsed() >= ALERTER_TIMEOUT {
+                                // SIGKILL as last resort -- process exceeded ALERTER_TIMEOUT
+                                if let Err(e) = child.kill() {
+                                    info!("Alerter kill error (PID {}, likely already exited): {}", child_pid, e);
+                                }
+                                if let Err(e) = child.wait() {
+                                    warn!("Failed to reap alerter process (PID {}): {}", child_pid, e);
+                                }
+                                info!("Alerter timed out (PID {}), killed", child_pid);
+                                break false;
+                            }
+                            thread::sleep(ALERTER_POLL_INTERVAL);
+                        }
+                        Err(e) => {
+                            warn!("Alerter try_wait error (PID {}): {}", child_pid, e);
+                            break false;
+                        }
+                    }
+                };
+
+                // Read stdout for click detection (only if user dismissed with exit code 0)
+                if user_exited {
+                    let mut stdout_str = String::new();
+                    if let Some(mut stdout) = child.stdout.take() {
+                        if let Err(e) = stdout.read_to_string(&mut stdout_str) {
+                            warn!("Failed to read alerter stdout (PID {}): {} -- click detection skipped", child_pid, e);
+                        }
+                    }
+
+                    if stdout_str.contains("@CONTENTCLICKED")
+                        || stdout_str.contains("@ACTIONCLICKED")
+                    {
                         // Activate the macOS app (bring to foreground from other apps)
                         #[cfg(target_os = "macos")]
                         {
@@ -113,10 +208,17 @@ fn send_via_alerter_or_osascript(
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
-                        // Emit event to frontend for project navigation
-                        let _ = app_handle.emit("notification:clicked", &project_id);
+                        if let Err(e) = app_handle.emit("notification:clicked", &project_id) {
+                            warn!("Failed to emit notification:clicked for project {}: {}", project_id, e);
+                        }
                         info!("Notification clicked for project: {}", project_id);
                     }
+                }
+
+                // Remove from active alerters map (only if still our PID)
+                let mut map = lock_alerter_pids();
+                if map.get(&alerter_group).copied() == Some(child_pid) {
+                    map.remove(&alerter_group);
                 }
             });
             info!("Native notification sent (alerter): {}", title);
