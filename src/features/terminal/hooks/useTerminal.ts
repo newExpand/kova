@@ -11,6 +11,7 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 // Direct import to avoid circular chunk dependency (terminal ↔ settings)
 import { useSettingsStore } from "../../settings/stores/settingsStore";
 import { createFilePathLinkProvider } from "../links/filePathLinkProvider";
+import { createUrlLinkProvider } from "../links/urlLinkProvider";
 
 // Replicate macOS Terminal.app / iTerm2 behavior: escape shell special characters
 function escapeShellPath(path: string): string {
@@ -133,6 +134,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
   const dragDistanceRef = useRef({ exceeded: false, startX: 0, startY: 0, startTime: 0 });
   const dragListenersRef = useRef<{ cleanup: () => void } | null>(null);
   const linkProviderDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const urlLinkProviderDisposableRef = useRef<{ dispose: () => void } | null>(null);
   // True while mouse hovers a file path link. Suppresses mouse click escape
   // sequences in onData so tmux copy-mode isn't canceled on link click.
   const linkHoverRef = useRef(false);
@@ -189,8 +191,13 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
     // Dispose file path link provider
     if (linkProviderDisposableRef.current) {
-      linkProviderDisposableRef.current.dispose();
+      try { linkProviderDisposableRef.current.dispose(); } catch { /* already disposed */ }
       linkProviderDisposableRef.current = null;
+    }
+    // Dispose URL link provider
+    if (urlLinkProviderDisposableRef.current) {
+      try { urlLinkProviderDisposableRef.current.dispose(); } catch { /* already disposed */ }
+      urlLinkProviderDisposableRef.current = null;
     }
     linkHoverRef.current = false;
     if (linkHoverTimeoutRef.current) {
@@ -383,6 +390,27 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               }
             },
           });
+        }
+
+        // ── URL link provider — makes http/https URLs clickable ──
+        try {
+          urlLinkProviderDisposableRef.current = createUrlLinkProvider(term, {
+            onLinkHoverChange: (hovering) => {
+              linkHoverRef.current = hovering;
+              if (linkHoverTimeoutRef.current) {
+                clearTimeout(linkHoverTimeoutRef.current);
+                linkHoverTimeoutRef.current = null;
+              }
+              if (hovering) {
+                linkHoverTimeoutRef.current = setTimeout(() => {
+                  linkHoverRef.current = false;
+                  linkHoverTimeoutRef.current = null;
+                }, 500);
+              }
+            },
+          });
+        } catch (err) {
+          console.error("[useTerminal] Failed to register URL link provider:", err);
         }
 
         // ── Drag-distance tracking for OSC 52 clipboard filter ──
