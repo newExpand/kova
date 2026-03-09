@@ -613,16 +613,10 @@ body {
   box-shadow: none !important;
 }
 
-/* xterm.js composition view: shows composing Korean/CJK text at cursor.
- * Styled to match the terminal dark theme. */
+/* Hide xterm.js built-in composition view — we use our own imeOverlay
+ * positioned at the terminal cursor via buffer coordinates. The built-in
+ * .composition-view duplicates the preview in release WKWebView where
+ * compositionstart/end events fire natively. */
 .xterm .composition-view {
-  background: var(--terminal-comp-bg, #24283b) !important;
-  color: var(--terminal-comp-fg, #c0caf5) !important;
-  border: 1px solid var(--terminal-comp-border, #414868) !important;
-  border-radius: 4px !important;
-  padding: 2px 8px !important;
-  font-size: 14px !important;
-  line-height: 1.4 !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
-  z-index: 10 !important;
+  display: none !important;
 }

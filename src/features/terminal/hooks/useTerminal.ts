@@ -645,6 +645,10 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         //  4. On non-229 keydown (Enter, Space, etc.), flush remaining text
 
         let imeActive = false;
+        // True when native compositionstart/end events fire (release WKWebView).
+        // When true, xterm.js's built-in .composition-view handles the preview
+        // so we suppress our custom imeOverlay to avoid double display.
+        let nativeCompositionActive = false;
         // How many characters from textarea start were already sent to PTY
         let imeFlushedLen = 0;
         // Width (in terminal columns) of current inline preview
@@ -813,9 +817,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           // Composition events (for systems that DO fire them)
           xtermTextarea.addEventListener("compositionstart", () => {
             imeActive = true;
+            nativeCompositionActive = true;
           });
 
           xtermTextarea.addEventListener("compositionend", (_e: CompositionEvent) => {
+            nativeCompositionActive = false;
             imeClearPreview();
             // Send any unflushed composed text
             if (xtermTextarea && aliveRef.current && ptyRef.current) {
@@ -839,9 +845,11 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               imeLog("input: clamp flushedLen", imeFlushedLen, "→", val.length);
               imeFlushedLen = val.length;
             }
-            // Show the current composing character (last char after flushed portion)
+            // Show the current composing character (last char after flushed portion).
+            // Skip when native composition is active — xterm.js .composition-view
+            // already displays the preview (release WKWebView).
             const composing = val.substring(imeFlushedLen);
-            imeLog("input: composing=", JSON.stringify(composing));
+            imeLog("input: composing=", JSON.stringify(composing), "nativeComp=", nativeCompositionActive);
             if (composing.length > 0) {
               imeShowPreview(composing.charAt(composing.length - 1));
             } else {
