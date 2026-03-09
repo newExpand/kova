@@ -409,6 +409,11 @@ export function InlineTerminal({ sessionName, onClose, height = 250 }: InlineTer
         });
 
         xtermTextarea.addEventListener("compositionstart", () => {
+          if (!imeActive) {
+            // Starting new IME session via native composition — skip any
+            // pre-existing textarea content already sent to PTY.
+            imeFlushedLen = xtermTextarea?.value.length ?? 0;
+          }
           imeActive = true;
         });
 

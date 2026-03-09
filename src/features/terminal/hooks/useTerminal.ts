@@ -816,6 +816,12 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
           // Composition events (for systems that DO fire them)
           xtermTextarea.addEventListener("compositionstart", () => {
+            if (!imeActive) {
+              // Starting new IME session via native composition — skip any
+              // pre-existing textarea content already sent to PTY.
+              // Mirrors beforeinput's insertText+Korean branch (dev mode path).
+              imeFlushedLen = xtermTextarea?.value.length ?? 0;
+            }
             imeActive = true;
             nativeCompositionActive = true;
           });
@@ -846,8 +852,8 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               imeFlushedLen = val.length;
             }
             // Show the current composing character (last char after flushed portion).
-            // Skip when native composition is active — xterm.js .composition-view
-            // already displays the preview (release WKWebView).
+            // Our custom imeOverlay is always used — xterm.js's built-in .composition-view
+            // is hidden via CSS (see index.css).
             const composing = val.substring(imeFlushedLen);
             imeLog("input: composing=", JSON.stringify(composing), "nativeComp=", nativeCompositionActive);
             if (composing.length > 0) {
