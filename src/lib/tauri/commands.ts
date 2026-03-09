@@ -143,6 +143,7 @@ export interface GitStatus {
   stagedCount: number;
   unstagedCount: number;
   untrackedCount: number;
+  modifiedPaths: string[];
 }
 
 export interface GitGraphData {

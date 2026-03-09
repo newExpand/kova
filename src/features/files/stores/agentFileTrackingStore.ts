@@ -40,6 +40,11 @@ function flashKey(projectPath: string, relativePath: string): string {
 // Path utilities (exported for event-bridge)
 // ---------------------------------------------------------------------------
 
+/** Strip leading "./" and trailing "/" for consistent git path matching. */
+function normalizeGitPath(p: string): string {
+  return p.replace(/^\.\//, "").replace(/\/$/, "");
+}
+
 const WORKTREE_MARKER = "/.claude/worktrees/";
 
 /** Resolve worktree file path to canonical project-relative path.
@@ -146,6 +151,7 @@ interface AgentFileTrackingActions {
   removeUserEdit: (projectPath: string, relativePath: string) => void;
   removeAgentWrite: (projectPath: string, relativePath: string) => void;
   removeCommittedFiles: (projectPath: string, filePaths: string[]) => void;
+  reconcileWithGitStatus: (projectPath: string, dirtyPaths: string[]) => void;
   clearProject: (projectPath: string) => void;
   restoreWorkingSets: () => Promise<void>;
   // Reset
@@ -382,7 +388,7 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const key = normalizePathKey(projectPath);
 
       // Normalize paths: strip leading "./" and trailing "/" for consistent matching
-      const normalized = filePaths.map((p) => p.replace(/^\.\//, "").replace(/\/$/, ""));
+      const normalized = filePaths.map(normalizeGitPath);
 
       // Clean up flash timers for all removed files
       for (const fp of normalized) {
@@ -453,6 +459,73 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       });
 
       persistWorkingSets();
+    },
+
+    reconcileWithGitStatus: (projectPath, dirtyPaths) => {
+      const key = normalizePathKey(projectPath);
+      if (!get().workingSets[key]) return;
+
+      const dirtySet = new Set(
+        dirtyPaths.map(normalizeGitPath),
+      );
+
+      let didUpdate = false;
+
+      set((state) => {
+        const existing = state.workingSets[key];
+        if (!existing) return state;
+
+        // Keep only files that are still dirty in git
+        let removedCount = 0;
+
+        const newWrites: Record<string, FileTouch> = {};
+        for (const [fp, touch] of Object.entries(existing.writes)) {
+          if (dirtySet.has(fp)) {
+            newWrites[fp] = touch;
+          } else {
+            removedCount++;
+            const timer = flashTimers.get(flashKey(projectPath, fp));
+            if (timer) {
+              clearTimeout(timer);
+              flashTimers.delete(flashKey(projectPath, fp));
+            }
+          }
+        }
+
+        const newUserEdits: Record<string, FileTouch> = {};
+        for (const [fp, touch] of Object.entries(existing.userEdits ?? {})) {
+          if (dirtySet.has(fp)) {
+            newUserEdits[fp] = touch;
+          } else {
+            removedCount++;
+          }
+        }
+
+        if (removedCount === 0) return state;
+
+        didUpdate = true;
+        console.info(
+          "[agentFileTracking] reconcileWithGitStatus: removed %d clean entries for %s",
+          removedCount, key,
+        );
+
+        const newFlashes = { ...state.recentFlashes };
+        for (const fp of Object.keys(existing.writes)) {
+          if (!dirtySet.has(fp)) {
+            delete newFlashes[flashKey(projectPath, fp)];
+          }
+        }
+
+        return {
+          workingSets: {
+            ...state.workingSets,
+            [key]: { writes: newWrites, userEdits: newUserEdits },
+          },
+          recentFlashes: newFlashes,
+        };
+      });
+
+      if (didUpdate) persistWorkingSets();
     },
 
     clearProject: (projectPath) => {

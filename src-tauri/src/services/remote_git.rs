@@ -222,6 +222,7 @@ pub fn get_remote_graph_data(
             staged_count: 0,
             unstaged_count: 0,
             untracked_count: 0,
+            modified_paths: Vec::new(),
         },
     })
 }
