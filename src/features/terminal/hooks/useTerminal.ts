@@ -732,7 +732,7 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
         // Terminal → PTY: user keystrokes (with IME guard)
         term.onData((data: string) => {
           imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
-          if (imeActive) return;
+          if (imeActive && parseMouseButtonCode(data) === null) return;
           // Suppress mouse click escape sequences while hovering a file path link.
           // Prevents tmux MouseUp1Pane from canceling copy-mode (scroll to bottom).
           if (linkHoverRef.current && isMouseClickEscapeSequence(data)) {
