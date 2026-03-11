@@ -645,14 +645,14 @@ fn is_semver_like(s: &str) -> bool {
     parts.len() >= 2 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// Find the tmux pane target where Claude Code is running in a given window.
+/// Find the tmux pane target where an AI agent is running in a given window.
 ///
 /// Strategy (triple fallback):
-/// 1. Search for a pane whose `pane_current_command` contains "claude"
-/// 2. If not found (Claude may be executing a tool), target pane 0
-///    (Claude is always launched in pane 0 by `start_worktree_task`)
+/// 1. Search for a pane whose `pane_current_command` contains agent process name
+/// 2. If not found (agent may be executing a tool), target pane 0
+///    (agents are always launched in pane 0 by `start_worktree_task`)
 /// 3. If pane query fails entirely, fall back to `session:window` (active pane)
-fn find_claude_pane_target(session_name: &str, window_name: &str) -> String {
+fn find_agent_pane_target(session_name: &str, window_name: &str, agent_type: Option<crate::models::agent_type::AgentType>) -> String {
     let base = format!("{}:{}", session_name, window_name);
 
     let output = tmux_cmd()
@@ -671,45 +671,52 @@ fn find_claude_pane_target(session_name: &str, window_name: &str) -> String {
             let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
             info!("find_claude_pane_target: base='{}', panes={:?}", base, lines);
 
-            // 1st: find the pane running "claude" or Claude Code version pattern (e.g. "2.1.50")
+            // 1st: find the pane running the agent's process
             for line in &lines {
                 if let Some((idx, cmd)) = line.split_once('|') {
-                    // Claude Code shows as "claude" (binary name) or its version
-                    // string e.g. "2.1.50" (semver pattern: digit.digit+.digit+)
-                    let is_claude = cmd.contains("claude")
-                        || is_semver_like(cmd);
-                    if is_claude {
+                    let is_agent = if let Some(agent) = agent_type {
+                        // Match against the specific agent's process names
+                        agent.process_names().iter().any(|name| cmd.contains(name))
+                            // Claude Code also shows version strings (e.g. "2.1.50")
+                            || (agent == crate::models::agent_type::AgentType::ClaudeCode && is_semver_like(cmd))
+                    } else {
+                        // No agent type specified, match any known agent
+                        cmd.contains("claude") || cmd.contains("codex") || cmd.contains("gemini")
+                            || is_semver_like(cmd)
+                    };
+                    if is_agent {
                         let target = format!("{}.{}", base, idx);
-                        info!("Found Claude pane: target='{}', cmd='{}'", target, cmd);
+                        info!("Found agent pane: target='{}', cmd='{}'", target, cmd);
                         return target;
                     }
                 }
             }
 
-            // 2nd: multiple panes but no "claude" found → target pane 0
+            // 2nd: multiple panes but no agent found → target pane 0
             if lines.len() > 1 {
                 let target = format!("{}.0", base);
-                info!("Claude not detected by command; targeting pane 0: '{}'", target);
+                info!("Agent not detected by command; targeting pane 0: '{}'", target);
                 return target;
             }
         } else {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            warn!("find_claude_pane_target: list-panes failed for '{}': {}", base, stderr.trim());
+            warn!("find_agent_pane_target: list-panes failed for '{}': {}", base, stderr.trim());
         }
     }
 
     // 3rd: single pane or query failed → active pane
-    info!("find_claude_pane_target: using fallback target '{}'", base);
+    info!("find_agent_pane_target: using fallback target '{}'", base);
     base
 }
 
 /// Send keys to a named window with a delay before Enter to prevent race conditions.
-/// This is the recommended pattern for sending prompts to interactive REPLs (e.g. Claude Code).
-/// Automatically finds the Claude Code pane even when multiple panes exist.
+/// This is the recommended pattern for sending prompts to interactive REPLs (e.g. AI agents).
+/// Automatically finds the agent pane even when multiple panes exist.
 pub fn send_keys_to_window_with_delay(
     session_name: &str,
     window_name: &str,
     keys: &str,
+    agent_type: Option<crate::models::agent_type::AgentType>,
 ) -> Result<(), AppError> {
     info!(
         "send_keys_to_window_with_delay: session='{}', window='{}', keys_len={}",
@@ -721,7 +728,7 @@ pub fn send_keys_to_window_with_delay(
         return Err(AppError::InvalidInput("Keys cannot be empty".into()));
     }
 
-    let target = find_claude_pane_target(session_name, window_name);
+    let target = find_agent_pane_target(session_name, window_name, agent_type);
     info!("send_keys_to_window_with_delay: final target='{}'", target);
 
     // Step 1: Send the text (without Enter)

@@ -169,13 +169,19 @@ pub fn run() {
             app.manage(Mutex::new(event_server));
 
             // Re-inject hooks for all active projects with the new port
+            // (only for agents that support hooks)
             {
                 let db_state = app.state::<Mutex<DbConnection>>();
                 let db_guard = db_state.lock();
                 if let Ok(db) = db_guard {
                     match services::project::list(&db.conn) {
                         Ok(projects) => {
+                            let mut injected_count = 0u32;
                             for project in &projects {
+                                // Skip hook injection for agents that don't support hooks
+                                if !project.agent_type.supports_hooks() {
+                                    continue;
+                                }
                                 if let Err(e) = services::hooks::inject_hooks(
                                     std::path::Path::new(&project.path),
                                     port,
@@ -195,10 +201,11 @@ pub fn run() {
                                         project.name, e
                                     );
                                 }
+                                injected_count += 1;
                             }
                             tracing::info!(
-                                "Injected hooks for {} active project(s)",
-                                projects.len()
+                                "Injected hooks for {}/{} active project(s)",
+                                injected_count, projects.len()
                             );
                         }
                         Err(e) => {

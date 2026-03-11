@@ -5,6 +5,25 @@ import { invoke } from "@tauri-apps/api/core";
 // These will be re-exported from respective feature type files (T6, T15, T18).
 // ---------------------------------------------------------------------------
 
+export type AgentType = "claudeCode" | "codexCli" | "geminiCli";
+
+export const DEFAULT_AGENT_TYPE: AgentType = "claudeCode";
+
+export const AGENT_TYPES = {
+  claudeCode: {
+    label: "Claude Code",
+    command: "claude --dangerously-skip-permissions",
+  },
+  codexCli: {
+    label: "Codex CLI",
+    command: "codex",
+  },
+  geminiCli: {
+    label: "Gemini CLI",
+    command: "gemini --yolo",
+  },
+} as const;
+
 export interface Project {
   id: string;
   name: string;
@@ -12,6 +31,7 @@ export interface Project {
   colorIndex: number;
   sortOrder: number;
   isActive: boolean;
+  agentType: AgentType;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,12 +40,14 @@ export interface CreateProjectInput {
   name: string;
   path: string;
   colorIndex?: number;
+  agentType?: AgentType;
 }
 
 export interface UpdateProjectInput {
   name?: string;
   path?: string;
   colorIndex?: number;
+  agentType?: AgentType;
 }
 
 export interface TmuxSession {
@@ -94,6 +116,10 @@ export interface EnvironmentCheck {
   tmuxVersion: string | null;
   claudeCodeInstalled: boolean;
   claudeCodeVersion: string | null;
+  codexCliInstalled: boolean;
+  codexCliVersion: string | null;
+  geminiCliInstalled: boolean;
+  geminiCliVersion: string | null;
   shellType: string;
 }
 
@@ -211,8 +237,9 @@ export async function createProject(
   name: string,
   path: string,
   colorIndex: number,
+  agentType?: AgentType,
 ): Promise<Project> {
-  return invoke<Project>("create_project", { name, path, colorIndex });
+  return invoke<Project>("create_project", { name, path, colorIndex, agentType });
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -558,21 +585,25 @@ export async function startWorktreeTask(
   sessionName: string,
   taskName: string,
   projectPath: string,
+  agentType?: AgentType,
 ): Promise<WorktreeTaskResult> {
   return invoke<WorktreeTaskResult>("start_worktree_task", {
     sessionName,
     taskName,
     projectPath,
+    agentType,
   });
 }
 
 export async function restoreWorktreeWindows(
   sessionName: string,
   projectPath: string,
+  agentType?: AgentType,
 ): Promise<RestoreResult> {
   return invoke<RestoreResult>("restore_worktree_windows", {
     sessionName,
     projectPath,
+    agentType,
   });
 }
 
@@ -646,11 +677,13 @@ export async function sendKeysToTmuxWindowDelayed(
   sessionName: string,
   windowName: string,
   keys: string,
+  agentType?: AgentType,
 ): Promise<void> {
   return invoke<void>("send_keys_to_tmux_window_delayed", {
     sessionName,
     windowName,
     keys,
+    agentType,
   });
 }
 

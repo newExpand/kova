@@ -9,13 +9,14 @@ import {
   DialogFooter,
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
-import { startWorktreeTask } from "../../../lib/tauri/commands";
+import { startWorktreeTask, AGENT_TYPES, DEFAULT_AGENT_TYPE, type AgentType } from "../../../lib/tauri/commands";
 
 interface NewAgentTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionName: string | null;
   projectPath: string;
+  agentType?: AgentType;
   onCreated?: () => void;
 }
 
@@ -27,8 +28,10 @@ export function NewAgentTaskDialog({
   onOpenChange,
   sessionName,
   projectPath,
+  agentType = DEFAULT_AGENT_TYPE,
   onCreated,
 }: NewAgentTaskDialogProps) {
+  const agentLabel = AGENT_TYPES[agentType].label;
   const [taskName, setTaskName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export function NewAgentTaskDialog({
     setError(null);
 
     try {
-      await startWorktreeTask(sessionName, taskName, projectPath);
+      await startWorktreeTask(sessionName, taskName, projectPath, agentType);
       setTaskName("");
       onCreated?.();
       onOpenChange(false);
@@ -62,7 +65,7 @@ export function NewAgentTaskDialog({
     } finally {
       setIsLoading(false);
     }
-  }, [isValid, sessionName, taskName, projectPath, onOpenChange, onCreated]);
+  }, [isValid, sessionName, taskName, projectPath, agentType, onOpenChange, onCreated]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -80,7 +83,7 @@ export function NewAgentTaskDialog({
         <DialogHeader>
           <DialogTitle>New Agent Worktree</DialogTitle>
           <DialogDescription>
-            Create a new tmux window with Claude Code worktree.
+            Create a new tmux window with {agentLabel} worktree.
           </DialogDescription>
         </DialogHeader>
 

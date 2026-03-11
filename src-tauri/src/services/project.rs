@@ -1,4 +1,5 @@
 use crate::errors::AppError;
+use crate::models::agent_type::AgentType;
 use crate::models::project::{Project, UpdateProjectInput};
 use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
@@ -7,10 +8,11 @@ use uuid::Uuid;
 
 /// Shared column list for all project SELECT queries.
 /// Must stay in sync with `row_to_project`.
-const PROJECT_COLUMNS: &str = "id, name, path, color_index, sort_order, is_active, created_at, updated_at";
+const PROJECT_COLUMNS: &str = "id, name, path, color_index, sort_order, is_active, agent_type, created_at, updated_at";
 
 /// Map a row (selected with `PROJECT_COLUMNS`) into a `Project`.
 fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
+    let agent_type_str: String = row.get(6)?;
     Ok(Project {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -18,8 +20,9 @@ fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         color_index: row.get(3)?,
         sort_order: row.get(4)?,
         is_active: row.get::<_, i32>(5)? == 1,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        agent_type: AgentType::from_db_str(&agent_type_str),
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 
@@ -29,6 +32,7 @@ pub fn create(
     name: &str,
     path: &str,
     color_index: i32,
+    agent_type: AgentType,
 ) -> Result<Project, AppError> {
     // Validate and canonicalize path
     let canonical_path = std::fs::canonicalize(Path::new(path))
@@ -73,13 +77,13 @@ pub fn create(
 
     // Insert project at top (sort_order = 0)
     tx.execute(
-        "INSERT INTO projects (id, name, path, color_index, sort_order) VALUES (?1, ?2, ?3, ?4, 0)",
-        [&id, name, &path_str, &color_index.to_string()],
+        "INSERT INTO projects (id, name, path, color_index, sort_order, agent_type) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+        [&id, name, &path_str, &color_index.to_string(), agent_type.to_db_str()],
     )?;
 
     tx.commit()?;
 
-    info!("Created project: {} ({})", name, id);
+    info!("Created project: {} ({}) with agent type: {:?}", name, id, agent_type);
 
     // Return created project
     get(conn, &id)
@@ -150,6 +154,10 @@ pub fn update(
     if let Some(color_index) = input.color_index {
         updates.push("color_index = ?");
         params.push(Box::new(color_index));
+    }
+    if let Some(agent_type) = input.agent_type {
+        updates.push("agent_type = ?");
+        params.push(Box::new(agent_type.to_db_str().to_string()));
     }
 
     if updates.is_empty() {

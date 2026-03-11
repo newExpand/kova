@@ -128,6 +128,7 @@ export const useProjectStore = create<ProjectStore>()(
             input.name,
             input.path,
             colorIndex,
+            input.agentType,
           );
           set(
             (state) => ({

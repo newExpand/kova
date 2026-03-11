@@ -3,6 +3,7 @@ export type {
   Project,
   CreateProjectInput,
   UpdateProjectInput,
+  AgentType,
 } from "../../lib/tauri/commands";
 
 export type ProjectStatus = "active" | "inactive" | "deleting";

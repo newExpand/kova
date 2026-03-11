@@ -1,5 +1,6 @@
 use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
+use crate::models::agent_type::AgentType;
 use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
 use tauri::AppHandle;
@@ -10,16 +11,20 @@ pub fn start_worktree_task(
     session_name: String,
     task_name: String,
     project_path: String,
+    agent_type: Option<AgentType>,
 ) -> Result<WorktreeTaskResult, AppError> {
-    services::agent::start_worktree_task(&session_name, &task_name, &project_path, Some(app))
+    let agent = agent_type.unwrap_or_default();
+    services::agent::start_worktree_task(&session_name, &task_name, &project_path, agent, Some(app))
 }
 
 #[tauri::command]
 pub fn restore_worktree_windows(
     session_name: String,
     project_path: String,
+    agent_type: Option<AgentType>,
 ) -> Result<RestoreResult, AppError> {
-    services::agent::restore_worktree_windows(&session_name, &project_path)
+    let agent = agent_type.unwrap_or_default();
+    services::agent::restore_worktree_windows(&session_name, &project_path, agent)
 }
 
 #[tauri::command]
@@ -71,8 +76,9 @@ pub fn send_keys_to_tmux_window_delayed(
     session_name: String,
     window_name: String,
     keys: String,
+    agent_type: Option<AgentType>,
 ) -> Result<(), AppError> {
-    services::tmux::send_keys_to_window_with_delay(&session_name, &window_name, &keys)
+    services::tmux::send_keys_to_window_with_delay(&session_name, &window_name, &keys, agent_type)
 }
 
 #[tauri::command]

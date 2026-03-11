@@ -10,8 +10,9 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import type { Project, UpdateProjectInput } from "../types";
+import type { Project, UpdateProjectInput, AgentType } from "../types";
 import { COLOR_PALETTE } from "../types";
+import { AGENT_TYPES, DEFAULT_AGENT_TYPE } from "../../../lib/tauri/commands";
 import { cn } from "../../../lib/utils";
 
 interface ProjectEditFormProps {
@@ -29,6 +30,7 @@ function ProjectEditForm({
 }: ProjectEditFormProps) {
   const [name, setName] = useState(project.name);
   const [colorIndex, setColorIndex] = useState(project.colorIndex);
+  const [agentType, setAgentType] = useState<AgentType>(project.agentType || DEFAULT_AGENT_TYPE);
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,7 +39,7 @@ function ProjectEditForm({
 
     setIsSaving(true);
     try {
-      await onSave(project.id, { name: name.trim(), colorIndex });
+      await onSave(project.id, { name: name.trim(), colorIndex, agentType });
       onOpenChange(false);
     } finally {
       setIsSaving(false);
@@ -70,6 +72,24 @@ function ProjectEditForm({
             <p className="text-xs text-text-muted font-mono truncate">
               {project.path}
             </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <Label>AI Agent</Label>
+            <div className="flex gap-2">
+              {(Object.keys(AGENT_TYPES) as AgentType[]).map((type) => (
+                <Button
+                  key={type}
+                  type="button"
+                  variant={agentType === type ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setAgentType(type)}
+                >
+                  {AGENT_TYPES[type].label}
+                </Button>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-col gap-3">
