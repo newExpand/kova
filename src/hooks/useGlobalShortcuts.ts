@@ -66,6 +66,12 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       }
     }
 
+    // Cmd+B — Toggle sidebar visibility
+    if (e.metaKey && e.key === "b") {
+      e.preventDefault();
+      useAppStore.getState().toggleSidebarHidden();
+    }
+
     // Cmd+\ / Cmd+Shift+\ — Toggle file viewer panel / maximize
     if (e.metaKey && e.key === "\\") {
       const hasProject = !!useProjectStore.getState().selectedId;

@@ -172,8 +172,15 @@ function SortableProjectItem({
   );
 }
 
+function sidebarWidthClass(hidden: boolean, collapsed: boolean): string {
+  if (hidden) return "w-0 overflow-hidden border-r-0";
+  if (collapsed) return "w-[var(--sidebar-collapsed-width)]";
+  return "w-[var(--sidebar-width)]";
+}
+
 function Sidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const hidden = useAppStore((s) => s.sidebarHidden);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   const setSidebarMode = useAppStore((s) => s.setSidebarMode);
@@ -433,7 +440,7 @@ function Sidebar() {
     <aside
       className={cn(
         "flex h-full flex-col border-r border-white/[0.10] glass-surface relative z-10 transition-[width] duration-200",
-        collapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]",
+        sidebarWidthClass(hidden, collapsed),
       )}
     >
       {/* Traffic light spacer — macOS overlay titlebar */}

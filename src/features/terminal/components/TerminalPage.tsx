@@ -24,7 +24,6 @@ import {
   remoteTmuxCloseWindow,
   remoteTmuxNextWindow,
   remoteTmuxPreviousWindow,
-  remoteTmuxListWindows,
   remoteTmuxSendKeys,
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
@@ -444,7 +443,6 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       onCloseWindow: withErrorSurface(remoteTmuxCloseWindow, "Close window"),
       onNextWindow: withErrorSurface(remoteTmuxNextWindow, "Next window"),
       onPrevWindow: withErrorSurface(remoteTmuxPreviousWindow, "Previous window"),
-      onFetchWindows: () => remoteTmuxListWindows(connId, remoteSN),
       onClosePane: withErrorSurface(remoteTmuxClosePane, "Close pane"),
     };
   }, [hasRemoteTmux, activeConfig, storeKey]);
@@ -642,12 +640,12 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
               <WindowToolbar
                 sessionName={activeConfig.sessionName}
                 disabled={status !== "connected"}
-                isActive={isActive}
                 onRequestAction={handleRequestAction}
+                title={isSshMode ? sshConnection?.name : project?.name}
+                onError={(msg) => useTerminalStore.getState().setError(storeKey, msg)}
                 onCloseWindow={remoteCallbacks.onCloseWindow}
                 onNextWindow={remoteCallbacks.onNextWindow}
                 onPrevWindow={remoteCallbacks.onPrevWindow}
-                onFetchWindows={remoteCallbacks.onFetchWindows}
               />
               <PaneToolbar
                 sessionName={activeConfig.sessionName}

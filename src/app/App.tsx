@@ -55,7 +55,7 @@ function TitleBar() {
         </span>
       )}
       {/* Right spacer */}
-      <div className="flex-1" />
+      <div className="flex-1" data-tauri-drag-region />
     </header>
   );
 }

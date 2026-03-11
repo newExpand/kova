@@ -17,6 +17,7 @@ interface AppState {
   fileViewerMode: "tree" | "search";
   isContentSearchActive: boolean;
   isFileViewerMaximized: boolean;
+  sidebarHidden: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,8 @@ interface AppActions {
   setFileViewerMode: (mode: "tree" | "search") => void;
   setContentSearchActive: (active: boolean) => void;
   toggleFileViewerMaximize: () => void;
+  toggleSidebarHidden: () => void;
+  setSidebarHidden: (hidden: boolean) => void;
   reset: () => void;
 }
 
@@ -62,6 +65,7 @@ const initialState: AppState = {
   fileViewerMode: "tree",
   isContentSearchActive: false,
   isFileViewerMaximized: false,
+  sidebarHidden: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +163,16 @@ export const useAppStore = create<AppStore>()(
           undefined,
           "toggleFileViewerMaximize",
         ),
+
+      toggleSidebarHidden: () =>
+        set(
+          (state) => ({ sidebarHidden: !state.sidebarHidden }),
+          undefined,
+          "toggleSidebarHidden",
+        ),
+
+      setSidebarHidden: (hidden) =>
+        set({ sidebarHidden: hidden }, undefined, "setSidebarHidden"),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

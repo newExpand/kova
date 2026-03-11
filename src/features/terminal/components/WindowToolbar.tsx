@@ -1,118 +1,73 @@
-import { memo, useCallback, useState, useEffect, useRef } from "react";
+import { memo, useCallback } from "react";
 import { Button } from "../../../components/ui/button";
 import {
-  listTmuxWindows,
   closeTmuxWindow,
   nextTmuxWindow,
   previousTmuxWindow,
 } from "../../../lib/tauri/commands";
-import type { TmuxWindow } from "../../../lib/tauri/commands";
 import type { PaneAction } from "../types";
-import { Globe } from "lucide-react";
 
 interface WindowToolbarProps {
   sessionName: string;
   disabled: boolean;
-  isActive: boolean;
   onRequestAction: (action: PaneAction) => void;
+  /** Project or connection name to display */
+  title?: string;
+  /** Callback to surface errors to the user (e.g. via terminalStore.setError) */
+  onError?: (message: string) => void;
   /** Override: close window (remote mode). Must return a Promise for chaining. */
   onCloseWindow?: () => Promise<void>;
   /** Override: next window (remote mode). Must return a Promise for chaining. */
   onNextWindow?: () => Promise<void>;
   /** Override: prev window (remote mode). Must return a Promise for chaining. */
   onPrevWindow?: () => Promise<void>;
-  /** Override: fetch window list (remote mode) */
-  onFetchWindows?: () => Promise<TmuxWindow[]>;
 }
 
 const TOOLBAR_BTN = "h-[26px] px-1.5 text-xs text-text-muted";
 
+/** Run override or local tmux command, surfacing failures. */
+function runWindowAction(
+  overrideFn: (() => Promise<void>) | undefined,
+  localFn: () => Promise<void>,
+  label: string,
+  onError?: (message: string) => void,
+): void {
+  const action = overrideFn ?? localFn;
+  action().catch((e) => {
+    const msg = `${label} failed: ${e instanceof Error ? e.message : String(e)}`;
+    console.error(msg);
+    onError?.(msg);
+  });
+}
+
 export const WindowToolbar = memo(function WindowToolbar({
   sessionName,
   disabled,
-  isActive,
   onRequestAction,
+  title,
+  onError,
   onCloseWindow,
   onNextWindow,
   onPrevWindow,
-  onFetchWindows,
 }: WindowToolbarProps) {
-  const [windows, setWindows] = useState<TmuxWindow[]>([]);
-  const mountedRef = useRef(true);
-  const consecutiveFailures = useRef(0);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const fetchWindows = useCallback(() => {
-    const fetcher = onFetchWindows
-      ? onFetchWindows()
-      : listTmuxWindows(sessionName);
-    fetcher
-      .then((data) => {
-        if (mountedRef.current) {
-          setWindows(data);
-          consecutiveFailures.current = 0;
-        }
-      })
-      .catch((e) => {
-        consecutiveFailures.current += 1;
-        if (consecutiveFailures.current <= 3) {
-          console.error("List windows failed:", e);
-        }
-      });
-  }, [sessionName, onFetchWindows]);
-
-  // Initial fetch — skip when not connected (avoids wasting failure budget)
-  useEffect(() => {
-    if (!disabled) {
-      fetchWindows();
-    }
-  }, [fetchWindows, disabled]);
-
-  // Polling every 3s — only when active (visible tab) and connected
-  useEffect(() => {
-    if (!isActive || disabled) return;
-    const interval = setInterval(fetchWindows, 3000);
-    return () => clearInterval(interval);
-  }, [fetchWindows, isActive, disabled]);
-
   const handleNew = useCallback(
     () => onRequestAction("new-window"),
     [onRequestAction],
   );
 
-  // Shared handler: use remote override (Promise chained) or local tmux command.
-  const handleWindowAction = useCallback(
-    (
-      overrideFn: (() => Promise<void>) | undefined,
-      localFn: () => Promise<void>,
-      label: string,
-    ) => {
-      const action = overrideFn ?? localFn;
-      action()
-        .then(fetchWindows)
-        .catch((e) => console.error(`${label} failed:`, e));
-    },
-    [fetchWindows],
-  );
-
   const handleClose = useCallback(
-    () => handleWindowAction(onCloseWindow, () => closeTmuxWindow(sessionName), "Close window"),
-    [handleWindowAction, onCloseWindow, sessionName],
+    () => runWindowAction(onCloseWindow, () => closeTmuxWindow(sessionName), "Close window", onError),
+    [onCloseWindow, sessionName, onError],
   );
 
   const handleNext = useCallback(
-    () => handleWindowAction(onNextWindow, () => nextTmuxWindow(sessionName), "Next window"),
-    [handleWindowAction, onNextWindow, sessionName],
+    () => runWindowAction(onNextWindow, () => nextTmuxWindow(sessionName), "Next window", onError),
+    [onNextWindow, sessionName, onError],
   );
 
   const handlePrev = useCallback(
-    () => handleWindowAction(onPrevWindow, () => previousTmuxWindow(sessionName), "Previous window"),
-    [handleWindowAction, onPrevWindow, sessionName],
+    () => runWindowAction(onPrevWindow, () => previousTmuxWindow(sessionName), "Previous window", onError),
+    [onPrevWindow, sessionName, onError],
   );
 
   return (
@@ -120,25 +75,14 @@ export const WindowToolbar = memo(function WindowToolbar({
       style={{ height: 32, flexShrink: 0 }}
       className="flex items-center gap-1 border-b border-white/[0.06] glass-toolbar px-2"
     >
-      {/* Window tabs */}
-      <div className="flex items-center gap-0.5 overflow-x-auto mr-auto">
-        {windows.map((w) => {
-          const isSsh = w.windowName.startsWith("ssh-");
-          return (
-            <span
-              key={w.windowIndex}
-              className={`inline-flex items-center gap-0.5 rounded px-1.5 text-xs ${
-                w.windowActive
-                  ? "bg-accent text-white"
-                  : "text-text-muted hover:bg-bg-tertiary"
-              }`}
-            >
-              {isSsh && <Globe className="h-2.5 w-2.5" />}
-              {w.windowIndex}: {isSsh ? w.windowName.slice(4) : w.windowName}
-            </span>
-          );
-        })}
-      </div>
+      {/* Project / connection title — spacer when absent */}
+      {title ? (
+        <span className="text-xs font-medium text-text-secondary select-none truncate max-w-[200px] mr-auto">
+          {title}
+        </span>
+      ) : (
+        <div className="mr-auto" />
+      )}
 
       {/* Navigation & action buttons */}
       <Button
