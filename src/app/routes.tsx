@@ -323,7 +323,6 @@ function AppRoutes() {
       >
         <Routes>
           <Route path="/" element={<WelcomePage />} />
-          <Route path="/sessions" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
           <Route path="/projects/:projectId/terminal" element={<></>} />
