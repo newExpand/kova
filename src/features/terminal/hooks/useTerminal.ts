@@ -898,6 +898,13 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
               // ⌘V — Paste from clipboard into terminal
               if (event.key.toLowerCase() === "v" && !event.shiftKey) {
                 event.preventDefault();
+                // Clear stale IME state so paste data isn't suppressed by the
+                // onData guard. WKWebView Korean IME fires compositionstart
+                // after spacebar, leaving imeActive=true with no real composition.
+                if (imeActive) {
+                  imeFlush();
+                  imeReset();
+                }
                 readText()
                   .then((text) => {
                     if (text && termRef.current) {
