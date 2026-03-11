@@ -7,7 +7,7 @@ import { devtools } from "zustand/middleware";
 
 interface AppState {
   sidebarCollapsed: boolean;
-  sidebarMode: "projects" | "sessions";
+  sidebarMode: "projects" | "agents";
   currentRoute: string;
   isOnboarding: boolean;
   pendingProjectNavigation: string | null;
@@ -27,7 +27,7 @@ interface AppState {
 interface AppActions {
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  setSidebarMode: (mode: "projects" | "sessions") => void;
+  setSidebarMode: (mode: "projects" | "agents") => void;
   setCurrentRoute: (route: string) => void;
   setOnboarding: (value: boolean) => void;
   setPendingProjectNavigation: (id: string | null) => void;

@@ -35,6 +35,7 @@ export { useGitGraph } from "./hooks/useGitGraph";
 export { useGitPolling } from "./hooks/useGitPolling";
 
 // Components
+export { AgentStatusBadge, StatusDot } from "./components/AgentStatusBadge";
 export { ProjectTabSwitcher } from "./components/ProjectTabSwitcher";
 export { NewAgentTaskDialog } from "./components/NewAgentTaskDialog";
 export { WorktreeContextMenu } from "./components/WorktreeContextMenu";

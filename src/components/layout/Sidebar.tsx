@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Component, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   DndContext,
@@ -26,24 +27,24 @@ import {
   Pencil,
   Trash2,
   FolderOpen,
-  Monitor,
-  RefreshCw,
+  Bot,
   Settings,
-  X,
   Globe,
 } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project/stores/projectStore";
-import { useTmuxStore } from "../../features/tmux";
-import { useSshStore } from "../../features/ssh";
-import { SshConnectionForm } from "../../features/ssh";
-import { killTmuxSession, checkSshRemoteTmux } from "../../lib/tauri/commands";
+import {
+  useAgentActivityStore,
+  normalizePathKey,
+  AgentStatusBadge,
+} from "../../features/git";
+import { useSshStore, SshConnectionForm } from "../../features/ssh";
+import { checkSshRemoteTmux, AGENT_TYPES } from "../../lib/tauri/commands";
 import { StatusIndicator } from "../../features/project/components/StatusIndicator";
 import { ProjectEditForm } from "../../features/project/components/ProjectEditForm";
 import { COLOR_PALETTE } from "../../features/project/types";
 import type { Project } from "../../features/project/types";
 import type { SshConnection } from "../../features/ssh";
-import type { SessionInfo } from "../../features/tmux/types";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,39 @@ interface ContextMenuState {
 }
 
 const DELETE_CONFIRM_MS = 5_000;
+
+/* ── Error boundary for sidebar list panels ── */
+interface ListErrorBoundaryProps {
+  fallbackLabel: string;
+  children: ReactNode;
+}
+
+interface ListErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ListErrorBoundary extends Component<ListErrorBoundaryProps, ListErrorBoundaryState> {
+  state: ListErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): ListErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error(`[Sidebar] ${this.props.fallbackLabel} rendering failed:`, error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <p className="px-2 py-4 text-center text-xs text-danger">
+          Failed to load {this.props.fallbackLabel}. Try switching tabs.
+        </p>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* ── Presentational: shared between SortableProjectItem and DragOverlay ── */
 interface ProjectItemContentProps {
@@ -181,6 +215,34 @@ function SortableProjectItem({
   );
 }
 
+const AGENT_STATUS_PRIORITY: Record<string, number> = {
+  active: 0, loading: 0, ready: 2, done: 3, error: 4, idle: 5,
+};
+
+const NO_SESSION_PRIORITY = 6;
+
+function agentSortPriority(session: { status: string; isWaitingForInput?: boolean } | undefined): number {
+  if (!session) return NO_SESSION_PRIORITY;
+  if (session.isWaitingForInput) return 1;
+  return AGENT_STATUS_PRIORITY[session.status] ?? 5;
+}
+
+function isAgentBusy(session: { status: string } | undefined): boolean {
+  return session?.status === "active" || session?.status === "loading";
+}
+
+function shortAgentLabel(agentType: string): string {
+  if (agentType in AGENT_TYPES) {
+    const label = AGENT_TYPES[agentType as keyof typeof AGENT_TYPES].label;
+    return label.slice(0, label.indexOf(" ") >>> 0 || label.length);
+  }
+  // camelCase fallback: "claudeCode" → "Claude"
+  const spaced = agentType.replace(/([a-z])([A-Z])/g, "$1 $2");
+  const idx = spaced.indexOf(" ");
+  const first = idx > 0 ? spaced.slice(0, idx) : spaced;
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
 function sidebarWidthClass(hidden: boolean, collapsed: boolean): string {
   if (hidden) return "w-0 overflow-hidden border-r-0";
   if (collapsed) return "w-[var(--sidebar-collapsed-width)]";
@@ -207,7 +269,6 @@ function Sidebar() {
   const deleteProject = useProjectStore((s) => s.deleteProject);
   const confirmDelete = useProjectStore((s) => s.confirmDelete);
   const isCreating = useProjectStore((s) => s.isCreating);
-  const getProjectById = useProjectStore((s) => s.getProjectById);
   const reorderProjects = useProjectStore((s) => s.reorderProjects);
 
   // --- @dnd-kit drag state ---
@@ -263,10 +324,26 @@ function Sidebar() {
     [activeId, projects],
   );
 
-  // Tmux session state
-  const sessions = useTmuxStore((s) => s.sessions);
-  const isLoadingSessions = useTmuxStore((s) => s.isLoading);
-  const fetchSessions = useTmuxStore((s) => s.fetchSessions);
+  // Agent activity state
+  const agentSessions = useAgentActivityStore((s) => s.sessions);
+
+  const activeAgentCount = useMemo(
+    () => projects.filter((p) => isAgentBusy(agentSessions[normalizePathKey(p.path)])).length,
+    [projects, agentSessions],
+  );
+
+  const sortedAgentProjects = useMemo(() => {
+    return [...projects].sort((a, b) => {
+      const sessionA = agentSessions[normalizePathKey(a.path)];
+      const sessionB = agentSessions[normalizePathKey(b.path)];
+
+      const prioDiff = agentSortPriority(sessionA) - agentSortPriority(sessionB);
+      if (prioDiff !== 0) return prioDiff;
+
+      // Same priority: most recent activity first
+      return (sessionB?.lastActivity ?? "").localeCompare(sessionA?.lastActivity ?? "");
+    });
+  }, [projects, agentSessions]);
 
   // SSH state — individual selectors to avoid re-render loops
   const sshConnections = useSshStore((s) => s.connections);
@@ -281,9 +358,6 @@ function Sidebar() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [editTarget, setEditTarget] = useState<Project | null>(null);
-  const [killTarget, setKillTarget] = useState<SessionInfo | null>(null);
-  const [isKilling, setIsKilling] = useState(false);
-  const [killError, setKillError] = useState<string | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // SSH sidebar state
@@ -361,32 +435,10 @@ function Sidebar() {
     navigate(`/projects/${id}/terminal`);
   };
 
-  const handleTabSwitch = (mode: "projects" | "sessions") => {
+  const handleTabSwitch = (mode: "projects" | "agents") => {
     setSidebarMode(mode);
-    if (mode === "sessions") {
-      fetchSessions();
-      navigate("/sessions");
-    } else {
-      // Return to selected project or home
-      const pid = selectedId;
-      navigate(pid ? `/projects/${pid}/terminal` : "/");
-    }
-  };
-
-  const handleKillSession = async () => {
-    if (!killTarget) return;
-    setIsKilling(true);
-    setKillError(null);
-    try {
-      await killTmuxSession(killTarget.name);
-      await fetchSessions();
-      setKillTarget(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[Sidebar] Failed to kill session '${killTarget.name}':`, err);
-      setKillError(`Failed to kill '${killTarget.name}': ${message}`);
-    } finally {
-      setIsKilling(false);
+    if (mode === "projects") {
+      navigate(selectedId ? `/projects/${selectedId}/terminal` : "/");
     }
   };
 
@@ -477,15 +529,15 @@ function Sidebar() {
               Projects
             </button>
             <button
-              onClick={() => handleTabSwitch("sessions")}
+              onClick={() => handleTabSwitch("agents")}
               className={cn(
                 "relative z-[1] flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
-                sidebarMode === "sessions"
+                sidebarMode === "agents"
                   ? "text-text"
                   : "text-text-muted hover:text-text-secondary",
               )}
             >
-              Sessions
+              Agents
             </button>
           </div>
         ) : (
@@ -504,20 +556,20 @@ function Sidebar() {
               <FolderOpen className="h-4 w-4" />
             </button>
             <button
-              onClick={() => handleTabSwitch("sessions")}
+              onClick={() => handleTabSwitch("agents")}
               className={cn(
                 "relative rounded-md p-1 transition-all duration-150",
-                sidebarMode === "sessions"
+                sidebarMode === "agents"
                   ? "bg-white/[0.15] text-text shadow-sm shadow-black/25"
                   : "text-text-muted hover:text-text-secondary hover:bg-white/[0.04]",
               )}
-              aria-label="Sessions"
-              title="Sessions"
+              aria-label="Agents"
+              title="Agents"
             >
-              <Monitor className="h-4 w-4" />
-              {sessions.length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-bold text-white">
-                  {sessions.length}
+              <Bot className="h-4 w-4" />
+              {activeAgentCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-success px-0.5 text-[9px] font-bold text-white">
+                  {activeAgentCount}
                 </span>
               )}
             </button>
@@ -538,10 +590,11 @@ function Sidebar() {
         </Button>
       </div>
 
-      {/* List area — switches between Projects and Sessions */}
+      {/* List area — switches between Projects and Agents */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {sidebarMode === "projects" ? (
           /* ───── Project list ───── */
+          <ListErrorBoundary fallbackLabel="project list">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -612,52 +665,94 @@ function Sidebar() {
               ) : null}
             </DragOverlay>
           </DndContext>
+          </ListErrorBoundary>
         ) : (
-          /* ───── Sessions list ───── */
-          <div key="sessions" className="sidebar-list-enter-sessions space-y-0.5">
-            {sessions.length === 0 && !isLoadingSessions && (
+          /* ───── Agents list ───── */
+          <ListErrorBoundary fallbackLabel="agent activity">
+          <div key="agents" className="sidebar-list-enter-agents space-y-0.5">
+            {sortedAgentProjects.length === 0 && (
               <p className="px-2 py-4 text-center text-xs text-text-muted">
-                No tmux sessions
+                No projects registered
               </p>
             )}
 
-            {sessions.map((session, index) => {
-              const projName = session.projectId
-                ? getProjectById(session.projectId)?.name
-                : null;
+            {sortedAgentProjects.map((project, index) => {
+              const colorVar =
+                COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
+              const session = agentSessions[normalizePathKey(project.path)];
+              const isItemActive =
+                selectedId === project.id ||
+                location.pathname.startsWith(`/projects/${project.id}`);
+              const isAgentActive = isAgentBusy(session);
+
               return (
                 <div
-                  key={session.name}
-                  className="sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-text-secondary hover:bg-white/[0.08] hover:text-text"
-                  style={{ '--stagger-index': Math.min(index, 6) } as React.CSSProperties}
+                  key={project.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleSelectProject(project.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelectProject(project.id);
+                    }
+                  }}
+                  onMouseEnter={preloadTerminal}
+                  className={cn(
+                    "sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-pointer",
+                    isAgentActive && "agent-breathing",
+                    isItemActive
+                      ? "sidebar-item-active text-text"
+                      : "text-text-secondary hover:bg-white/[0.08] hover:text-text",
+                  )}
+                  style={{
+                    '--stagger-index': Math.min(index, 6),
+                    '--item-color': colorVar,
+                    ...(isAgentActive ? { '--breath-color': 'oklch(0.65 0.18 145 / 0.25)' } : {}),
+                  } as React.CSSProperties}
                 >
                   <span
                     className={cn(
-                      "h-2 w-2 shrink-0 rounded-full",
-                      session.attached ? "bg-success" : "bg-text-muted",
+                      "shrink-0 rounded-sm transition-all duration-150",
+                      isItemActive ? "h-3.5 w-3.5" : "h-3 w-3",
                     )}
+                    style={{
+                      backgroundColor: colorVar,
+                      ...(isItemActive ? { boxShadow: `0 0 8px ${colorVar}` } : {}),
+                    }}
                   />
                   {!collapsed && (
-                    <>
-                      <div className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{session.name}</span>
-                        <span className="block truncate text-[10px] text-text-muted">
-                          {session.windows}w{projName ? ` \u00b7 ${projName}` : ""}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <span className="truncate flex-1 text-sm">{project.name}</span>
+                        <span className="shrink-0 text-[9px] text-text-muted/60 font-medium">
+                          {shortAgentLabel(project.agentType)}
                         </span>
                       </div>
-                      <button
-                        onClick={() => setKillTarget(session)}
-                        className="hidden h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted hover:text-danger group-hover:flex"
-                        aria-label={`Kill session ${session.name}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </>
+                      {session ? (
+                        <div className="mt-0.5">
+                          <AgentStatusBadge
+                            status={session.status}
+                            lastMessage={session.lastMessage}
+                            toolUseCount={session.toolUseCount}
+                            fileEditCount={session.fileEditCount}
+                            commitCount={session.commitCount}
+                            errorCount={session.errorCount}
+                            isWaitingForInput={session.isWaitingForInput}
+                          />
+                        </div>
+                      ) : (
+                        <span className="block text-[11px] text-text-muted/50">
+                          No activity
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
+          </ListErrorBoundary>
         )}
       </nav>
 
@@ -752,28 +847,15 @@ function Sidebar() {
 
       {/* Bottom actions */}
       <div className="border-t border-white/[0.10] p-2 space-y-0.5 bg-black/[0.08]">
-        {sidebarMode === "projects" ? (
-          <Button
-            variant="ghost"
-            size={collapsed ? "icon" : "sm"}
-            className={cn("w-full", !collapsed && "justify-start gap-2")}
-            onClick={() => setIsAddOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            {!collapsed && <span>Add Project</span>}
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size={collapsed ? "icon" : "sm"}
-            className={cn("w-full", !collapsed && "justify-start gap-2")}
-            onClick={() => fetchSessions()}
-            disabled={isLoadingSessions}
-          >
-            <RefreshCw className={cn("h-4 w-4", isLoadingSessions && "animate-spin")} />
-            {!collapsed && <span>Refresh</span>}
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size={collapsed ? "icon" : "sm"}
+          className={cn("w-full", !collapsed && "justify-start gap-2")}
+          onClick={() => setIsAddOpen(true)}
+        >
+          <Plus className="h-4 w-4" />
+          {!collapsed && <span>Add Project</span>}
+        </Button>
         <Button
           variant="ghost"
           size={collapsed ? "icon" : "sm"}
@@ -886,47 +968,6 @@ function Sidebar() {
         </DialogContent>
       </Dialog>
 
-      {/* Kill session confirmation dialog */}
-      <Dialog
-        open={!!killTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setKillTarget(null);
-            setKillError(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Kill Session</DialogTitle>
-            <DialogDescription>
-              {`'${killTarget?.name ?? ""}' `}
-              Are you sure you want to kill this session?
-            </DialogDescription>
-          </DialogHeader>
-          {killError && (
-            <p className="text-sm text-danger">{killError}</p>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setKillTarget(null)}
-              disabled={isKilling}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleKillSession}
-              disabled={isKilling}
-            >
-              {isKilling ? "Killing..." : "Kill"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   );
 }

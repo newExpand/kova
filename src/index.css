@@ -186,7 +186,7 @@ body {
     will-change: transform;
     pointer-events: none;
   }
-  .sidebar-tab-indicator[data-active="sessions"] {
+  .sidebar-tab-indicator[data-active="agents"] {
     transform: translateX(100%);
   }
 
@@ -273,7 +273,7 @@ body {
   .sidebar-list-enter-projects {
     animation: sidebar-list-enter-left 200ms var(--ease-out-expo) both;
   }
-  .sidebar-list-enter-sessions {
+  .sidebar-list-enter-agents {
     animation: sidebar-list-enter-right 200ms var(--ease-out-expo) both;
   }
 }
@@ -309,6 +309,7 @@ body {
 }
 
 .agent-breathing {
+  opacity: 1;
   animation: agent-breathing 2s ease-in-out infinite;
 }
 
@@ -513,7 +514,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sidebar-tab-indicator,
   .sidebar-list-enter-projects,
-  .sidebar-list-enter-sessions,
+  .sidebar-list-enter-agents,
   .sidebar-item-stagger,
   .sidebar-item-hover,
   .sidebar-context-menu,

@@ -303,6 +303,13 @@ export const useAgentActivityStore = create<
           sessions[path] = { ...session };
           break;
         }
+
+        default: {
+          if (import.meta.env.DEV) {
+            console.warn(`[AgentActivity] Unhandled event type: ${event.eventType}`);
+          }
+          break;
+        }
       }
 
       return { sessions, realtimeActivities };
