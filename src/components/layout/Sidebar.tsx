@@ -513,7 +513,7 @@ function Sidebar() {
       {/* Header with tab toggle */}
       <div className="flex h-12 items-center justify-between border-b border-white/[0.08] px-3">
         {!collapsed ? (
-          <div className="relative flex items-center gap-0.5 rounded-lg p-0.5 glass-inset">
+          <div className="relative grid grid-cols-2 rounded-lg p-0.5 glass-inset">
             <span
               className="sidebar-tab-indicator"
               data-active={sidebarMode}
@@ -521,7 +521,7 @@ function Sidebar() {
             <button
               onClick={() => handleTabSwitch("projects")}
               className={cn(
-                "relative z-[1] flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
+                "relative z-[1] rounded-md px-2.5 py-1 text-center text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
                 sidebarMode === "projects"
                   ? "text-text"
                   : "text-text-muted hover:text-text-secondary",
@@ -532,7 +532,7 @@ function Sidebar() {
             <button
               onClick={() => handleTabSwitch("agents")}
               className={cn(
-                "relative z-[1] flex-1 rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
+                "relative z-[1] rounded-md px-2.5 py-1 text-center text-xs font-semibold uppercase tracking-wider transition-colors duration-150",
                 sidebarMode === "agents"
                   ? "text-text"
                   : "text-text-muted hover:text-text-secondary",
@@ -670,7 +670,7 @@ function Sidebar() {
         ) : (
           /* ───── Agents list ───── */
           <ListErrorBoundary key="agents" fallbackLabel="agent activity">
-          <div key="agents" className="sidebar-list-enter-agents space-y-0.5">
+          <div key="agents" className="sidebar-list-enter-agents space-y-1">
             {sortedAgentProjects.length === 0 && (
               <p className="px-2 py-4 text-center text-xs text-text-muted">
                 No projects registered
