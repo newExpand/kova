@@ -16,6 +16,7 @@ import {
   splitTmuxPaneHorizontal,
   createTmuxWindow,
   sendTmuxKeys,
+  startWorktreeTask,
   restoreWorktreeWindows,
   checkSshRemoteTmux,
   remoteTmuxSplitPaneVertical,
@@ -450,7 +451,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   }, [hasRemoteTmux, activeConfig, storeKey]);
 
   const handleConfirmAction = useCallback(
-    (startAgent: boolean, selectedAgentType?: AgentType) => {
+    (startAgent: boolean, selectedAgentType?: AgentType, worktreeTaskName?: string) => {
       const action = pendingAction;
       const sessionName = activeConfig?.sessionName;
       const remoteSN = activeConfig?.remoteTmuxSessionName;
@@ -472,8 +473,14 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       };
 
       const executeAction = async () => {
-        // Use explicitly selected agent type, or project default
         const agentKey = selectedAgentType || project?.agentType || DEFAULT_AGENT_TYPE;
+
+        // Worktree path: delegate entirely to startWorktreeTask IPC
+        if (worktreeTaskName && project?.path) {
+          await startWorktreeTask(sessionName, worktreeTaskName, project.path, agentKey);
+          return;
+        }
+
         const agentCommand = AGENT_TYPES[agentKey].command;
 
         if (remoteSN && connId) {
@@ -505,7 +512,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         })
         .finally(() => refocusTerminal());
     },
-    [isSshMode, pendingAction, activeConfig, refocusTerminal, storeKey, project?.agentType],
+    [isSshMode, pendingAction, activeConfig, refocusTerminal, storeKey, project?.agentType, project?.path],
   );
 
   const handleCancelAction = useCallback(() => {
@@ -684,6 +691,8 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           onConfirm={handleConfirmAction}
           onCancel={handleCancelAction}
           defaultAgentType={project?.agentType || DEFAULT_AGENT_TYPE}
+          projectPath={project?.path}
+          isSshMode={isSshMode}
         />
       )}
     </div>
