@@ -73,6 +73,20 @@ pub fn start_worktree_task(
             task_name.to_string(),
             app_handle,
         );
+    } else if let Some(ref app) = app_handle {
+        // Agents without hook support: use pane polling for basic activity detection
+        crate::services::pane_monitor::watch_agent_pane(
+            app.clone(),
+            session_name.to_string(),
+            task_name.to_string(),
+            project_path.to_string(),
+            agent_type,
+        );
+    } else if !agent_type.supports_hooks() {
+        warn!(
+            "No app_handle for non-hook agent '{}' in task '{}': pane monitoring skipped",
+            agent_type.display_name(), task_name
+        );
     }
 
     info!(
@@ -93,6 +107,7 @@ pub fn restore_worktree_windows(
     session_name: &str,
     project_path: &str,
     agent_type: AgentType,
+    app_handle: Option<tauri::AppHandle>,
 ) -> Result<RestoreResult, AppError> {
     let repo_path = Path::new(project_path);
     let worktrees = git::get_worktrees(repo_path)?;
@@ -133,6 +148,19 @@ pub fn restore_worktree_windows(
                                 );
                             }
                         }
+                    } else if let Some(ref app) = app_handle {
+                        crate::services::pane_monitor::watch_agent_pane(
+                            app.clone(),
+                            session_name.to_string(),
+                            task_name.clone(),
+                            project_path.to_string(),
+                            agent_type,
+                        );
+                    } else if !agent_type.supports_hooks() {
+                        warn!(
+                            "No app_handle for non-hook agent in restored worktree '{}': pane monitoring skipped",
+                            task_name
+                        );
                     }
                     restored_names.push(task_name);
                 }

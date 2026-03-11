@@ -234,7 +234,8 @@ function isAgentBusy(session: { status: string } | undefined): boolean {
 function shortAgentLabel(agentType: string): string {
   if (agentType in AGENT_TYPES) {
     const label = AGENT_TYPES[agentType as keyof typeof AGENT_TYPES].label;
-    return label.slice(0, label.indexOf(" ") >>> 0 || label.length);
+    const spaceIdx = label.indexOf(" ");
+    return spaceIdx > 0 ? label.slice(0, spaceIdx) : label;
   }
   // camelCase fallback: "claudeCode" → "Claude"
   const spaced = agentType.replace(/([a-z])([A-Z])/g, "$1 $2");
@@ -594,7 +595,7 @@ function Sidebar() {
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
         {sidebarMode === "projects" ? (
           /* ───── Project list ───── */
-          <ListErrorBoundary fallbackLabel="project list">
+          <ListErrorBoundary key="projects" fallbackLabel="project list">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -668,7 +669,7 @@ function Sidebar() {
           </ListErrorBoundary>
         ) : (
           /* ───── Agents list ───── */
-          <ListErrorBoundary fallbackLabel="agent activity">
+          <ListErrorBoundary key="agents" fallbackLabel="agent activity">
           <div key="agents" className="sidebar-list-enter-agents space-y-0.5">
             {sortedAgentProjects.length === 0 && (
               <p className="px-2 py-4 text-center text-xs text-text-muted">

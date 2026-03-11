@@ -60,6 +60,46 @@ fn tmux_cmd() -> Command {
     Command::new(resolve_tmux_path().unwrap_or("tmux"))
 }
 
+/// Check if any pane in the target window is running a process matching the given names.
+/// Useful for detecting agents that don't support hooks (e.g., Codex CLI, Gemini CLI)
+/// where activity must be inferred from process presence.
+///
+/// Returns `Ok(true)` if a matching process is found, `Ok(false)` if no match,
+/// or `Err` if the tmux query itself failed (binary missing, session gone, etc.).
+pub fn is_process_running_in_window(
+    session_name: &str,
+    window_name: &str,
+    process_names: &[&str],
+) -> Result<bool, crate::errors::AppError> {
+    let target = format!("{}:{}", session_name, window_name);
+    let output = tmux_cmd()
+        .args(["list-panes", "-t", &target, "-F", "#{pane_current_command}"])
+        .output()
+        .map_err(|e| crate::errors::AppError::TmuxCommand(format!(
+            "Failed to execute tmux list-panes for {}: {}", target, e
+        )))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Window/session not found means the pane is gone — agent exited
+        if stderr.contains("can't find window")
+            || stderr.contains("can't find session")
+            || stderr.contains("session not found")
+            || stderr.contains("no server running")
+        {
+            return Ok(false);
+        }
+        return Err(crate::errors::AppError::TmuxCommand(format!(
+            "tmux list-panes failed for {}: {}", target, stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.lines().any(|cmd| {
+        process_names.iter().any(|name| cmd.contains(name))
+    }))
+}
+
 /// Check if tmux binary is available on the system.
 /// Retries up to 3 times with 1-second intervals.
 pub fn is_tmux_available() -> bool {

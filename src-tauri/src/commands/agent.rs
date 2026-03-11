@@ -19,12 +19,13 @@ pub fn start_worktree_task(
 
 #[tauri::command]
 pub fn restore_worktree_windows(
+    app: AppHandle,
     session_name: String,
     project_path: String,
     agent_type: Option<AgentType>,
 ) -> Result<RestoreResult, AppError> {
     let agent = agent_type.unwrap_or_default();
-    services::agent::restore_worktree_windows(&session_name, &project_path, agent)
+    services::agent::restore_worktree_windows(&session_name, &project_path, agent, Some(app))
 }
 
 #[tauri::command]

@@ -5,6 +5,7 @@ pub mod file_service;
 pub mod git;
 pub mod hooks;
 pub mod notification;
+pub mod pane_monitor;
 pub mod project;
 pub mod remote_git;
 pub mod settings;
