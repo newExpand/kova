@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import { useProjectStore } from "../features/project";
 
@@ -8,6 +9,7 @@ interface GlobalShortcutsReturn {
 }
 
 export function useGlobalShortcuts(): GlobalShortcutsReturn {
+  const navigate = useNavigate();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const prevOpenRef = useRef(false);
 
@@ -84,7 +86,20 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
         }
       }
     }
-  }, []);
+
+    // Cmd+1~9, Cmd+0 — Quick project switch
+    if (e.metaKey && !e.shiftKey && !e.altKey && e.key >= "0" && e.key <= "9") {
+      const digit = parseInt(e.key, 10);
+      const index = digit === 0 ? 9 : digit - 1;
+      const store = useProjectStore.getState();
+      const project = store.activeProjects()[index];
+      if (project) {
+        e.preventDefault();
+        store.selectProject(project.id);
+        navigate(`/projects/${project.id}/terminal`);
+      }
+    }
+  }, [navigate]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);

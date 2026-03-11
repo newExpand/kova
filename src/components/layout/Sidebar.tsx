@@ -73,9 +73,10 @@ interface ProjectItemContentProps {
   isActive: boolean;
   collapsed: boolean;
   colorVar: string;
+  shortcutDigit?: number;
 }
 
-function ProjectItemContent({ project, isActive, collapsed, colorVar }: ProjectItemContentProps) {
+function ProjectItemContent({ project, isActive, collapsed, colorVar, shortcutDigit }: ProjectItemContentProps) {
   return (
     <>
       <span
@@ -91,6 +92,11 @@ function ProjectItemContent({ project, isActive, collapsed, colorVar }: ProjectI
       {!collapsed && (
         <>
           <span className="truncate flex-1">{project.name}</span>
+          {shortcutDigit !== undefined && (
+            <kbd className="shrink-0 text-[10px] leading-none text-text-muted/50 font-mono">
+              ⌘{shortcutDigit}
+            </kbd>
+          )}
           <StatusIndicator active={project.isActive} className="ml-auto" />
         </>
       )}
@@ -105,6 +111,7 @@ interface SortableProjectItemProps {
   collapsed: boolean;
   colorVar: string;
   index: number;
+  shortcutDigit?: number;
   dropPosition?: "above" | "below" | null;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -117,6 +124,7 @@ function SortableProjectItem({
   collapsed,
   colorVar,
   index,
+  shortcutDigit,
   dropPosition,
   onSelect,
   onContextMenu,
@@ -164,6 +172,7 @@ function SortableProjectItem({
         isActive={isActive}
         collapsed={collapsed}
         colorVar={colorVar}
+        shortcutDigit={shortcutDigit}
       />
       {dropPosition === "below" && (
         <div className="absolute -bottom-px left-2 right-2 h-0.5 rounded-full bg-primary z-10" />
@@ -555,6 +564,10 @@ function Sidebar() {
                     dropPosition = activeIndex < index ? "below" : "above";
                   }
 
+                  let shortcutDigit: number | undefined;
+                  if (index < 9) shortcutDigit = index + 1;
+                  else if (index === 9) shortcutDigit = 0;
+
                   return (
                     <SortableProjectItem
                       key={project.id}
@@ -563,6 +576,7 @@ function Sidebar() {
                       collapsed={collapsed}
                       colorVar={colorVar}
                       index={index}
+                      shortcutDigit={shortcutDigit}
                       dropPosition={dropPosition}
                       onSelect={() => handleSelectProject(project.id)}
                       onContextMenu={(e) => handleContextMenu(e, project)}
