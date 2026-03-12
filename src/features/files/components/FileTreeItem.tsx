@@ -27,8 +27,6 @@ export function FileTreeItem({
   // Agent tracking state (files only -- directories skip the store lookup)
   const isAgentModified = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isAgentModified(projectPath, entry.path));
-  const isRecentFlash = !entry.isDir
-    && useAgentFileTrackingStore((s) => s.isRecentFlash(projectPath, entry.path));
   const isUserEdited = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isUserEdited(projectPath, entry.path));
   const paddingLeft = depth * 16 + 8;
@@ -48,7 +46,7 @@ export function FileTreeItem({
       onClick={handleClick}
       className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
         isActive ? "text-text" : "text-text-secondary"
-      } ${isRecentFlash ? "agent-flash" : ""} ${
+      } ${
         isAgentModified ? "border-l-2 border-primary" :
         isUserEdited ? "border-l-2 border-amber-400" : ""
       }`}
@@ -84,7 +82,7 @@ export function FileTreeItem({
       </span>
       {/* Agent tracking dot */}
       {isAgentModified && (
-        <span className="agent-dot-pulse relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+        <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
       )}
       {isUserEdited && !isAgentModified && (
         <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />

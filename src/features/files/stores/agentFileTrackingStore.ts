@@ -22,19 +22,7 @@ export interface ProjectWorkingSet {
 // ---------------------------------------------------------------------------
 
 const STALE_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24h — cleans up stale entries on persist/restore
-const FLASH_DURATION_MS = 1_500;
 const MAX_FILES_PER_SET = 50;
-
-// ---------------------------------------------------------------------------
-// External timer map (non-serializable, outside store)
-// ---------------------------------------------------------------------------
-
-const flashTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-/** Composite key for project-scoped flash tracking */
-function flashKey(projectPath: string, relativePath: string): string {
-  return `${normalizePathKey(projectPath)}:${relativePath}`;
-}
 
 // ---------------------------------------------------------------------------
 // Path utilities (exported for event-bridge)
@@ -132,14 +120,12 @@ function evictOldest(
 
 interface AgentFileTrackingState {
   workingSets: Record<string, ProjectWorkingSet>;
-  recentFlashes: Record<string, boolean>;
 }
 
 interface AgentFileTrackingActions {
   // Computed
   getWorkingSet: (projectPath: string) => ProjectWorkingSet;
   isAgentModified: (projectPath: string, relativePath: string) => boolean;
-  isRecentFlash: (projectPath: string, relativePath: string) => boolean;
   isUserEdited: (projectPath: string, relativePath: string) => boolean;
   // Actions
   trackAgentWrite: (
@@ -166,7 +152,6 @@ type AgentFileTrackingStore = AgentFileTrackingState & AgentFileTrackingActions;
 
 const initialState: AgentFileTrackingState = {
   workingSets: {},
-  recentFlashes: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -227,37 +212,16 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
     ): void {
       const key = normalizePathKey(projectPath);
 
-      // Clean up flash timer if removing an agent write
-      if (field === "writes") {
-        const fk = flashKey(projectPath, relativePath);
-        const timer = flashTimers.get(fk);
-        if (timer) {
-          clearTimeout(timer);
-          flashTimers.delete(fk);
-        }
-      }
-
       set((state) => {
         const existing = state.workingSets[key];
         if (!existing?.[field]?.[relativePath]) return state;
         const { [relativePath]: _, ...rest } = existing[field];
-
-        // Also clean recentFlashes if removing an agent write
-        let recentFlashes = state.recentFlashes;
-        if (field === "writes") {
-          const fk = flashKey(projectPath, relativePath);
-          if (state.recentFlashes[fk]) {
-            const { [fk]: __, ...restFlashes } = state.recentFlashes;
-            recentFlashes = restFlashes;
-          }
-        }
 
         return {
           workingSets: {
             ...state.workingSets,
             [key]: { ...existing, [field]: rest },
           },
-          recentFlashes,
         };
       });
       persistWorkingSets();
@@ -284,10 +248,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       const ws = get().workingSets[key];
       if (!ws) return false;
       return !!ws.writes[relativePath];
-    },
-
-    isRecentFlash: (projectPath, relativePath) => {
-      return !!get().recentFlashes[flashKey(projectPath, relativePath)];
     },
 
     isUserEdited: (projectPath, relativePath) => {
@@ -319,32 +279,13 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
         // Evict oldest if over cap
         writes = evictOldest(writes, MAX_FILES_PER_SET);
 
-        const fk = flashKey(projectPath, relativePath);
-
         return {
           workingSets: {
             ...state.workingSets,
             [key]: { writes, userEdits: existing.userEdits ?? {} },
           },
-          recentFlashes: { ...state.recentFlashes, [fk]: true },
         };
       });
-
-      // Flash timer (external)
-      const fk = flashKey(projectPath, relativePath);
-      const existingTimer = flashTimers.get(fk);
-      if (existingTimer) clearTimeout(existingTimer);
-
-      flashTimers.set(
-        fk,
-        setTimeout(() => {
-          flashTimers.delete(fk);
-          set((state) => {
-            const { [fk]: _, ...rest } = state.recentFlashes;
-            return { recentFlashes: rest };
-          });
-        }, FLASH_DURATION_MS),
-      );
 
       persistWorkingSets();
     },
@@ -390,16 +331,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       // Normalize paths: strip leading "./" and trailing "/" for consistent matching
       const normalized = filePaths.map(normalizeGitPath);
 
-      // Clean up flash timers for all removed files
-      for (const fp of normalized) {
-        const fk = flashKey(projectPath, fp);
-        const timer = flashTimers.get(fk);
-        if (timer) {
-          clearTimeout(timer);
-          flashTimers.delete(fk);
-        }
-      }
-
       set((state) => {
         const existing = state.workingSets[key];
         if (!existing) {
@@ -443,18 +374,11 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
           removedCount, key,
         );
 
-        // Clean recentFlashes
-        const newFlashes = { ...state.recentFlashes };
-        for (const fp of normalized) {
-          delete newFlashes[flashKey(projectPath, fp)];
-        }
-
         return {
           workingSets: {
             ...state.workingSets,
             [key]: { writes: newWrites, userEdits: newUserEdits },
           },
-          recentFlashes: newFlashes,
         };
       });
 
@@ -484,11 +408,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
             newWrites[fp] = touch;
           } else {
             removedCount++;
-            const timer = flashTimers.get(flashKey(projectPath, fp));
-            if (timer) {
-              clearTimeout(timer);
-              flashTimers.delete(flashKey(projectPath, fp));
-            }
           }
         }
 
@@ -509,19 +428,11 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
           removedCount, key,
         );
 
-        const newFlashes = { ...state.recentFlashes };
-        for (const fp of Object.keys(existing.writes)) {
-          if (!dirtySet.has(fp)) {
-            delete newFlashes[flashKey(projectPath, fp)];
-          }
-        }
-
         return {
           workingSets: {
             ...state.workingSets,
             [key]: { writes: newWrites, userEdits: newUserEdits },
           },
-          recentFlashes: newFlashes,
         };
       });
 
@@ -530,32 +441,10 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
 
     clearProject: (projectPath) => {
       const key = normalizePathKey(projectPath);
-      const ws = get().workingSets[key];
-
-      // Clear flash timers for files in this project's working set
-      if (ws) {
-        const allFiles = [...Object.keys(ws.writes), ...Object.keys(ws.userEdits ?? {})];
-        for (const filePath of allFiles) {
-          const fk = flashKey(projectPath, filePath);
-          const timer = flashTimers.get(fk);
-          if (timer) {
-            clearTimeout(timer);
-            flashTimers.delete(fk);
-          }
-        }
-      }
 
       set((state) => {
         const { [key]: _, ...restWorkingSets } = state.workingSets;
-        // Clean recentFlashes for files in this project
-        let cleanedFlashes = state.recentFlashes;
-        if (ws) {
-          cleanedFlashes = { ...state.recentFlashes };
-          for (const filePath of [...Object.keys(ws.writes), ...Object.keys(ws.userEdits ?? {})]) {
-            delete cleanedFlashes[flashKey(projectPath, filePath)];
-          }
-        }
-        return { workingSets: restWorkingSets, recentFlashes: cleanedFlashes };
+        return { workingSets: restWorkingSets };
       });
 
       persistWorkingSets();
@@ -628,8 +517,6 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
         clearTimeout(persistTimer);
         persistTimer = null;
       }
-      for (const timer of flashTimers.values()) clearTimeout(timer);
-      flashTimers.clear();
       set(initialState);
     },
     };
