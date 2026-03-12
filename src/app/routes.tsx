@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { TerminalSquare, Command } from "lucide-react";
 import { useTmuxStore } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
+import { getShortcutById } from "../lib/shortcuts";
 
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
@@ -98,18 +99,18 @@ function WelcomePage() {
 
         {/* Shortcut hints */}
         <div className="flex items-center gap-6 text-xs text-text-muted">
-          <div className="flex items-center gap-2">
-            <kbd className="inline-flex h-6 items-center gap-0.5 rounded-lg glass-inset border border-white/[0.10] px-2 font-mono text-[10px] text-text-secondary">
-              <Command className="h-2.5 w-2.5" />K
-            </kbd>
-            <span>Command palette</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <kbd className="inline-flex h-6 items-center gap-0.5 rounded-lg glass-inset border border-white/[0.10] px-2 font-mono text-[10px] text-text-secondary">
-              <Command className="h-2.5 w-2.5" />N
-            </kbd>
-            <span>New project</span>
-          </div>
+          {(["command-palette", "new-project"] as const).map((id) => {
+            const def = getShortcutById(id);
+            if (!def) return null;
+            return (
+              <div key={id} className="flex items-center gap-2">
+                <kbd className="inline-flex h-6 items-center gap-0.5 rounded-lg glass-inset border border-white/[0.10] px-2 font-mono text-[10px] text-text-secondary">
+                  <Command className="h-2.5 w-2.5" />{def.key.toUpperCase()}
+                </kbd>
+                <span>{def.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

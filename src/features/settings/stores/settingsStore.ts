@@ -12,6 +12,43 @@ import {
 } from "../../terminal";
 import type { NotificationStyle, GlassMode } from "../types";
 
+// ---------------------------------------------------------------------------
+// Per-key write tracking — prevents race conditions from concurrent writes.
+//
+// Problem: optimistic update + async persist can race when the same key is
+// written multiple times before the first write completes. The second call's
+// `prev` value is the first call's optimistic value, not the DB value. If the
+// first call fails and rolls back, it clobbers the second call's state.
+//
+// Solution: each write gets a sequence number. When the async response arrives,
+// it only applies the result if it's still the latest write for that key.
+// On failure, rollback uses the last successfully persisted value (not the
+// optimistic `prev`).
+// ---------------------------------------------------------------------------
+
+const writeSeq = new Map<string, number>();
+const lastPersisted = new Map<string, string>();
+
+function startWrite(key: string): number {
+  const seq = (writeSeq.get(key) ?? 0) + 1;
+  writeSeq.set(key, seq);
+  return seq;
+}
+
+function isStaleWrite(key: string, seq: number): boolean {
+  return writeSeq.get(key) !== seq;
+}
+
+function markPersisted(key: string, value: string): void {
+  lastPersisted.set(key, value);
+}
+
+function getPersistedValue(key: string, fallback: string): string {
+  return lastPersisted.get(key) ?? fallback;
+}
+
+// ---------------------------------------------------------------------------
+
 interface SettingsState {
   notificationStyle: NotificationStyle;
   terminalTheme: string;
@@ -19,6 +56,7 @@ interface SettingsState {
   terminalOpacity: number;
   terminalFontFamily: string;
   terminalFontSize: number;
+  copyOnSelect: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -31,6 +69,7 @@ interface SettingsActions {
   setTerminalOpacity: (opacity: number) => Promise<void>;
   setTerminalFontFamily: (fontId: string) => Promise<void>;
   setTerminalFontSize: (size: number) => Promise<void>;
+  setCopyOnSelect: (enabled: boolean) => Promise<void>;
   reset: () => void;
 }
 
@@ -43,6 +82,7 @@ const initialState: SettingsState = {
   terminalOpacity: 0.85,
   terminalFontFamily: DEFAULT_FONT_ID,
   terminalFontSize: DEFAULT_FONT_SIZE,
+  copyOnSelect: false,
   isLoading: false,
   error: null,
 };
@@ -58,14 +98,25 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     fetchSettings: async () => {
       set({ isLoading: true, error: null });
       try {
-        const [style, themeId, glassMode, opacityStr, fontFamily, fontSizeStr] = await Promise.all([
+        const [style, themeId, glassMode, opacityStr, fontFamily, fontSizeStr, copyOnSelectStr] = await Promise.all([
           getSetting("notification_style", "alert"),
           getSetting("terminal_theme", DEFAULT_THEME_ID),
           getSetting("terminal_glass_mode", "opaque"),
           getSetting("terminal_opacity", "0.85"),
           getSetting("terminal_font_family", DEFAULT_FONT_ID),
           getSetting("terminal_font_size", String(DEFAULT_FONT_SIZE)),
+          getSetting("copy_on_select", "false"),
         ]);
+
+        // Seed lastPersisted with DB values so rollback has correct targets
+        markPersisted("notification_style", style);
+        markPersisted("terminal_theme", themeId);
+        markPersisted("terminal_glass_mode", glassMode);
+        markPersisted("terminal_opacity", opacityStr);
+        markPersisted("terminal_font_family", fontFamily);
+        markPersisted("terminal_font_size", fontSizeStr);
+        markPersisted("copy_on_select", copyOnSelectStr);
+
         const theme = getThemeById(themeId);
         applyThemeCSS(theme);
         const validGlass = VALID_GLASS_MODES.includes(glassMode as GlassMode)
@@ -81,6 +132,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           terminalOpacity: parsedOpacity,
           terminalFontFamily: fontFamily,
           terminalFontSize: parsedFontSize,
+          copyOnSelect: copyOnSelectStr === "true",
           isLoading: false,
         });
       } catch (e) {
@@ -90,33 +142,45 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     },
 
     setNotificationStyle: async (style) => {
-      set({ isLoading: true, error: null });
+      const seq = startWrite("notification_style");
+      set({ notificationStyle: style, error: null, isLoading: true });
       try {
         await setSetting("notification_style", style);
-        set({ notificationStyle: style, isLoading: false });
+        markPersisted("notification_style", style);
+        if (isStaleWrite("notification_style", seq)) return;
+        set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("notification_style", seq)) return;
         console.error("[settingsStore] Failed to save notification style:", e);
-        set({ error: extractErrorMessage(e), isLoading: false });
+        const persisted = getPersistedValue("notification_style", "alert");
+        set({
+          notificationStyle: persisted as NotificationStyle,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
       }
     },
 
     setTerminalTheme: async (themeId) => {
+      const seq = startWrite("terminal_theme");
       const theme = getThemeById(themeId);
-      const prevThemeId = get().terminalTheme;
       applyThemeCSS(theme);
       updateGlassBgOverrides(theme.xterm, get().terminalGlassMode, get().terminalOpacity);
       set({ terminalTheme: theme.id, error: null, isLoading: true });
       try {
         await setSetting("terminal_theme", theme.id);
+        markPersisted("terminal_theme", theme.id);
+        if (isStaleWrite("terminal_theme", seq)) return;
         set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("terminal_theme", seq)) return;
         console.error("[settingsStore] Failed to save theme:", e);
-        // Rollback: restore previous theme
-        const prevTheme = getThemeById(prevThemeId);
+        const persistedId = getPersistedValue("terminal_theme", DEFAULT_THEME_ID);
+        const prevTheme = getThemeById(persistedId);
         applyThemeCSS(prevTheme);
         updateGlassBgOverrides(prevTheme.xterm, get().terminalGlassMode, get().terminalOpacity);
         set({
-          terminalTheme: prevThemeId,
+          terminalTheme: persistedId,
           error: extractErrorMessage(e),
           isLoading: false,
         });
@@ -124,16 +188,21 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     },
 
     setTerminalGlassMode: async (mode) => {
-      const prev = get().terminalGlassMode;
+      const seq = startWrite("terminal_glass_mode");
       set({ terminalGlassMode: mode, error: null, isLoading: true });
       updateGlassBgOverrides(getThemeById(get().terminalTheme).xterm, mode, get().terminalOpacity);
       try {
         await setSetting("terminal_glass_mode", mode);
+        markPersisted("terminal_glass_mode", mode);
+        if (isStaleWrite("terminal_glass_mode", seq)) return;
         set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("terminal_glass_mode", seq)) return;
         console.error("[settingsStore] Failed to save glass mode:", e);
+        const persisted = getPersistedValue("terminal_glass_mode", "opaque") as GlassMode;
+        updateGlassBgOverrides(getThemeById(get().terminalTheme).xterm, persisted, get().terminalOpacity);
         set({
-          terminalGlassMode: prev,
+          terminalGlassMode: persisted,
           error: extractErrorMessage(e),
           isLoading: false,
         });
@@ -141,17 +210,22 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     },
 
     setTerminalOpacity: async (opacity) => {
+      const seq = startWrite("terminal_opacity");
       const clamped = Math.min(1.0, Math.max(0.5, opacity));
-      const prev = get().terminalOpacity;
       set({ terminalOpacity: clamped, error: null, isLoading: true });
       updateGlassBgOverrides(getThemeById(get().terminalTheme).xterm, get().terminalGlassMode, clamped);
       try {
         await setSetting("terminal_opacity", String(clamped));
+        markPersisted("terminal_opacity", String(clamped));
+        if (isStaleWrite("terminal_opacity", seq)) return;
         set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("terminal_opacity", seq)) return;
         console.error("[settingsStore] Failed to save opacity:", e);
+        const persisted = parseFloat(getPersistedValue("terminal_opacity", "0.85")) || 0.85;
+        updateGlassBgOverrides(getThemeById(get().terminalTheme).xterm, get().terminalGlassMode, persisted);
         set({
-          terminalOpacity: prev,
+          terminalOpacity: persisted,
           error: extractErrorMessage(e),
           isLoading: false,
         });
@@ -159,15 +233,19 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     },
 
     setTerminalFontFamily: async (fontId) => {
-      const prev = get().terminalFontFamily;
+      const seq = startWrite("terminal_font_family");
       set({ terminalFontFamily: fontId, error: null, isLoading: true });
       try {
         await setSetting("terminal_font_family", fontId);
+        markPersisted("terminal_font_family", fontId);
+        if (isStaleWrite("terminal_font_family", seq)) return;
         set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("terminal_font_family", seq)) return;
         console.error("[settingsStore] Failed to save font family:", e);
+        const persisted = getPersistedValue("terminal_font_family", DEFAULT_FONT_ID);
         set({
-          terminalFontFamily: prev,
+          terminalFontFamily: persisted,
           error: extractErrorMessage(e),
           isLoading: false,
         });
@@ -175,16 +253,41 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     },
 
     setTerminalFontSize: async (size) => {
+      const seq = startWrite("terminal_font_size");
       const clamped = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, size));
-      const prev = get().terminalFontSize;
       set({ terminalFontSize: clamped, error: null, isLoading: true });
       try {
         await setSetting("terminal_font_size", String(clamped));
+        markPersisted("terminal_font_size", String(clamped));
+        if (isStaleWrite("terminal_font_size", seq)) return;
         set({ isLoading: false });
       } catch (e) {
+        if (isStaleWrite("terminal_font_size", seq)) return;
         console.error("[settingsStore] Failed to save font size:", e);
+        const persisted = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN,
+          parseInt(getPersistedValue("terminal_font_size", String(DEFAULT_FONT_SIZE)), 10) || DEFAULT_FONT_SIZE));
         set({
-          terminalFontSize: prev,
+          terminalFontSize: persisted,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    setCopyOnSelect: async (enabled) => {
+      const seq = startWrite("copy_on_select");
+      set({ copyOnSelect: enabled, error: null, isLoading: true });
+      try {
+        await setSetting("copy_on_select", String(enabled));
+        markPersisted("copy_on_select", String(enabled));
+        if (isStaleWrite("copy_on_select", seq)) return;
+        set({ isLoading: false });
+      } catch (e) {
+        if (isStaleWrite("copy_on_select", seq)) return;
+        console.error("[settingsStore] Failed to save copy_on_select:", e);
+        const persisted = getPersistedValue("copy_on_select", "false") === "true";
+        set({
+          copyOnSelect: persisted,
           error: extractErrorMessage(e),
           isLoading: false,
         });

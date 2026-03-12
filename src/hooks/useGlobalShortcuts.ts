@@ -6,11 +6,14 @@ import { useProjectStore } from "../features/project";
 interface GlobalShortcutsReturn {
   isCommandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
+  isShortcutsHelpOpen: boolean;
+  setShortcutsHelpOpen: (open: boolean) => void;
 }
 
 export function useGlobalShortcuts(): GlobalShortcutsReturn {
   const navigate = useNavigate();
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [isShortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const prevOpenRef = useRef(false);
 
   useEffect(() => {
@@ -26,9 +29,10 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
   }, [isCommandPaletteOpen]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Cmd+K — Command palette
+    // Cmd+K — Command palette (close shortcuts help first if open)
     if (e.metaKey && e.key === "k") {
       e.preventDefault();
+      setShortcutsHelpOpen(false);
       setCommandPaletteOpen((prev) => !prev);
     }
 
@@ -87,6 +91,13 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       }
     }
 
+    // Cmd+/ — Shortcuts help modal (close command palette first if open)
+    if (e.metaKey && e.key === "/") {
+      e.preventDefault();
+      setCommandPaletteOpen(false);
+      setShortcutsHelpOpen((prev) => !prev);
+    }
+
     // Cmd+1~9, Cmd+0 — Quick project switch
     if (e.metaKey && !e.shiftKey && !e.altKey && e.key >= "0" && e.key <= "9") {
       const digit = parseInt(e.key, 10);
@@ -109,5 +120,7 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
   return {
     isCommandPaletteOpen,
     setCommandPaletteOpen,
+    isShortcutsHelpOpen,
+    setShortcutsHelpOpen,
   };
 }

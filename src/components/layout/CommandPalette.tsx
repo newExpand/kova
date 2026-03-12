@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { FolderOpen, Plus, Settings } from "lucide-react";
+import { ClipboardCopy, FolderOpen, Keyboard, Plus, Settings } from "lucide-react";
 import {
   CommandDialog,
   CommandInput,
@@ -11,7 +11,9 @@ import {
   CommandShortcut,
 } from "../ui/command";
 import { useProjectStore } from "../../features/project/stores/projectStore";
+import { useSettingsStore } from "../../features/settings/stores/settingsStore";
 import { COLOR_PALETTE } from "../../features/project/types";
+import { formatShortcut, getShortcutById } from "../../lib/shortcuts";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -26,6 +28,8 @@ function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [allProjects, deletingIds],
   );
   const selectProject = useProjectStore((s) => s.selectProject);
+  const copyOnSelect = useSettingsStore((s) => s.copyOnSelect);
+  const setCopyOnSelect = useSettingsStore((s) => s.setCopyOnSelect);
   const navigate = useNavigate();
 
   const handleSelectProject = useCallback(
@@ -52,7 +56,26 @@ function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <CommandItem onSelect={handleNewProject}>
             <Plus className="h-4 w-4" />
             <span>New Project</span>
-            <CommandShortcut>⌘N</CommandShortcut>
+            <CommandShortcut>{formatShortcut(getShortcutById("new-project"))}</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              onOpenChange(false);
+              window.dispatchEvent(new CustomEvent("flow-orche:open-shortcuts-help"));
+            }}
+          >
+            <Keyboard className="h-4 w-4" />
+            <span>Keyboard Shortcuts</span>
+            <CommandShortcut>{formatShortcut(getShortcutById("shortcuts-help"))}</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              setCopyOnSelect(!copyOnSelect);
+              onOpenChange(false);
+            }}
+          >
+            <ClipboardCopy className="h-4 w-4" />
+            <span>Copy on Select: {copyOnSelect ? "ON" : "OFF"}</span>
           </CommandItem>
           <CommandItem
             onSelect={() => {

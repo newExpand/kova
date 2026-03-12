@@ -6,6 +6,7 @@ import { AppRoutes } from "./routes";
 import { Sidebar } from "../components/layout/Sidebar";
 import { StatusBar } from "../components/layout/StatusBar";
 import { CommandPalette } from "../components/layout/CommandPalette";
+import { ShortcutsHelpModal } from "../components/layout/ShortcutsHelpModal";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { ErrorBoundary } from "../components/ui/error-boundary";
 import { checkTmuxAvailable } from "../lib/tauri/commands";
@@ -71,7 +72,10 @@ function SplitDivider({ onMouseDown, isResizing }: { onMouseDown: (e: React.Mous
 }
 
 function AppShell() {
-  const { isCommandPaletteOpen, setCommandPaletteOpen } = useGlobalShortcuts();
+  const {
+    isCommandPaletteOpen, setCommandPaletteOpen,
+    isShortcutsHelpOpen, setShortcutsHelpOpen,
+  } = useGlobalShortcuts();
   const isFileViewerPanelOpen = useAppStore((s) => s.isFileViewerPanelOpen);
   const isFileViewerMaximized = useAppStore((s) => s.isFileViewerMaximized);
   const fileViewerPanelWidth = useAppStore((s) => s.fileViewerPanelWidth);
@@ -114,6 +118,16 @@ function AppShell() {
       useAppStore.getState().setPendingProjectNavigation(null);
     }
   }, [pendingProjectNavigation, navigate]);
+
+  // CommandPalette → Open shortcuts help modal
+  useEffect(() => {
+    function handleOpenShortcutsHelp() {
+      setShortcutsHelpOpen(true);
+    }
+    window.addEventListener("flow-orche:open-shortcuts-help", handleOpenShortcutsHelp);
+    return () =>
+      window.removeEventListener("flow-orche:open-shortcuts-help", handleOpenShortcutsHelp);
+  }, [setShortcutsHelpOpen]);
 
   // Cmd+Shift+G → Toggle Terminal ↔ Git Graph
   useEffect(() => {
@@ -215,6 +229,10 @@ function AppShell() {
       <CommandPalette
         open={isCommandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}
+      />
+      <ShortcutsHelpModal
+        open={isShortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
       />
     </div>
   );

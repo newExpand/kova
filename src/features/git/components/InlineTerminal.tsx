@@ -450,6 +450,9 @@ export function InlineTerminal({ sessionName, onClose, height = 250 }: InlineTer
         cachedSelection = term.getSelection();
       });
 
+      // Note: Copy on Select is not needed here — InlineTerminal always runs
+      // inside a tmux session which handles selection via OSC 52.
+
       // Custom key event handler: clipboard shortcuts + IME ending
       term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
         if (event.type === "keydown") {

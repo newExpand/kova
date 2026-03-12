@@ -463,12 +463,29 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             dragDistanceRef.current.exceeded = true;
           }
         };
+        // Copy on Select: copy cached selection text on mouseup if drag was intentional.
+        // Skip when tmux mouse mode is active — tmux handles selection via OSC 52.
+        // - Local terminal: always uses tmux (mouse on) → skip
+        // - SSH + remote tmux: remote tmux handles selection → skip
+        // - SSH direct (no remote tmux): no tmux mouse → copy-on-select works
+        const hasTmuxMouseMode = !config.isSshMode || !!config.remoteTmuxSessionName;
+        const onCopyOnSelectMouseUp = () => {
+          if (hasTmuxMouseMode) return;
+          const { copyOnSelect } = useSettingsStore.getState();
+          if (copyOnSelect && cachedSelection && dragDistanceRef.current.exceeded) {
+            writeText(cachedSelection).catch((err) =>
+              console.error("[CopyOnSelect] writeText failed:", err),
+            );
+          }
+        };
         container.addEventListener("mousedown", onDragMouseDown, { capture: true });
         container.addEventListener("mousemove", onDragMouseMove, { capture: true });
+        container.addEventListener("mouseup", onCopyOnSelectMouseUp);
         dragListenersRef.current = {
           cleanup: () => {
             container.removeEventListener("mousedown", onDragMouseDown, { capture: true });
             container.removeEventListener("mousemove", onDragMouseMove, { capture: true });
+            container.removeEventListener("mouseup", onCopyOnSelectMouseUp);
           },
         };
 
