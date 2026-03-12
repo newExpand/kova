@@ -134,6 +134,10 @@ pub fn start_session_monitoring(
     session_name: String,
     project_path: String,
 ) -> Result<(), AppError> {
+    // Starts pane-level monitoring for non-hook agents (Codex) in the session.
+    // Gemini/Claude have complete hook-based detection and are excluded by
+    // watch_session_agents's internal detect_agents_in_session(_, false) filter.
     pane_monitor::watch_session_agents(app, session_name, project_path);
     Ok(())
 }
+

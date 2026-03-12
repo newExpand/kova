@@ -5,6 +5,41 @@ use crate::services::{git, tmux};
 use std::path::Path;
 use tracing::{info, warn};
 
+/// Resolve the primary pane ID for a Codex window and start pane monitoring.
+/// Logs a warning if the pane cannot be found or resolved.
+fn start_codex_pane_monitor(
+    app: &tauri::AppHandle,
+    session_name: &str,
+    window_name: &str,
+    project_path: &str,
+) {
+    match tmux::find_primary_pane_id(session_name, window_name) {
+        Ok(Some(pane_id)) => {
+            crate::services::pane_monitor::watch_agent_pane(
+                app.clone(),
+                session_name.to_string(),
+                window_name.to_string(),
+                pane_id,
+                "0".to_string(),
+                project_path.to_string(),
+                AgentType::CodexCli,
+            );
+        }
+        Ok(None) => {
+            warn!(
+                "No pane found for Codex in '{}': pane monitoring skipped",
+                window_name
+            );
+        }
+        Err(e) => {
+            warn!(
+                "Failed to resolve pane for Codex in '{}': {}",
+                window_name, e
+            );
+        }
+    }
+}
+
 /// Validate a worktree task name: alphanumeric, hyphens, underscores only, max 50 chars.
 fn validate_task_name(name: &str) -> Result<(), AppError> {
     if name.is_empty() {
@@ -66,27 +101,28 @@ pub fn start_worktree_task(
         // Window is created but agent didn't start — user can type manually
     }
 
-    // Schedule background hook injection only for agents that support hooks
-    if agent_type.supports_hooks() {
-        crate::services::hooks::inject_hooks_for_worktree_when_ready(
-            project_path.to_string(),
-            task_name.to_string(),
-            app_handle,
-        );
-    } else if let Some(ref app) = app_handle {
-        // Agents without hook support: use pane polling for basic activity detection
-        crate::services::pane_monitor::watch_agent_pane(
-            app.clone(),
-            session_name.to_string(),
-            task_name.to_string(),
-            project_path.to_string(),
-            agent_type,
-        );
-    } else if !agent_type.supports_hooks() {
-        warn!(
-            "No app_handle for non-hook agent '{}' in task '{}': pane monitoring skipped",
-            agent_type.display_name(), task_name
-        );
+    // Hook injection / monitoring strategy by agent type:
+    //
+    // - ClaudeCode: per-project hooks — waits for worktree dir, then injects.
+    // - GeminiCli:  global hooks (boot-time) — complete detection, no monitor.
+    // - CodexCli:   only has `notify` (turn completion). Needs pane_monitor for
+    //               AgentActive/SessionStart/Stop.
+    match agent_type {
+        AgentType::ClaudeCode => {
+            crate::services::hooks::inject_hooks_for_worktree_when_ready(
+                project_path.to_string(),
+                task_name.to_string(),
+                app_handle,
+            );
+        }
+        AgentType::CodexCli => {
+            if let Some(ref app) = app_handle {
+                start_codex_pane_monitor(app, session_name, task_name, project_path);
+            }
+        }
+        AgentType::GeminiCli => {
+            // Global hooks provide complete detection — no action needed here.
+        }
     }
 
     info!(
@@ -129,38 +165,33 @@ pub fn restore_worktree_windows(
                             task_name, e
                         );
                     }
-                    // Inject hooks only for agents that support hooks
-                    if agent_type.supports_hooks() {
-                        match crate::services::event_server::read_port_from_file() {
-                            Ok(port) => {
-                                let wt_path = Path::new(&wt.path);
-                                if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                    // Hook injection / monitoring (same strategy as start_worktree_task)
+                    match agent_type {
+                        AgentType::ClaudeCode => {
+                            match crate::services::event_server::read_port_from_file() {
+                                Ok(port) => {
+                                    let wt_path = Path::new(&wt.path);
+                                    if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                                        warn!(
+                                            "Failed to inject hooks for restored worktree '{}': {}",
+                                            task_name, e
+                                        );
+                                    }
+                                }
+                                Err(e) => {
                                     warn!(
-                                        "Failed to inject hooks for restored worktree '{}': {}",
+                                        "Skipping hook injection for restored worktree '{}': {}",
                                         task_name, e
                                     );
                                 }
                             }
-                            Err(e) => {
-                                warn!(
-                                    "Skipping hook injection for restored worktree '{}': {}",
-                                    task_name, e
-                                );
+                        }
+                        AgentType::CodexCli => {
+                            if let Some(ref app) = app_handle {
+                                start_codex_pane_monitor(app, session_name, &task_name, project_path);
                             }
                         }
-                    } else if let Some(ref app) = app_handle {
-                        crate::services::pane_monitor::watch_agent_pane(
-                            app.clone(),
-                            session_name.to_string(),
-                            task_name.clone(),
-                            project_path.to_string(),
-                            agent_type,
-                        );
-                    } else if !agent_type.supports_hooks() {
-                        warn!(
-                            "No app_handle for non-hook agent in restored worktree '{}': pane monitoring skipped",
-                            task_name
-                        );
+                        AgentType::GeminiCli => {}
                     }
                     restored_names.push(task_name);
                 }

@@ -6,10 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { AgentStatusBadge } from "./AgentStatusBadge";
 import { NewAgentTaskDialog } from "./NewAgentTaskDialog";
 import { WorktreeContextMenu } from "./WorktreeContextMenu";
-import {
-  useAgentActivityStore,
-  normalizePathKey,
-} from "../stores/agentActivityStore";
+import { useAgentActivityStore } from "../stores/agentActivityStore";
 import { useGitStore } from "../stores/gitStore";
 
 interface WorktreePanelProps {
@@ -295,10 +292,7 @@ function WorktreeSkeletonCard() {
 }
 
 function WorktreeCollapsedDot({ worktree, onNavigate }: { worktree: GitWorktree; onNavigate: () => void }) {
-  const normalizedWtPath = normalizePathKey(worktree.path);
-  const session = useAgentActivityStore((s) => {
-    return s.sessions[normalizedWtPath];
-  });
+  const session = useAgentActivityStore((s) => s.getSessionForPath(worktree.path));
   const isActive = session?.status === "active";
   const isAlive = isActive || session?.status === "ready";
 
@@ -343,9 +337,7 @@ function WorktreeCard({
   agentType?: AgentType;
 }) {
   const isClaudeWorktree = worktree.path.includes(".claude/worktrees/");
-  const session = useAgentActivityStore(
-    (s) => s.sessions[normalizePathKey(worktree.path)],
-  );
+  const session = useAgentActivityStore((s) => s.getSessionForPath(worktree.path));
   const isAgentActive = session?.status === "active";
   // Per-worktree dirty state (null = status unknown, don't guess)
   const isDirty = worktree.status?.isDirty ?? false;

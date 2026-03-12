@@ -22,10 +22,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
 import { useMergeStore } from "../stores/mergeStore";
-import {
-  useAgentActivityStore,
-  normalizePathKey,
-} from "../stores/agentActivityStore";
+import { useAgentActivityStore } from "../stores/agentActivityStore";
 
 interface MergeProgressDialogProps {
   projectId: string;
@@ -61,10 +58,8 @@ export function MergeProgressDialog({
       return;
     }
 
-    const key = normalizePathKey(context.worktreePath);
-
     const unsub = useAgentActivityStore.subscribe((state) => {
-      const session = state.sessions[key];
+      const session = state.getSessionForPath(context.worktreePath);
       if (session?.status === "done") {
         onAgentStopDetected();
       }

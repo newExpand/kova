@@ -38,6 +38,7 @@ const AGENT_ACTIVITY_TYPES = new Set([
   "SessionStart",
   "SessionEnd",
   "AgentActive",
+  "AgentIdle",
   "Stop",
 ]);
 

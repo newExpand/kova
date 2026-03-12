@@ -48,9 +48,15 @@ impl AgentType {
         }
     }
 
-    /// Whether this agent type supports hooks/event integration
+    /// Whether this agent type has **complete** hook-based activity detection
+    /// (no pane monitor fallback needed).
+    ///
+    /// - **ClaudeCode**: project-local hooks (`.claude/settings.local.json`)
+    /// - **GeminiCli**: global hooks (`~/.gemini/settings.json`) — BeforeAgent/AfterAgent
+    /// - **CodexCli**: `false` — only has `notify` (turn completion → AgentIdle).
+    ///   Needs pane_monitor for AgentActive/SessionStart/Stop.
     pub fn supports_hooks(&self) -> bool {
-        matches!(self, AgentType::ClaudeCode)
+        matches!(self, AgentType::ClaudeCode | AgentType::GeminiCli)
     }
 
     /// Convert from DB string (stored as snake_case).
@@ -114,8 +120,8 @@ mod tests {
     #[test]
     fn test_supports_hooks() {
         assert!(AgentType::ClaudeCode.supports_hooks());
-        assert!(!AgentType::CodexCli.supports_hooks());
-        assert!(!AgentType::GeminiCli.supports_hooks());
+        assert!(!AgentType::CodexCli.supports_hooks()); // notify only, needs pane_monitor
+        assert!(AgentType::GeminiCli.supports_hooks());
     }
 
     #[test]

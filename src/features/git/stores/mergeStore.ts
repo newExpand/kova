@@ -7,7 +7,7 @@ import {
   checkRebaseStatus,
   sendKeysToTmuxWindowDelayed,
 } from "../../../lib/tauri/commands";
-import { useAgentActivityStore, normalizePathKey } from "./agentActivityStore";
+import { useAgentActivityStore } from "./agentActivityStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,8 +94,7 @@ function toErrorMessage(e: unknown): string {
 
 /** Check if the Claude Code agent for a worktree is idle (can accept prompts). */
 function isAgentIdle(worktreePath: string): "idle" | "busy" | "none" {
-  const key = normalizePathKey(worktreePath);
-  const session = useAgentActivityStore.getState().sessions[key];
+  const session = useAgentActivityStore.getState().getSessionForPath(worktreePath);
   if (!session) return "none";
   if (session.status === "done" || session.status === "idle" || session.status === "ready") {
     return "idle";

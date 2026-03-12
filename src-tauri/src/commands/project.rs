@@ -21,17 +21,17 @@ pub fn create_project(
     let agent = agent_type.unwrap_or_default();
     let project = project::create(&conn.conn, &name, &path, color_index.unwrap_or(0), agent)?;
 
-    // Hook 자동 주입 (best-effort — supports_hooks가 true인 에이전트만)
-    if agent.supports_hooks() {
-        match super::hooks::read_event_server_port() {
-            Ok(port) => {
-                if let Err(e) = hooks::inject_hooks(std::path::Path::new(&project.path), port) {
-                    warn!("Hook injection failed for {}: {}", project.path, e);
-                }
+    // Claude per-project hooks for the new project (best-effort).
+    // Gemini/Codex global hooks are already injected at boot time and
+    // don't need per-project injection.
+    match super::hooks::read_event_server_port() {
+        Ok(port) => {
+            if let Err(e) = hooks::inject_hooks(std::path::Path::new(&project.path), port) {
+                warn!("Claude hook injection failed for {}: {}", project.path, e);
             }
-            Err(e) => {
-                warn!("Cannot inject hooks (event server port unavailable): {}", e);
-            }
+        }
+        Err(e) => {
+            warn!("Cannot inject hooks (event server port unavailable): {}", e);
         }
     }
 

@@ -15,6 +15,7 @@ export type HookType =
   | "SessionStart"
   | "SessionEnd"
   | "AgentActive"
+  | "AgentIdle"
   | "PermissionRequest"
   | "UserPromptSubmit"
   | "ConfigChange"
@@ -35,6 +36,7 @@ export function parseHookType(raw: string): HookType {
     case "SessionStart":
     case "SessionEnd":
     case "AgentActive":
+    case "AgentIdle":
     case "PermissionRequest":
     case "UserPromptSubmit":
     case "ConfigChange":

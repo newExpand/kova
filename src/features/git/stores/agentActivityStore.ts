@@ -14,7 +14,7 @@ const AGENT_DB_TO_IPC: Record<string, AgentType> = {
 // Path normalization
 // ---------------------------------------------------------------------------
 
-/** Normalize path key — preserves worktree identity for per-session isolation. */
+/** Normalize path key — preserves worktree identity for hook-driven sessions. */
 export function normalizePathKey(path: string): string {
   let normalized = path.replace(/\/+$/, "");
   // macOS APFS firmlink: /System/Volumes/Data/Users → /Users
@@ -40,7 +40,9 @@ export function toProjectPathKey(path: string): string {
 export type AgentStatus = "loading" | "active" | "idle" | "done" | "error" | "ready";
 
 export interface AgentSessionState {
+  sessionKey: string;
   projectPath: string;
+  projectRootPath: string;
   status: AgentStatus;
   toolUseCount: number;
   fileEditCount: number;
@@ -50,8 +52,13 @@ export interface AgentSessionState {
   isWaitingForInput: boolean;
   lastActivity: string;
   lastMessage: string | null;
-  /** Runtime-detected agent type from pane monitor (e.g. "codex_cli", "gemini_cli", "claude_code") */
+  /** Runtime-detected or hook-declared agent type (camelCase preferred). */
   detectedAgentType?: string;
+  source?: "hook" | "synthetic";
+  sessionName?: string;
+  windowName?: string;
+  paneId?: string;
+  paneIndex?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +66,7 @@ export interface AgentSessionState {
 // ---------------------------------------------------------------------------
 
 interface AgentActivityState {
-  /** Active agent sessions keyed by projectPath */
+  /** Active agent sessions keyed by hook path or synthetic instance_key */
   sessions: Record<string, AgentSessionState>;
   realtimeActivities: HookEvent[];
 }
@@ -71,9 +78,9 @@ interface AgentActivityState {
 interface AgentActivityActions {
   pushActivity: (event: HookEvent) => void;
   getSessionForPath: (projectPath: string) => AgentSessionState | undefined;
-  /** Find the most recently active session for a project, including its worktree sessions. */
+  /** Find the most representative session for a project, including worktrees and synthetic panes. */
   getProjectSession: (projectPath: string) => AgentSessionState | undefined;
-  clearSession: (projectPath: string) => void;
+  clearSession: (sessionKey: string) => void;
   reset: () => void;
 }
 
@@ -88,17 +95,43 @@ const initialState: AgentActivityState = {
 
 const MAX_REALTIME_EVENTS = 100;
 const DONE_AUTO_RESET_MS = 30_000; // 30s auto-reset after Done
+const LOADING_TIMEOUT_MS = 15_000; // 15s: ESC during thinking won't fire Stop hook
 const doneTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const loadingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Clear and remove a timer from the given map. No-op if the key is absent. */
+function clearTimer(map: Map<string, ReturnType<typeof setTimeout>>, key: string): void {
+  const timer = map.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    map.delete(key);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Status priority for project-level aggregation: lower = busier.
- *  Used by getProjectSession to pick the most representative session. */
+/** Status priority for project-level aggregation: lower = busier. */
 const STATUS_PRIORITY: Record<string, number> = {
-  active: 0, loading: 0, ready: 2, done: 3, error: 4, idle: 5,
+  active: 0,
+  loading: 0,
+  ready: 2,
+  idle: 3,
+  done: 4,
+  error: 5,
 };
+
+const ACTIVITY_EVENTS = new Set([
+  "SessionStart",
+  "PostToolUse",
+  "SubagentStart",
+  "PostToolUseFailure",
+  "TaskCompleted",
+  "UserPromptSubmit",
+  "AgentActive",
+  "AgentIdle",
+]);
 
 /** Returns true if `a` is busier (or equally busy but more recent) than `b`. */
 function sessionBusier(a: AgentSessionState, b: AgentSessionState): boolean {
@@ -130,6 +163,23 @@ function getToolDisplayName(toolName: string): string {
   return toolName;
 }
 
+function normalizeAgentType(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return AGENT_DB_TO_IPC[raw] ?? raw;
+}
+
+function getEventAgentType(event: HookEvent): string | undefined {
+  const fromPayload = normalizeAgentType(getPayloadString(event.payload, "agent_type"));
+  if (fromPayload) return fromPayload;
+
+  const match = normalizePathKey(event.projectPath).match(/\/\.agent\/([^/]+)(?:\/|$)/);
+  return normalizeAgentType(match?.[1]);
+}
+
+function getEventSessionKey(event: HookEvent): string {
+  return getPayloadString(event.payload, "instance_key") ?? normalizePathKey(event.projectPath);
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -139,18 +189,11 @@ export const useAgentActivityStore = create<
 >()((set, get) => ({
   ...initialState,
 
-  getSessionForPath: (projectPath) =>
-    get().sessions[normalizePathKey(projectPath)],
-
-  getProjectSession: (projectPath) => {
-    const sessions = get().sessions;
-    const projectKey = normalizePathKey(projectPath);
-    const worktreePrefix = projectKey + "/.claude/worktrees/";
-    const agentPrefix = projectKey + "/.agent/";
-    // Collect root session + worktree sessions + agent monitor sessions
+  getSessionForPath: (projectPath) => {
+    const pathKey = normalizePathKey(projectPath);
     let best: AgentSessionState | undefined;
-    for (const [key, session] of Object.entries(sessions)) {
-      if (key !== projectKey && !key.startsWith(worktreePrefix) && !key.startsWith(agentPrefix)) continue;
+    for (const session of Object.values(get().sessions)) {
+      if (session.projectPath !== pathKey) continue;
       if (!best || sessionBusier(session, best)) {
         best = session;
       }
@@ -158,37 +201,43 @@ export const useAgentActivityStore = create<
     return best;
   },
 
-  clearSession: (projectPath) => {
-    const key = normalizePathKey(projectPath);
-    const timer = doneTimers.get(key);
-    if (timer) {
-      clearTimeout(timer);
-      doneTimers.delete(key);
+  getProjectSession: (projectPath) => {
+    const projectKey = normalizePathKey(projectPath);
+    let best: AgentSessionState | undefined;
+    for (const session of Object.values(get().sessions)) {
+      if (session.projectRootPath !== projectKey) continue;
+      if (!best || sessionBusier(session, best)) {
+        best = session;
+      }
     }
+    return best;
+  },
+
+  clearSession: (sessionKey) => {
+    clearTimer(doneTimers, sessionKey);
+    clearTimer(loadingTimers, sessionKey);
     set((state) => {
       const sessions = { ...state.sessions };
-      delete sessions[key];
+      delete sessions[sessionKey];
       return { sessions };
     });
   },
 
   pushActivity: (event) => {
-    const path = normalizePathKey(event.projectPath);
-    // Cancel pending auto-reset on any new activity (not just SessionStart)
-    const ACTIVITY_EVENTS = new Set([
-      "SessionStart", "PostToolUse", "SubagentStart",
-      "PostToolUseFailure", "TaskCompleted", "UserPromptSubmit",
-    ]);
+    const sessionKey = getEventSessionKey(event);
+    const projectPath = normalizePathKey(event.projectPath);
+    const projectRootPath = toProjectPathKey(projectPath);
+    const detectedAgentType = getEventAgentType(event);
+    const source = getPayloadString(event.payload, "source") === "synthetic"
+      ? "synthetic"
+      : "hook";
+
     if (ACTIVITY_EVENTS.has(event.eventType)) {
-      const existing = doneTimers.get(path);
-      if (existing) {
-        clearTimeout(existing);
-        doneTimers.delete(path);
-      }
+      clearTimer(doneTimers, sessionKey);
+      clearTimer(loadingTimers, sessionKey);
     }
 
     set((state) => {
-      // Ring buffer for realtime events
       const realtimeActivities = [event, ...state.realtimeActivities].slice(
         0,
         MAX_REALTIME_EVENTS,
@@ -197,19 +246,12 @@ export const useAgentActivityStore = create<
       const sessions = { ...state.sessions };
       const now = new Date().toISOString();
 
-      // Parse detectedAgentType from path suffix (e.g. "/project/.agent/codex_cli")
-      // Convert from snake_case (DB/Rust) to camelCase (TS AgentType) for consistency
-      const agentSuffixMatch = path.match(/\/.agent\/([^/]+)$/);
-      const rawSuffix = agentSuffixMatch?.[1];
-      const detectedFromPath = rawSuffix
-        ? (AGENT_DB_TO_IPC[rawSuffix] ?? rawSuffix)
-        : undefined;
-
-      // Ensure session exists for any activity event (handles mid-session app restart)
       function ensureSession(): AgentSessionState {
-        if (!sessions[path]) {
-          sessions[path] = {
-            projectPath: path,
+        if (!sessions[sessionKey]) {
+          sessions[sessionKey] = {
+            sessionKey,
+            projectPath,
+            projectRootPath,
             status: "active",
             toolUseCount: 0,
             fileEditCount: 0,
@@ -219,10 +261,27 @@ export const useAgentActivityStore = create<
             isWaitingForInput: false,
             lastActivity: now,
             lastMessage: null,
-            detectedAgentType: detectedFromPath ?? "claudeCode",
+            detectedAgentType: detectedAgentType ?? "claudeCode",
+            source,
+            sessionName: getPayloadString(event.payload, "session_name"),
+            windowName: getPayloadString(event.payload, "window_name"),
+            paneId: getPayloadString(event.payload, "pane_id"),
+            paneIndex: getPayloadString(event.payload, "pane_index"),
+          };
+        } else {
+          sessions[sessionKey] = {
+            ...sessions[sessionKey],
+            projectPath,
+            projectRootPath,
+            detectedAgentType: detectedAgentType ?? sessions[sessionKey].detectedAgentType,
+            source,
+            sessionName: getPayloadString(event.payload, "session_name") ?? sessions[sessionKey].sessionName,
+            windowName: getPayloadString(event.payload, "window_name") ?? sessions[sessionKey].windowName,
+            paneId: getPayloadString(event.payload, "pane_id") ?? sessions[sessionKey].paneId,
+            paneIndex: getPayloadString(event.payload, "pane_index") ?? sessions[sessionKey].paneIndex,
           };
         }
-        return sessions[path];
+        return sessions[sessionKey];
       }
 
       switch (event.eventType) {
@@ -232,7 +291,7 @@ export const useAgentActivityStore = create<
           session.isWaitingForInput = false;
           session.lastActivity = now;
           session.lastMessage = null;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -241,14 +300,17 @@ export const useAgentActivityStore = create<
           session.isWaitingForInput = true;
           session.lastMessage = "Waiting for permission...";
           session.lastActivity = now;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
         case "SessionStart": {
-          // Always reset to a fresh session (fixes stale "done" state)
-          sessions[path] = {
-            projectPath: path,
+          // Both hook and synthetic sessions start as "ready".
+          // Synthetic transitions to "active" on first AgentActive, then "idle" on AgentIdle.
+          sessions[sessionKey] = {
+            sessionKey,
+            projectPath,
+            projectRootPath,
             status: "ready",
             toolUseCount: 0,
             fileEditCount: 0,
@@ -257,8 +319,13 @@ export const useAgentActivityStore = create<
             subagentCount: 0,
             isWaitingForInput: false,
             lastActivity: now,
-            lastMessage: "Session started",
-            detectedAgentType: detectedFromPath ?? "claudeCode",
+            lastMessage: getPayloadString(event.payload, "message") ?? "Session started",
+            detectedAgentType: detectedAgentType ?? "claudeCode",
+            source,
+            sessionName: getPayloadString(event.payload, "session_name"),
+            windowName: getPayloadString(event.payload, "window_name"),
+            paneId: getPayloadString(event.payload, "pane_id"),
+            paneIndex: getPayloadString(event.payload, "pane_index"),
           };
           break;
         }
@@ -276,16 +343,12 @@ export const useAgentActivityStore = create<
           if (toolName === "Write" || toolName === "Edit") {
             session.fileEditCount += 1;
           }
-          if (
-            toolName === "Bash" &&
-            toolInput &&
-            toolInput.includes("git commit")
-          ) {
+          if (toolName === "Bash" && toolInput && toolInput.includes("git commit")) {
             session.commitCount += 1;
           }
 
           session.lastMessage = toolName ? getToolDisplayName(toolName) : null;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -294,7 +357,7 @@ export const useAgentActivityStore = create<
           session.status = "active";
           session.subagentCount += 1;
           session.lastActivity = now;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -302,7 +365,7 @@ export const useAgentActivityStore = create<
           const session = ensureSession();
           session.subagentCount = Math.max(0, session.subagentCount - 1);
           session.lastActivity = now;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -312,7 +375,7 @@ export const useAgentActivityStore = create<
           const subject = getPayloadString(event.payload, "task_subject");
           session.lastMessage = subject ?? "Task completed";
           session.lastActivity = now;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -325,7 +388,7 @@ export const useAgentActivityStore = create<
           session.lastMessage = errorMsg
             ? `Error: ${errorMsg.slice(0, 60)}`
             : "Tool failed";
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -336,7 +399,7 @@ export const useAgentActivityStore = create<
             ? `${teammateName} idle`
             : "Teammate idle";
           session.lastActivity = now;
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -344,8 +407,17 @@ export const useAgentActivityStore = create<
           const session = ensureSession();
           session.status = "active";
           session.lastActivity = now;
-          session.lastMessage = "Working...";
-          sessions[path] = { ...session };
+          session.lastMessage = getPayloadString(event.payload, "message") ?? "Working...";
+          sessions[sessionKey] = { ...session };
+          break;
+        }
+
+        case "AgentIdle": {
+          const session = ensureSession();
+          session.status = "idle";
+          session.lastActivity = now;
+          session.lastMessage = getPayloadString(event.payload, "message") ?? "Idle";
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -358,7 +430,7 @@ export const useAgentActivityStore = create<
           if (stopMsg) {
             session.lastMessage = stopMsg;
           }
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -370,7 +442,7 @@ export const useAgentActivityStore = create<
           if (endMsg) {
             session.lastMessage = endMsg;
           }
-          sessions[path] = { ...session };
+          sessions[sessionKey] = { ...session };
           break;
         }
 
@@ -385,16 +457,44 @@ export const useAgentActivityStore = create<
       return { sessions, realtimeActivities };
     });
 
-    // Schedule auto-reset after SessionEnd or Stop (Claude Code sends Stop as final event)
     if (event.eventType === "SessionEnd" || event.eventType === "Stop") {
-      const existing = doneTimers.get(path);
-      if (existing) clearTimeout(existing);
+      clearTimer(doneTimers, sessionKey);
       doneTimers.set(
-        path,
+        sessionKey,
         setTimeout(() => {
-          doneTimers.delete(path);
-          get().clearSession(path);
+          doneTimers.delete(sessionKey);
+          get().clearSession(sessionKey);
         }, DONE_AUTO_RESET_MS),
+      );
+    }
+
+    // Loading timeout: ESC during thinking won't fire Stop hook,
+    // so auto-transition to "idle" after 15s of uninterrupted "loading".
+    if (event.eventType === "UserPromptSubmit") {
+      clearTimer(loadingTimers, sessionKey);
+      loadingTimers.set(
+        sessionKey,
+        setTimeout(() => {
+          loadingTimers.delete(sessionKey);
+          const current = get().sessions[sessionKey];
+          if (current && current.status === "loading") {
+            set((state) => {
+              const session = state.sessions[sessionKey];
+              if (!session) return state;
+              return {
+                sessions: {
+                  ...state.sessions,
+                  [sessionKey]: {
+                    ...session,
+                    status: "idle" as const,
+                    lastMessage: null,
+                    lastActivity: new Date().toISOString(),
+                  },
+                },
+              };
+            });
+          }
+        }, LOADING_TIMEOUT_MS),
       );
     }
   },
@@ -402,6 +502,8 @@ export const useAgentActivityStore = create<
   reset: () => {
     for (const timer of doneTimers.values()) clearTimeout(timer);
     doneTimers.clear();
+    for (const timer of loadingTimers.values()) clearTimeout(timer);
+    loadingTimers.clear();
     set(initialState);
   },
 }));

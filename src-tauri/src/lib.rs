@@ -168,57 +168,71 @@ pub fn run() {
             tracing::info!("Event server running on port {}", port);
             app.manage(Mutex::new(event_server));
 
-            // Re-inject hooks for all active projects with the new port
-            // (only for agents that support hooks)
+            // Re-inject hooks with the new port.
+            //
+            // Global hooks (Gemini, Codex) are injected unconditionally because
+            // any project's tmux session can run any agent type simultaneously.
+            // Per-project hooks (Claude) are injected for each registered project.
             {
-                let db_state = app.state::<Mutex<DbConnection>>();
-                let db_guard = db_state.lock();
-                if let Ok(db) = db_guard {
-                    match services::project::list(&db.conn) {
-                        Ok(projects) => {
-                            let mut injected_count = 0u32;
-                            for project in &projects {
-                                // Skip hook injection for agents that don't support hooks
-                                if !project.agent_type.supports_hooks() {
-                                    continue;
+                // Gemini global hooks — always inject
+                if let Err(e) = services::hooks::inject_gemini_hooks(port) {
+                    tracing::warn!("Gemini hook injection failed: {}", e);
+                }
+
+                // Codex notify — always inject (only stable Codex integration)
+                if let Err(e) = services::hooks::inject_codex_notify(port) {
+                    tracing::warn!("Codex notify injection failed: {}", e);
+                }
+
+                // Claude per-project hooks for each registered project
+                {
+                    let db_state = app.state::<Mutex<DbConnection>>();
+                    if let Ok(db) = db_state.lock() {
+                        match services::project::list(&db.conn) {
+                            Ok(projects) => {
+                                let mut count = 0u32;
+                                for project in &projects {
+                                    if let Err(e) = services::hooks::inject_hooks(
+                                        std::path::Path::new(&project.path),
+                                        port,
+                                    ) {
+                                        tracing::warn!(
+                                            "Claude hook injection failed for '{}': {}",
+                                            project.name, e
+                                        );
+                                    }
+                                    if let Err(e) = services::hooks::inject_hooks_for_worktrees(
+                                        std::path::Path::new(&project.path),
+                                        port,
+                                    ) {
+                                        tracing::warn!(
+                                            "Worktree hook injection failed for '{}': {}",
+                                            project.name, e
+                                        );
+                                    }
+                                    count += 1;
                                 }
-                                if let Err(e) = services::hooks::inject_hooks(
-                                    std::path::Path::new(&project.path),
-                                    port,
-                                ) {
-                                    tracing::warn!(
-                                        "Hook injection failed for '{}': {}",
-                                        project.name, e
-                                    );
-                                }
-                                // Also inject hooks for existing worktrees
-                                if let Err(e) = services::hooks::inject_hooks_for_worktrees(
-                                    std::path::Path::new(&project.path),
-                                    port,
-                                ) {
-                                    tracing::warn!(
-                                        "Worktree hook injection failed for '{}': {}",
-                                        project.name, e
-                                    );
-                                }
-                                injected_count += 1;
+                                tracing::info!(
+                                    "Injected hooks: {} Claude project(s) + Gemini global + Codex global",
+                                    count
+                                );
                             }
-                            tracing::info!(
-                                "Injected hooks for {}/{} active project(s)",
-                                injected_count, projects.len()
-                            );
+                            Err(e) => {
+                                tracing::warn!("Failed to list projects for hook injection: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!("Failed to list projects for hook injection: {}", e);
-                        }
-                    }
+                    } else {
+                        tracing::error!(
+                            "Failed to acquire DB lock for Claude hook injection — no per-project hooks installed"
+                        );
+                    };
                 }
             }
 
-            // Start session monitoring for projects with active tmux sessions.
-            // Uses DB-registered session names (project_tmux_sessions table) for
-            // accurate matching, not derived slugs.
-            // Runs in background thread to avoid blocking app startup.
+            // Start session monitoring for Codex agents in active tmux sessions.
+            // Codex only has `notify` (turn completion → AgentIdle), so pane_monitor
+            // is needed for AgentActive/SessionStart/Stop detection.
+            // Gemini and Claude have complete hook-based detection — no monitor needed.
             {
                 let db_state = app.state::<Mutex<DbConnection>>();
                 let project_sessions: Vec<(String, String)> = match db_state.lock() {
@@ -272,7 +286,6 @@ pub fn run() {
                 if !project_sessions.is_empty() {
                     let app_handle = app.handle().clone();
                     std::thread::spawn(move || {
-                        // Give tmux server time to be ready after app launch
                         std::thread::sleep(std::time::Duration::from_secs(2));
 
                         let live_sessions = match services::tmux::list_sessions() {
