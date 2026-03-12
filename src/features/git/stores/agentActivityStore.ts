@@ -6,7 +6,7 @@ import { getPayloadString } from "../../../lib/payload-helpers";
 // Path normalization
 // ---------------------------------------------------------------------------
 
-/** Normalize path key to reconcile canonical vs git worktree path differences */
+/** Normalize path key — preserves worktree identity for per-session isolation. */
 export function normalizePathKey(path: string): string {
   let normalized = path.replace(/\/+$/, "");
   // macOS APFS firmlink: /System/Volumes/Data/Users → /Users
@@ -14,6 +14,15 @@ export function normalizePathKey(path: string): string {
     normalized = normalized.slice("/System/Volumes/Data".length);
   }
   return normalized;
+}
+
+/** Extract the parent project path from a worktree path.
+ *  e.g. "/project/.claude/worktrees/task" → "/project"
+ *  Returns the original path if it is not a worktree path. */
+export function toProjectPathKey(path: string): string {
+  const normalized = normalizePathKey(path);
+  const idx = normalized.indexOf("/.claude/worktrees/");
+  return idx !== -1 ? normalized.slice(0, idx) : normalized;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +61,8 @@ interface AgentActivityState {
 interface AgentActivityActions {
   pushActivity: (event: HookEvent) => void;
   getSessionForPath: (projectPath: string) => AgentSessionState | undefined;
+  /** Find the most recently active session for a project, including its worktree sessions. */
+  getProjectSession: (projectPath: string) => AgentSessionState | undefined;
   clearSession: (projectPath: string) => void;
   reset: () => void;
 }
@@ -72,6 +83,20 @@ const doneTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Status priority for project-level aggregation: lower = busier.
+ *  Used by getProjectSession to pick the most representative session. */
+const STATUS_PRIORITY: Record<string, number> = {
+  active: 0, loading: 0, ready: 2, done: 3, error: 4, idle: 5,
+};
+
+/** Returns true if `a` is busier (or equally busy but more recent) than `b`. */
+function sessionBusier(a: AgentSessionState, b: AgentSessionState): boolean {
+  const pa = (a.isWaitingForInput ? 1 : STATUS_PRIORITY[a.status]) ?? 5;
+  const pb = (b.isWaitingForInput ? 1 : STATUS_PRIORITY[b.status]) ?? 5;
+  if (pa !== pb) return pa < pb;
+  return a.lastActivity > b.lastActivity;
+}
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   Read: "Reading files",
@@ -106,6 +131,21 @@ export const useAgentActivityStore = create<
 
   getSessionForPath: (projectPath) =>
     get().sessions[normalizePathKey(projectPath)],
+
+  getProjectSession: (projectPath) => {
+    const sessions = get().sessions;
+    const projectKey = normalizePathKey(projectPath);
+    const prefix = projectKey + "/.claude/worktrees/";
+    // Collect root session + all worktree sessions for this project
+    let best: AgentSessionState | undefined;
+    for (const [key, session] of Object.entries(sessions)) {
+      if (key !== projectKey && !key.startsWith(prefix)) continue;
+      if (!best || sessionBusier(session, best)) {
+        best = session;
+      }
+    }
+    return best;
+  },
 
   clearSession: (projectPath) => {
     const key = normalizePathKey(projectPath);

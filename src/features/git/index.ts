@@ -25,6 +25,7 @@ export { useGitStore } from "./stores/gitStore";
 export {
   useAgentActivityStore,
   normalizePathKey,
+  toProjectPathKey,
 } from "./stores/agentActivityStore";
 export type { AgentStatus, AgentSessionState } from "./stores/agentActivityStore";
 export { useMergeStore } from "./stores/mergeStore";

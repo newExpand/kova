@@ -35,7 +35,6 @@ import { useAppStore } from "../../stores/appStore";
 import { useProjectStore } from "../../features/project/stores/projectStore";
 import {
   useAgentActivityStore,
-  normalizePathKey,
   AgentStatusBadge,
 } from "../../features/git";
 import { useSshStore, SshConnectionForm } from "../../features/ssh";
@@ -325,18 +324,20 @@ function Sidebar() {
     [activeId, projects],
   );
 
-  // Agent activity state
+  // Agent activity state — use getProjectSession for project-level aggregation
+  // (includes worktree sessions), keyed by sessions reference for reactivity.
   const agentSessions = useAgentActivityStore((s) => s.sessions);
+  const getProjectSession = useAgentActivityStore((s) => s.getProjectSession);
 
   const activeAgentCount = useMemo(
-    () => projects.filter((p) => isAgentBusy(agentSessions[normalizePathKey(p.path)])).length,
-    [projects, agentSessions],
+    () => projects.filter((p) => isAgentBusy(getProjectSession(p.path))).length,
+    [projects, agentSessions, getProjectSession],
   );
 
   const sortedAgentProjects = useMemo(() => {
     return [...projects].sort((a, b) => {
-      const sessionA = agentSessions[normalizePathKey(a.path)];
-      const sessionB = agentSessions[normalizePathKey(b.path)];
+      const sessionA = getProjectSession(a.path);
+      const sessionB = getProjectSession(b.path);
 
       const prioDiff = agentSortPriority(sessionA) - agentSortPriority(sessionB);
       if (prioDiff !== 0) return prioDiff;
@@ -344,7 +345,7 @@ function Sidebar() {
       // Same priority: most recent activity first
       return (sessionB?.lastActivity ?? "").localeCompare(sessionA?.lastActivity ?? "");
     });
-  }, [projects, agentSessions]);
+  }, [projects, agentSessions, getProjectSession]);
 
   // SSH state — individual selectors to avoid re-render loops
   const sshConnections = useSshStore((s) => s.connections);
@@ -680,7 +681,7 @@ function Sidebar() {
             {sortedAgentProjects.map((project, index) => {
               const colorVar =
                 COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
-              const session = agentSessions[normalizePathKey(project.path)];
+              const session = getProjectSession(project.path);
               const isItemActive =
                 selectedId === project.id ||
                 location.pathname.startsWith(`/projects/${project.id}`);
