@@ -1,6 +1,6 @@
 import { BrowserRouter, useNavigate, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+
 import { AppProviders } from "./providers";
 import { AppRoutes } from "./routes";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -151,78 +151,63 @@ function AppShell() {
               <AppRoutes />
             </div>
             {/* File viewer split panel */}
-            <AnimatePresence>
-              {isFileViewerPanelOpen && (
-                <motion.div
-                  key="split-panel"
-                  className={cn(
-                    "flex overflow-hidden",
-                    isFileViewerMaximized ? "flex-1" : "flex-shrink-0",
-                  )}
-                  initial={{ width: 0 }}
-                  animate={{
-                    width: isFileViewerMaximized ? "100%" : fileViewerPanelWidth + DIVIDER_WIDTH,
-                  }}
-                  exit={{ width: 0 }}
-                  transition={{
-                    width: {
-                      duration: isResizing || isFileViewerMaximized ? 0 : 0.35,
-                      ease: [0.16, 1, 0.3, 1],
-                    },
-                  }}
-                >
-                  {!isFileViewerMaximized && (
-                    <SplitDivider onMouseDown={handleDividerMouseDown} isResizing={isResizing} />
-                  )}
-                  <motion.div
-                    className="flex flex-1 min-w-0 overflow-hidden glass-surface border-l border-white/[0.10]"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ opacity: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } }}
-                  >
-                    <ErrorBoundary
-                      fallback={(error, reset) => (
-                        <div className="flex flex-1 items-center justify-center p-4">
-                          <div className="rounded-lg glass-elevated px-4 py-3 text-xs text-text-secondary">
-                            <p>Failed to load file viewer.</p>
-                            <p className="mt-1 text-text-muted truncate max-w-xs" title={error.message}>
-                              {error.message}
-                            </p>
-                            <div className="mt-2 flex gap-2">
-                              <button
-                                type="button"
-                                onClick={reset}
-                                className="text-primary hover:underline"
-                              >
-                                Retry
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => useAppStore.getState().setFileViewerPanelOpen(false)}
-                                className="text-text-muted hover:underline"
-                              >
-                                Dismiss
-                              </button>
-                            </div>
+            {isFileViewerPanelOpen && (
+              <div
+                className={cn(
+                  "flex overflow-hidden",
+                  isFileViewerMaximized ? "flex-1" : "flex-shrink-0",
+                )}
+                style={
+                  isFileViewerMaximized
+                    ? undefined
+                    : { width: fileViewerPanelWidth + DIVIDER_WIDTH }
+                }
+              >
+                {!isFileViewerMaximized && (
+                  <SplitDivider onMouseDown={handleDividerMouseDown} isResizing={isResizing} />
+                )}
+                <div className="flex flex-1 min-w-0 overflow-hidden glass-surface border-l border-white/[0.10]">
+                  <ErrorBoundary
+                    fallback={(error, reset) => (
+                      <div className="flex flex-1 items-center justify-center p-4">
+                        <div className="rounded-lg glass-elevated px-4 py-3 text-xs text-text-secondary">
+                          <p>Failed to load file viewer.</p>
+                          <p className="mt-1 text-text-muted truncate max-w-xs" title={error.message}>
+                            {error.message}
+                          </p>
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={reset}
+                              className="text-primary hover:underline"
+                            >
+                              Retry
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => useAppStore.getState().setFileViewerPanelOpen(false)}
+                              className="text-text-muted hover:underline"
+                            >
+                              Dismiss
+                            </button>
                           </div>
                         </div>
-                      )}
+                      </div>
+                    )}
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="flex flex-1 items-center justify-center">
+                          <span className="text-sm text-text-muted animate-pulse">Loading...</span>
+                        </div>
+                      }
                     >
-                      <Suspense
-                        fallback={
-                          <div className="flex flex-1 items-center justify-center">
-                            <span className="text-sm text-text-muted animate-pulse">Loading...</span>
-                          </div>
-                        }
-                      >
-                        <FileViewerPanel />
-                      </Suspense>
-                    </ErrorBoundary>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                      <FileViewerPanel />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

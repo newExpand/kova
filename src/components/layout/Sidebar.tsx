@@ -143,7 +143,6 @@ interface SortableProjectItemProps {
   isActive: boolean;
   collapsed: boolean;
   colorVar: string;
-  index: number;
   shortcutDigit?: number;
   dropPosition?: "above" | "below" | null;
   onSelect: () => void;
@@ -156,7 +155,6 @@ function SortableProjectItem({
   isActive,
   collapsed,
   colorVar,
-  index,
   shortcutDigit,
   dropPosition,
   onSelect,
@@ -171,7 +169,6 @@ function SortableProjectItem({
     transition,
     opacity: isDragging ? 0.4 : 1,
     '--item-color': colorVar,
-    '--stagger-index': Math.min(index, 6),
   } as React.CSSProperties;
 
   return (
@@ -189,7 +186,7 @@ function SortableProjectItem({
         }
       }}
       className={cn(
-        "relative sidebar-item-stagger flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-grab active:cursor-grabbing",
+        "relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-grab active:cursor-grabbing",
         isDragging && "border border-dashed border-white/20 rounded-lg",
         isActive
           ? "sidebar-item-active text-text"
@@ -507,7 +504,7 @@ function Sidebar() {
   return (
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-white/[0.10] glass-surface relative z-10 transition-[width] duration-200",
+        "flex h-full flex-col border-r border-white/[0.10] glass-surface relative z-10",
         sidebarWidthClass(hidden, collapsed),
       )}
     >
@@ -635,7 +632,6 @@ function Sidebar() {
                       isActive={isItemActive}
                       collapsed={collapsed}
                       colorVar={colorVar}
-                      index={index}
                       shortcutDigit={shortcutDigit}
                       dropPosition={dropPosition}
                       onSelect={() => handleSelectProject(project.id)}
@@ -683,7 +679,7 @@ function Sidebar() {
               </p>
             )}
 
-            {sortedAgentProjects.map((project, index) => {
+            {sortedAgentProjects.map((project) => {
               const colorVar =
                 COLOR_PALETTE[project.colorIndex] ?? COLOR_PALETTE[0];
               const session = getProjectSession(project.path);
@@ -706,14 +702,13 @@ function Sidebar() {
                   }}
                   onMouseEnter={preloadTerminal}
                   className={cn(
-                    "sidebar-item-stagger sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-pointer",
+                    "sidebar-item-hover group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm cursor-pointer",
                     isAgentActive && "agent-breathing",
                     isItemActive
                       ? "sidebar-item-active text-text"
                       : "text-text-secondary hover:bg-white/[0.08] hover:text-text",
                   )}
                   style={{
-                    '--stagger-index': Math.min(index, 6),
                     '--item-color': colorVar,
                     ...(isAgentActive ? { '--breath-color': 'oklch(0.65 0.18 145 / 0.25)' } : {}),
                   } as React.CSSProperties}
