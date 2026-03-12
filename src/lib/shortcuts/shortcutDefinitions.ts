@@ -37,6 +37,7 @@ export type ShortcutId =
   | "tmux-split-horizontal"
   | "tmux-split-vertical"
   | "tmux-close-pane"
+  | "toggle-sidebar-tab"
   | "editor-open-file"
   | "editor-open-url";
 
@@ -108,6 +109,13 @@ export const SHORTCUTS: ShortcutDefinition[] = [
     key: "1~9, 0",
     modifiers: { meta: true },
     label: "Quick Project Switch",
+    category: "navigation",
+  },
+  {
+    id: "toggle-sidebar-tab",
+    key: "j",
+    modifiers: { meta: true },
+    label: "Projects ↔ Agents",
     category: "navigation",
   },
   {

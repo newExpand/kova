@@ -72,6 +72,13 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
       }
     }
 
+    // Cmd+J — Toggle sidebar tab (Projects ↔ Agents)
+    if (e.metaKey && e.key === "j") {
+      e.preventDefault();
+      const appState = useAppStore.getState();
+      appState.setSidebarMode(appState.sidebarMode === "projects" ? "agents" : "projects");
+    }
+
     // Cmd+B — Toggle sidebar visibility
     if (e.metaKey && e.key === "b") {
       e.preventDefault();
