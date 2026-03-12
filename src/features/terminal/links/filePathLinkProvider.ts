@@ -106,7 +106,9 @@ export function createFilePathLinkProvider(
         leave: () => {
           onLinkHoverChange?.(false);
         },
-        activate: () => {
+        activate: (event: MouseEvent) => {
+          // Require Cmd+Click to prevent accidental panel opens
+          if (!event.metaKey) return;
           // Resolve path
           let relativePath: string;
           if (f.filePath.startsWith("/")) {

@@ -1,10 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useGitStore } from "../stores/gitStore";
+import { useAgentFileTrackingStore } from "../../files";
 import type { GitStatus } from "../../../lib/tauri/commands";
 
-/** Fingerprint for detecting meaningful status changes beyond just isDirty */
+/** Fingerprint for detecting meaningful status changes beyond just isDirty.
+ *  Includes modifiedPaths length to catch file-set changes that preserve counts
+ *  (e.g. commit file A + modify file B = same counts, different paths). */
 function statusFingerprint(s: GitStatus): string {
-  return `${s.isDirty}:${s.stagedCount}:${s.unstagedCount}:${s.untrackedCount}`;
+  return `${s.isDirty}:${s.stagedCount}:${s.unstagedCount}:${s.untrackedCount}:${s.modifiedPaths.length}`;
 }
 
 /** How many polling ticks between automatic `git fetch` calls. */
@@ -62,11 +65,20 @@ export function useGitPolling(
           const status = await refreshStatus(projectPath);
           if (status) {
             lastFingerprintRef.current = statusFingerprint(status);
+            useAgentFileTrackingStore
+              .getState()
+              .reconcileWithGitStatus(projectPath, status.modifiedPaths);
           }
         } else {
-          // Normal tick: only refresh if local status changed
+          // Normal tick: only refresh graph if local status changed
           const status = await refreshStatus(projectPath);
           if (!status) return;
+
+          // Always reconcile working set — file-set can change without
+          // count changes (e.g. commit A + modify B = same counts).
+          useAgentFileTrackingStore
+            .getState()
+            .reconcileWithGitStatus(projectPath, status.modifiedPaths);
 
           const fp = statusFingerprint(status);
           const changed = lastFingerprintRef.current !== fp;

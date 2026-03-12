@@ -3,7 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import type { CreateProjectInput } from "../types";
+import type { CreateProjectInput, AgentType } from "../types";
+import { AGENT_TYPES, DEFAULT_AGENT_TYPE } from "../../../lib/tauri/commands";
 
 interface ProjectFormProps {
   onSubmit: (input: CreateProjectInput) => void;
@@ -14,6 +15,7 @@ interface ProjectFormProps {
 function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
+  const [agentType, setAgentType] = useState<AgentType>(DEFAULT_AGENT_TYPE);
 
   const handlePickFolder = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
@@ -29,7 +31,7 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !path.trim()) return;
-    onSubmit({ name: name.trim(), path: path.trim() });
+    onSubmit({ name: name.trim(), path: path.trim(), agentType });
   };
 
   return (
@@ -60,6 +62,25 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
           <Button type="button" variant="outline" size="sm" onClick={handlePickFolder}>
             Browse
           </Button>
+        </div>
+      </div>
+
+      {/* Agent Type */}
+      <div className="flex flex-col gap-3">
+        <Label>AI Agent</Label>
+        <div className="flex gap-2">
+          {(Object.keys(AGENT_TYPES) as AgentType[]).map((type) => (
+            <Button
+              key={type}
+              type="button"
+              variant={agentType === type ? "default" : "outline"}
+              size="sm"
+              className="flex-1"
+              onClick={() => setAgentType(type)}
+            >
+              {AGENT_TYPES[type].label}
+            </Button>
+          ))}
         </div>
       </div>
 

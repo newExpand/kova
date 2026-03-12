@@ -1,7 +1,9 @@
 use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
+use crate::models::agent_type::AgentType;
 use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
+use crate::services::pane_monitor;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -10,16 +12,21 @@ pub fn start_worktree_task(
     session_name: String,
     task_name: String,
     project_path: String,
+    agent_type: Option<AgentType>,
 ) -> Result<WorktreeTaskResult, AppError> {
-    services::agent::start_worktree_task(&session_name, &task_name, &project_path, Some(app))
+    let agent = agent_type.unwrap_or_default();
+    services::agent::start_worktree_task(&session_name, &task_name, &project_path, agent, Some(app))
 }
 
 #[tauri::command]
 pub fn restore_worktree_windows(
+    app: AppHandle,
     session_name: String,
     project_path: String,
+    agent_type: Option<AgentType>,
 ) -> Result<RestoreResult, AppError> {
-    services::agent::restore_worktree_windows(&session_name, &project_path)
+    let agent = agent_type.unwrap_or_default();
+    services::agent::restore_worktree_windows(&session_name, &project_path, agent, Some(app))
 }
 
 #[tauri::command]
@@ -71,8 +78,9 @@ pub fn send_keys_to_tmux_window_delayed(
     session_name: String,
     window_name: String,
     keys: String,
+    agent_type: Option<AgentType>,
 ) -> Result<(), AppError> {
-    services::tmux::send_keys_to_window_with_delay(&session_name, &window_name, &keys)
+    services::tmux::send_keys_to_window_with_delay(&session_name, &window_name, &keys, agent_type)
 }
 
 #[tauri::command]
@@ -118,4 +126,14 @@ pub fn check_rebase_status(worktree_path: String) -> Result<RebaseStatusResult, 
 #[tauri::command]
 pub fn prune_stale_worktrees(repo_path: String) -> Result<(), AppError> {
     services::git::prune_worktrees(std::path::Path::new(&repo_path))
+}
+
+#[tauri::command]
+pub fn start_session_monitoring(
+    app: AppHandle,
+    session_name: String,
+    project_path: String,
+) -> Result<(), AppError> {
+    pane_monitor::watch_session_agents(app, session_name, project_path);
+    Ok(())
 }

@@ -11,8 +11,5 @@ export type {
 // Store
 export { useTmuxStore } from "./stores/tmuxStore";
 
-// Components
-export { SessionManagerPage } from "./components/SessionManagerPage";
-
 // Hooks
 export { useTmuxSessions } from "./hooks/useTmuxSessions";

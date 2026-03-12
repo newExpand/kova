@@ -1,5 +1,6 @@
 use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
+use crate::models::agent_type::AgentType;
 use crate::services::{git, tmux};
 use std::path::Path;
 use tracing::{info, warn};
@@ -38,14 +39,16 @@ fn extract_task_name(worktree_path: &str) -> Option<String> {
 }
 
 /// Start a new worktree agent task by creating a named tmux window
-/// and launching `claude --worktree <name>` inside it.
+/// and launching the specified agent inside it.
 ///
-/// Claude Code will handle worktree creation (`.claude/worktrees/<name>/`)
-/// and branch management (`worktree-<name>`).
+/// Only Claude Code supports worktrees (`.claude/worktrees/<name>/`)
+/// and branch management (`worktree-<name>`). Other agents launch without
+/// worktree support.
 pub fn start_worktree_task(
     session_name: &str,
     task_name: &str,
     project_path: &str,
+    agent_type: AgentType,
     app_handle: Option<tauri::AppHandle>,
 ) -> Result<WorktreeTaskResult, AppError> {
     validate_task_name(task_name)?;
@@ -53,27 +56,42 @@ pub fn start_worktree_task(
     // Create a named window in the project session
     tmux::create_window_named(session_name, task_name, project_path)?;
 
-    // Send claude command with --dangerously-skip-permissions (matches main session behavior)
-    let claude_cmd = format!("claude --dangerously-skip-permissions --worktree {}", task_name);
-    if let Err(e) = tmux::send_keys_to_window(session_name, task_name, &claude_cmd) {
+    // Send agent command (with worktree flag for Claude Code only)
+    let agent_cmd = agent_type.worktree_command(task_name);
+    if let Err(e) = tmux::send_keys_to_window(session_name, task_name, &agent_cmd) {
         warn!(
-            "Failed to send claude command to window '{}': {}",
+            "Failed to send agent command to window '{}': {}",
             task_name, e
         );
-        // Window is created but Claude didn't start — user can type manually
+        // Window is created but agent didn't start — user can type manually
     }
 
-    // Schedule background hook injection for when the worktree directory appears.
-    // Claude Code creates the worktree asynchronously; the polling thread waits for it.
-    crate::services::hooks::inject_hooks_for_worktree_when_ready(
-        project_path.to_string(),
-        task_name.to_string(),
-        app_handle,
-    );
+    // Schedule background hook injection only for agents that support hooks
+    if agent_type.supports_hooks() {
+        crate::services::hooks::inject_hooks_for_worktree_when_ready(
+            project_path.to_string(),
+            task_name.to_string(),
+            app_handle,
+        );
+    } else if let Some(ref app) = app_handle {
+        // Agents without hook support: use pane polling for basic activity detection
+        crate::services::pane_monitor::watch_agent_pane(
+            app.clone(),
+            session_name.to_string(),
+            task_name.to_string(),
+            project_path.to_string(),
+            agent_type,
+        );
+    } else if !agent_type.supports_hooks() {
+        warn!(
+            "No app_handle for non-hook agent '{}' in task '{}': pane monitoring skipped",
+            agent_type.display_name(), task_name
+        );
+    }
 
     info!(
-        "Started worktree task '{}' in session '{}'",
-        task_name, session_name
+        "Started worktree task '{}' in session '{}' with agent: {}",
+        task_name, session_name, agent_type.display_name()
     );
     Ok(WorktreeTaskResult {
         window_name: task_name.to_string(),
@@ -83,11 +101,13 @@ pub fn start_worktree_task(
 
 /// Restore tmux windows for existing worktrees when a session is recreated.
 ///
-/// Scans for `.claude/worktrees/*` entries and creates a named window + Claude
+/// Scans for `.claude/worktrees/*` entries and creates a named window + agent
 /// for each one. Returns to the first (main) window after restoration.
 pub fn restore_worktree_windows(
     session_name: &str,
     project_path: &str,
+    agent_type: AgentType,
+    app_handle: Option<tauri::AppHandle>,
 ) -> Result<RestoreResult, AppError> {
     let repo_path = Path::new(project_path);
     let worktrees = git::get_worktrees(repo_path)?;
@@ -99,33 +119,48 @@ pub fn restore_worktree_windows(
             // Create a named window with the worktree cwd
             match tmux::create_window_named(session_name, &task_name, &wt.path) {
                 Ok(()) => {
-                    // Send claude command to the new window
-                    let claude_cmd = "claude --dangerously-skip-permissions";
+                    // Send agent command to the new window
+                    let agent_cmd = agent_type.base_command();
                     if let Err(e) =
-                        tmux::send_keys_to_window(session_name, &task_name, claude_cmd)
+                        tmux::send_keys_to_window(session_name, &task_name, agent_cmd)
                     {
                         warn!(
-                            "Failed to send claude to restored window '{}': {}",
+                            "Failed to send agent to restored window '{}': {}",
                             task_name, e
                         );
                     }
-                    // Inject hooks for this worktree (path exists since we're restoring)
-                    match crate::services::event_server::read_port_from_file() {
-                        Ok(port) => {
-                            let wt_path = Path::new(&wt.path);
-                            if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                    // Inject hooks only for agents that support hooks
+                    if agent_type.supports_hooks() {
+                        match crate::services::event_server::read_port_from_file() {
+                            Ok(port) => {
+                                let wt_path = Path::new(&wt.path);
+                                if let Err(e) = crate::services::hooks::inject_hooks(wt_path, port) {
+                                    warn!(
+                                        "Failed to inject hooks for restored worktree '{}': {}",
+                                        task_name, e
+                                    );
+                                }
+                            }
+                            Err(e) => {
                                 warn!(
-                                    "Failed to inject hooks for restored worktree '{}': {}",
+                                    "Skipping hook injection for restored worktree '{}': {}",
                                     task_name, e
                                 );
                             }
                         }
-                        Err(e) => {
-                            warn!(
-                                "Skipping hook injection for restored worktree '{}': {}",
-                                task_name, e
-                            );
-                        }
+                    } else if let Some(ref app) = app_handle {
+                        crate::services::pane_monitor::watch_agent_pane(
+                            app.clone(),
+                            session_name.to_string(),
+                            task_name.clone(),
+                            project_path.to_string(),
+                            agent_type,
+                        );
+                    } else if !agent_type.supports_hooks() {
+                        warn!(
+                            "No app_handle for non-hook agent in restored worktree '{}': pane monitoring skipped",
+                            task_name
+                        );
                     }
                     restored_names.push(task_name);
                 }
@@ -145,8 +180,8 @@ pub fn restore_worktree_windows(
 
     let count = restored_names.len() as u32;
     info!(
-        "Restored {} worktree windows in session '{}'",
-        count, session_name
+        "Restored {} worktree windows in session '{}' with agent: {}",
+        count, session_name, agent_type.display_name()
     );
 
     Ok(RestoreResult {

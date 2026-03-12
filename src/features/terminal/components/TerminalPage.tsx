@@ -10,12 +10,15 @@ import { WindowToolbar } from "./WindowToolbar";
 import { NewPaneDialog } from "./NewPaneDialog";
 import { ThemePickerPanel } from "./ThemePickerPanel";
 import { Button } from "../../../components/ui/button";
+import { AGENT_TYPES, DEFAULT_AGENT_TYPE, type AgentType } from "../../../lib/tauri/commands";
 import {
   splitTmuxPaneVertical,
   splitTmuxPaneHorizontal,
   createTmuxWindow,
   sendTmuxKeys,
+  startWorktreeTask,
   restoreWorktreeWindows,
+  startSessionMonitoring,
   checkSshRemoteTmux,
   remoteTmuxSplitPaneVertical,
   remoteTmuxSplitPaneHorizontal,
@@ -24,7 +27,6 @@ import {
   remoteTmuxCloseWindow,
   remoteTmuxNextWindow,
   remoteTmuxPreviousWindow,
-  remoteTmuxListWindows,
   remoteTmuxSendKeys,
 } from "../../../lib/tauri/commands";
 import type { TerminalConfig, PaneAction } from "../types";
@@ -233,15 +235,15 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       cols: 80,
       rows: 24,
       cwd: project?.path,
-      initialCommand: isNewSession
-        ? "claude --dangerously-skip-permissions"
+      initialCommand: isNewSession && project?.agentType
+        ? AGENT_TYPES[project.agentType].command
         : undefined,
     });
 
-    if (isNewSession && project?.path) {
+    if (isNewSession && project?.path && project?.agentType) {
       setTimeout(async () => {
         try {
-          const result = await restoreWorktreeWindows(name, project.path);
+          const result = await restoreWorktreeWindows(name, project.path, project.agentType);
           if (result.restoredCount > 0) {
             console.log(
               `Restored ${result.restoredCount} worktree windows: ${result.worktreeNames.join(", ")}`,
@@ -261,6 +263,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
     activeConfig,
     project?.name,
     project?.path,
+    project?.agentType,
     projectId,
     handleConnect,
     projectSessions,
@@ -286,10 +289,14 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // not for general SSH failures (which would cause spawn loops).
   const wakePending = useRef(false);
   const wakePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether session monitoring has been started for this connection cycle.
+  // Reset in handleRetry() so monitoring restarts after reconnect.
+  const sessionMonitorStarted = useRef(false);
 
   const handleRetry = useCallback(() => {
     autoConnectAttempted.current = false;
     tmuxReconnectAttempted.current = false;
+    sessionMonitorStarted.current = false;
     wakePending.current = false;
     if (wakePendingTimerRef.current) {
       clearTimeout(wakePendingTimerRef.current);
@@ -337,12 +344,21 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // --- Auto-reconnect on session disconnect ---
   const consecutiveDisconnects = useRef(0);
 
+  // Start session monitoring once tmux session is confirmed connected (not before)
   useEffect(() => {
     if (status === "connected") {
       consecutiveDisconnects.current = 0;
       wakePending.current = false;
+
+      // Start pane monitoring for Codex/Gemini detection (fire-and-forget, once per mount)
+      if (!isSshMode && !sessionMonitorStarted.current && activeConfig?.sessionName && project?.path) {
+        sessionMonitorStarted.current = true;
+        startSessionMonitoring(activeConfig.sessionName, project.path).catch((e) => {
+          console.warn("Failed to start session monitoring:", e);
+        });
+      }
     }
-  }, [status]);
+  }, [status, isSshMode, activeConfig?.sessionName, project?.path]);
 
   useEffect(() => {
     if (status === "disconnected") {
@@ -444,13 +460,12 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       onCloseWindow: withErrorSurface(remoteTmuxCloseWindow, "Close window"),
       onNextWindow: withErrorSurface(remoteTmuxNextWindow, "Next window"),
       onPrevWindow: withErrorSurface(remoteTmuxPreviousWindow, "Previous window"),
-      onFetchWindows: () => remoteTmuxListWindows(connId, remoteSN),
       onClosePane: withErrorSurface(remoteTmuxClosePane, "Close pane"),
     };
   }, [hasRemoteTmux, activeConfig, storeKey]);
 
   const handleConfirmAction = useCallback(
-    (startClaude: boolean) => {
+    (startAgent: boolean, selectedAgentType?: AgentType, worktreeTaskName?: string) => {
       const action = pendingAction;
       const sessionName = activeConfig?.sessionName;
       const remoteSN = activeConfig?.remoteTmuxSessionName;
@@ -472,17 +487,27 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       };
 
       const executeAction = async () => {
+        const agentKey = selectedAgentType || project?.agentType || DEFAULT_AGENT_TYPE;
+
+        // Worktree path: delegate entirely to startWorktreeTask IPC
+        if (worktreeTaskName && project?.path) {
+          await startWorktreeTask(sessionName, worktreeTaskName, project.path, agentKey);
+          return;
+        }
+
+        const agentCommand = AGENT_TYPES[agentKey].command;
+
         if (remoteSN && connId) {
           await remoteActions[action]();
-          if (startClaude) {
+          if (startAgent) {
             await new Promise((resolve) => setTimeout(resolve, 300));
-            await remoteTmuxSendKeys(connId, remoteSN, "claude --dangerously-skip-permissions");
+            await remoteTmuxSendKeys(connId, remoteSN, agentCommand);
           }
         } else if (!isSshMode) {
           await localActions[action]();
-          if (startClaude) {
+          if (startAgent) {
             await new Promise((resolve) => setTimeout(resolve, 300));
-            await sendTmuxKeys(sessionName, "claude --dangerously-skip-permissions");
+            await sendTmuxKeys(sessionName, agentCommand);
           }
         } else {
           throw new Error(
@@ -501,7 +526,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
         })
         .finally(() => refocusTerminal());
     },
-    [isSshMode, pendingAction, activeConfig, refocusTerminal, storeKey],
+    [isSshMode, pendingAction, activeConfig, refocusTerminal, storeKey, project?.agentType, project?.path],
   );
 
   const handleCancelAction = useCallback(() => {
@@ -642,12 +667,12 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
               <WindowToolbar
                 sessionName={activeConfig.sessionName}
                 disabled={status !== "connected"}
-                isActive={isActive}
                 onRequestAction={handleRequestAction}
+                title={isSshMode ? sshConnection?.name : project?.name}
+                onError={(msg) => useTerminalStore.getState().setError(storeKey, msg)}
                 onCloseWindow={remoteCallbacks.onCloseWindow}
                 onNextWindow={remoteCallbacks.onNextWindow}
                 onPrevWindow={remoteCallbacks.onPrevWindow}
-                onFetchWindows={remoteCallbacks.onFetchWindows}
               />
               <PaneToolbar
                 sessionName={activeConfig.sessionName}
@@ -679,6 +704,9 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           action={pendingAction}
           onConfirm={handleConfirmAction}
           onCancel={handleCancelAction}
+          defaultAgentType={project?.agentType || DEFAULT_AGENT_TYPE}
+          projectPath={project?.path}
+          isSshMode={isSshMode}
         />
       )}
     </div>

@@ -97,6 +97,9 @@ pub struct GitStatus {
     pub staged_count: u32,
     pub unstaged_count: u32,
     pub untracked_count: u32,
+    /// Union of all file paths from `git status --porcelain` (staged, unstaged, untracked).
+    /// Used by frontend to reconcile the Working Set after external commits.
+    pub modified_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

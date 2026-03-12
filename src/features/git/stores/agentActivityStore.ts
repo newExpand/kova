@@ -1,12 +1,20 @@
 import { create } from "zustand";
 import type { HookEvent } from "../../../lib/event-bridge/notification-events";
+import type { AgentType } from "../../../lib/tauri/commands";
 import { getPayloadString } from "../../../lib/payload-helpers";
+
+/** Map snake_case DB agent type strings to camelCase AgentType union values. */
+const AGENT_DB_TO_IPC: Record<string, AgentType> = {
+  claude_code: "claudeCode",
+  codex_cli: "codexCli",
+  gemini_cli: "geminiCli",
+};
 
 // ---------------------------------------------------------------------------
 // Path normalization
 // ---------------------------------------------------------------------------
 
-/** Normalize path key to reconcile canonical vs git worktree path differences */
+/** Normalize path key — preserves worktree identity for per-session isolation. */
 export function normalizePathKey(path: string): string {
   let normalized = path.replace(/\/+$/, "");
   // macOS APFS firmlink: /System/Volumes/Data/Users → /Users
@@ -14,6 +22,15 @@ export function normalizePathKey(path: string): string {
     normalized = normalized.slice("/System/Volumes/Data".length);
   }
   return normalized;
+}
+
+/** Extract the parent project path from a worktree path.
+ *  e.g. "/project/.claude/worktrees/task" → "/project"
+ *  Returns the original path if it is not a worktree path. */
+export function toProjectPathKey(path: string): string {
+  const normalized = normalizePathKey(path);
+  const idx = normalized.indexOf("/.claude/worktrees/");
+  return idx !== -1 ? normalized.slice(0, idx) : normalized;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,6 +50,8 @@ export interface AgentSessionState {
   isWaitingForInput: boolean;
   lastActivity: string;
   lastMessage: string | null;
+  /** Runtime-detected agent type from pane monitor (e.g. "codex_cli", "gemini_cli", "claude_code") */
+  detectedAgentType?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +71,8 @@ interface AgentActivityState {
 interface AgentActivityActions {
   pushActivity: (event: HookEvent) => void;
   getSessionForPath: (projectPath: string) => AgentSessionState | undefined;
+  /** Find the most recently active session for a project, including its worktree sessions. */
+  getProjectSession: (projectPath: string) => AgentSessionState | undefined;
   clearSession: (projectPath: string) => void;
   reset: () => void;
 }
@@ -72,6 +93,20 @@ const doneTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Status priority for project-level aggregation: lower = busier.
+ *  Used by getProjectSession to pick the most representative session. */
+const STATUS_PRIORITY: Record<string, number> = {
+  active: 0, loading: 0, ready: 2, done: 3, error: 4, idle: 5,
+};
+
+/** Returns true if `a` is busier (or equally busy but more recent) than `b`. */
+function sessionBusier(a: AgentSessionState, b: AgentSessionState): boolean {
+  const pa = (a.isWaitingForInput ? 1 : STATUS_PRIORITY[a.status]) ?? 5;
+  const pb = (b.isWaitingForInput ? 1 : STATUS_PRIORITY[b.status]) ?? 5;
+  if (pa !== pb) return pa < pb;
+  return a.lastActivity > b.lastActivity;
+}
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   Read: "Reading files",
@@ -106,6 +141,22 @@ export const useAgentActivityStore = create<
 
   getSessionForPath: (projectPath) =>
     get().sessions[normalizePathKey(projectPath)],
+
+  getProjectSession: (projectPath) => {
+    const sessions = get().sessions;
+    const projectKey = normalizePathKey(projectPath);
+    const worktreePrefix = projectKey + "/.claude/worktrees/";
+    const agentPrefix = projectKey + "/.agent/";
+    // Collect root session + worktree sessions + agent monitor sessions
+    let best: AgentSessionState | undefined;
+    for (const [key, session] of Object.entries(sessions)) {
+      if (key !== projectKey && !key.startsWith(worktreePrefix) && !key.startsWith(agentPrefix)) continue;
+      if (!best || sessionBusier(session, best)) {
+        best = session;
+      }
+    }
+    return best;
+  },
 
   clearSession: (projectPath) => {
     const key = normalizePathKey(projectPath);
@@ -146,6 +197,14 @@ export const useAgentActivityStore = create<
       const sessions = { ...state.sessions };
       const now = new Date().toISOString();
 
+      // Parse detectedAgentType from path suffix (e.g. "/project/.agent/codex_cli")
+      // Convert from snake_case (DB/Rust) to camelCase (TS AgentType) for consistency
+      const agentSuffixMatch = path.match(/\/.agent\/([^/]+)$/);
+      const rawSuffix = agentSuffixMatch?.[1];
+      const detectedFromPath = rawSuffix
+        ? (AGENT_DB_TO_IPC[rawSuffix] ?? rawSuffix)
+        : undefined;
+
       // Ensure session exists for any activity event (handles mid-session app restart)
       function ensureSession(): AgentSessionState {
         if (!sessions[path]) {
@@ -160,6 +219,7 @@ export const useAgentActivityStore = create<
             isWaitingForInput: false,
             lastActivity: now,
             lastMessage: null,
+            detectedAgentType: detectedFromPath ?? "claudeCode",
           };
         }
         return sessions[path];
@@ -198,6 +258,7 @@ export const useAgentActivityStore = create<
             isWaitingForInput: false,
             lastActivity: now,
             lastMessage: "Session started",
+            detectedAgentType: detectedFromPath ?? "claudeCode",
           };
           break;
         }
@@ -279,6 +340,15 @@ export const useAgentActivityStore = create<
           break;
         }
 
+        case "AgentActive": {
+          const session = ensureSession();
+          session.status = "active";
+          session.lastActivity = now;
+          session.lastMessage = "Working...";
+          sessions[path] = { ...session };
+          break;
+        }
+
         case "Stop": {
           const session = ensureSession();
           session.status = "done";
@@ -301,6 +371,13 @@ export const useAgentActivityStore = create<
             session.lastMessage = endMsg;
           }
           sessions[path] = { ...session };
+          break;
+        }
+
+        default: {
+          if (import.meta.env.DEV) {
+            console.warn(`[AgentActivity] Unhandled event type: ${event.eventType}`);
+          }
           break;
         }
       }

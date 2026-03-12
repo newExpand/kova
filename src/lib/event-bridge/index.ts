@@ -37,6 +37,7 @@ const AGENT_ACTIVITY_TYPES = new Set([
   "TeammateIdle",
   "SessionStart",
   "SessionEnd",
+  "AgentActive",
   "Stop",
 ]);
 

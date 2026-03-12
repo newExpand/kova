@@ -201,6 +201,25 @@ impl DbConnection {
             info!("Migration 007 already applied, skipping");
         }
 
+        // Check if migration 008 has been applied
+        let version_8: Option<i32> = conn
+            .query_row(
+                "SELECT version FROM _migrations WHERE version = 8",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if version_8.is_none() {
+            info!("Running migration 008_project_agent_type.sql");
+            let migration_sql = include_str!("migrations/008_project_agent_type.sql");
+            conn.execute_batch(migration_sql)?;
+            conn.execute("INSERT INTO _migrations (version) VALUES (8)", [])?;
+            info!("Migration 008 applied successfully");
+        } else {
+            info!("Migration 008 already applied, skipping");
+        }
+
         Ok(())
     }
 }

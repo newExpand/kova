@@ -381,44 +381,6 @@ fn process_request(
                     }
                 }
 
-                // Store agent activity events in dedicated table
-                // Subset of HOOK_TYPES — only event types relevant for agent activity tracking.
-                const AGENT_ACTIVITY_TYPES: &[&str] = &[
-                    "PostToolUse",
-                    "PostToolUseFailure",
-                    "Notification",
-                    "SubagentStart",
-                    "SubagentStop",
-                    "TaskCompleted",
-                    "TeammateIdle",
-                    "SessionStart",
-                    "SessionEnd",
-                ];
-                if AGENT_ACTIVITY_TYPES.contains(&hook_event.event_type.as_str()) {
-                    let session_id = hook_event
-                        .payload
-                        .get("session_id")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    let summary = hook_event
-                        .payload
-                        .get("message")
-                        .or_else(|| hook_event.payload.get("tool_name"))
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    if let Err(e) = crate::services::agent_activity::store_activity(
-                        &db.conn,
-                        &project.id,
-                        &hook_event.event_type,
-                        session_id.as_deref(),
-                        None,
-                        summary.as_deref(),
-                        Some(&hook_event.payload.to_string()),
-                    ) {
-                        warn!("Failed to store agent activity: {}", e);
-                    }
-                }
             }
             Ok(None) => warn!("No active project for path: {}", hook_event.project_path),
             Err(e) => warn!("Project lookup failed: {}", e),

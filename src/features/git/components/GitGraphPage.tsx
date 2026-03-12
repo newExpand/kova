@@ -222,6 +222,7 @@ export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps)
         projectId={projectId}
         projectPath={project?.path ?? ""}
         sessionName={sessionName}
+        agentType={project?.agentType}
         hoveredBranch={hoveredBranch}
         onHoverBranch={handleHoverBranch}
         onLeaveBranch={handleLeaveBranch}

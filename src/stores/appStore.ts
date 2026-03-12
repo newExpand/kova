@@ -7,7 +7,7 @@ import { devtools } from "zustand/middleware";
 
 interface AppState {
   sidebarCollapsed: boolean;
-  sidebarMode: "projects" | "sessions";
+  sidebarMode: "projects" | "agents";
   currentRoute: string;
   isOnboarding: boolean;
   pendingProjectNavigation: string | null;
@@ -17,6 +17,7 @@ interface AppState {
   fileViewerMode: "tree" | "search";
   isContentSearchActive: boolean;
   isFileViewerMaximized: boolean;
+  sidebarHidden: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ interface AppState {
 interface AppActions {
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  setSidebarMode: (mode: "projects" | "sessions") => void;
+  setSidebarMode: (mode: "projects" | "agents") => void;
   setCurrentRoute: (route: string) => void;
   setOnboarding: (value: boolean) => void;
   setPendingProjectNavigation: (id: string | null) => void;
@@ -37,6 +38,8 @@ interface AppActions {
   setFileViewerMode: (mode: "tree" | "search") => void;
   setContentSearchActive: (active: boolean) => void;
   toggleFileViewerMaximize: () => void;
+  toggleSidebarHidden: () => void;
+  setSidebarHidden: (hidden: boolean) => void;
   reset: () => void;
 }
 
@@ -62,6 +65,7 @@ const initialState: AppState = {
   fileViewerMode: "tree",
   isContentSearchActive: false,
   isFileViewerMaximized: false,
+  sidebarHidden: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +163,16 @@ export const useAppStore = create<AppStore>()(
           undefined,
           "toggleFileViewerMaximize",
         ),
+
+      toggleSidebarHidden: () =>
+        set(
+          (state) => ({ sidebarHidden: !state.sidebarHidden }),
+          undefined,
+          "toggleSidebarHidden",
+        ),
+
+      setSidebarHidden: (hidden) =>
+        set({ sidebarHidden: hidden }, undefined, "setSidebarHidden"),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

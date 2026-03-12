@@ -69,7 +69,7 @@ export function AgentStatusBadge({
   );
 }
 
-function StatusDot({
+export function StatusDot({
   status,
   isWaiting,
 }: {

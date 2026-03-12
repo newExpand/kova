@@ -369,6 +369,7 @@ pub fn get_status(repo_path: &Path) -> Result<GitStatus, AppError> {
     let mut staged = 0u32;
     let mut unstaged = 0u32;
     let mut untracked = 0u32;
+    let mut modified_paths: Vec<String> = Vec::new();
 
     for line in output.lines() {
         if line.len() < 2 {
@@ -390,6 +391,20 @@ pub fn get_status(repo_path: &Path) -> Result<GitStatus, AppError> {
                 unstaged += 1;
             }
         }
+
+        // Extract file path (porcelain format: "XY path" or "XY old -> new")
+        // Paths with special chars are quoted: "XY \"path with spaces\""
+        if let Some(path_part) = line.get(3..) {
+            let path = if let Some(arrow_idx) = path_part.find(" -> ") {
+                &path_part[arrow_idx + 4..] // rename: use destination path
+            } else {
+                path_part
+            };
+            let path = path.trim_matches('"');
+            if !path.is_empty() {
+                modified_paths.push(path.to_string());
+            }
+        }
     }
 
     Ok(GitStatus {
@@ -397,6 +412,7 @@ pub fn get_status(repo_path: &Path) -> Result<GitStatus, AppError> {
         staged_count: staged,
         unstaged_count: unstaged,
         untracked_count: untracked,
+        modified_paths,
     })
 }
 

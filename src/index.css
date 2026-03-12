@@ -177,8 +177,8 @@ body {
     position: absolute;
     top: 2px;
     bottom: 2px;
-    left: 0;
-    width: 50%;
+    left: 2px;
+    width: calc(50% - 2px);
     border-radius: 0.375rem;
     background: rgba(255, 255, 255, 0.15);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
@@ -186,7 +186,7 @@ body {
     will-change: transform;
     pointer-events: none;
   }
-  .sidebar-tab-indicator[data-active="sessions"] {
+  .sidebar-tab-indicator[data-active="agents"] {
     transform: translateX(100%);
   }
 
@@ -273,7 +273,7 @@ body {
   .sidebar-list-enter-projects {
     animation: sidebar-list-enter-left 200ms var(--ease-out-expo) both;
   }
-  .sidebar-list-enter-sessions {
+  .sidebar-list-enter-agents {
     animation: sidebar-list-enter-right 200ms var(--ease-out-expo) both;
   }
 }
@@ -309,6 +309,7 @@ body {
 }
 
 .agent-breathing {
+  opacity: 1;
   animation: agent-breathing 2s ease-in-out infinite;
 }
 
@@ -513,7 +514,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sidebar-tab-indicator,
   .sidebar-list-enter-projects,
-  .sidebar-list-enter-sessions,
+  .sidebar-list-enter-agents,
   .sidebar-item-stagger,
   .sidebar-item-hover,
   .sidebar-context-menu,
@@ -613,16 +614,10 @@ body {
   box-shadow: none !important;
 }
 
-/* xterm.js composition view: shows composing Korean/CJK text at cursor.
- * Styled to match the terminal dark theme. */
+/* Hide xterm.js built-in composition view — we use our own imeOverlay
+ * positioned at the terminal cursor via buffer coordinates. The built-in
+ * .composition-view duplicates the preview in release WKWebView where
+ * compositionstart/end events fire natively. */
 .xterm .composition-view {
-  background: var(--terminal-comp-bg, #24283b) !important;
-  color: var(--terminal-comp-fg, #c0caf5) !important;
-  border: 1px solid var(--terminal-comp-border, #414868) !important;
-  border-radius: 4px !important;
-  padding: 2px 8px !important;
-  font-size: 14px !important;
-  line-height: 1.4 !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
-  z-index: 10 !important;
+  display: none !important;
 }

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { TerminalSquare, Command } from "lucide-react";
-import { SessionManagerPage, useTmuxStore } from "../features/tmux";
+import { useTmuxStore } from "../features/tmux";
 import { SettingsPage } from "../features/settings";
 
 // Lazy-load TerminalPage (xterm.js is in this chunk)
@@ -323,7 +323,6 @@ function AppRoutes() {
       >
         <Routes>
           <Route path="/" element={<WelcomePage />} />
-          <Route path="/sessions" element={<SessionManagerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/projects/:projectId" element={<Navigate to="terminal" replace />} />
           <Route path="/projects/:projectId/terminal" element={<></>} />

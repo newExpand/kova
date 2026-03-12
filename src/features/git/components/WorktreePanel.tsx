@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { GitWorktree } from "../../../lib/tauri/commands";
-import { selectTmuxWindow } from "../../../lib/tauri/commands";
+import type { GitWorktree, AgentType } from "../../../lib/tauri/commands";
+import { selectTmuxWindow, AGENT_TYPES, DEFAULT_AGENT_TYPE } from "../../../lib/tauri/commands";
 import { GitBranch, PanelRightClose, PanelRightOpen, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AgentStatusBadge } from "./AgentStatusBadge";
@@ -19,6 +19,7 @@ interface WorktreePanelProps {
   projectId: string;
   projectPath: string;
   sessionName: string | null;
+  agentType?: AgentType;
   hoveredBranch?: string | null;
   onHoverBranch?: (branch: string) => void;
   onLeaveBranch?: () => void;
@@ -32,6 +33,7 @@ export function WorktreePanel({
   projectId,
   projectPath,
   sessionName,
+  agentType = DEFAULT_AGENT_TYPE,
   hoveredBranch,
   onHoverBranch,
   onLeaveBranch,
@@ -251,6 +253,7 @@ export function WorktreePanel({
                           onSelectWorktreeChanges={onSelectWorktreeChanges}
                           isEntering={enteringPaths.has(wt.path)}
                           isExiting={isExiting}
+                          agentType={agentType}
                         />
                       )}
                     </WorktreeContextMenu>
@@ -267,6 +270,7 @@ export function WorktreePanel({
         onOpenChange={setDialogOpen}
         sessionName={sessionName}
         projectPath={projectPath}
+        agentType={agentType}
         onCreated={handleCreated}
       />
     </div>
@@ -325,6 +329,7 @@ function WorktreeCard({
   onSelectWorktreeChanges,
   isEntering,
   isExiting,
+  agentType = DEFAULT_AGENT_TYPE,
 }: {
   worktree: GitWorktree;
   onNavigate: () => void;
@@ -335,6 +340,7 @@ function WorktreeCard({
   onSelectWorktreeChanges?: (worktreePath: string) => void;
   isEntering?: boolean;
   isExiting?: boolean;
+  agentType?: AgentType;
 }) {
   const isClaudeWorktree = worktree.path.includes(".claude/worktrees/");
   const session = useAgentActivityStore(
@@ -380,7 +386,7 @@ function WorktreeCard({
       {/* Branch name row */}
       <div className="flex items-center gap-1.5">
         {isClaudeWorktree && (
-          <span className="text-[11px]" title="Claude Code worktree">
+          <span className="text-[11px]" title={`${AGENT_TYPES[agentType].label} worktree`}>
             🤖
           </span>
         )}
