@@ -18,6 +18,7 @@ import {
   sendTmuxKeys,
   startWorktreeTask,
   restoreWorktreeWindows,
+  startSessionMonitoring,
   checkSshRemoteTmux,
   remoteTmuxSplitPaneVertical,
   remoteTmuxSplitPaneHorizontal,
@@ -288,10 +289,14 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // not for general SSH failures (which would cause spawn loops).
   const wakePending = useRef(false);
   const wakePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track whether session monitoring has been started for this connection cycle.
+  // Reset in handleRetry() so monitoring restarts after reconnect.
+  const sessionMonitorStarted = useRef(false);
 
   const handleRetry = useCallback(() => {
     autoConnectAttempted.current = false;
     tmuxReconnectAttempted.current = false;
+    sessionMonitorStarted.current = false;
     wakePending.current = false;
     if (wakePendingTimerRef.current) {
       clearTimeout(wakePendingTimerRef.current);
@@ -339,12 +344,21 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
   // --- Auto-reconnect on session disconnect ---
   const consecutiveDisconnects = useRef(0);
 
+  // Start session monitoring once tmux session is confirmed connected (not before)
   useEffect(() => {
     if (status === "connected") {
       consecutiveDisconnects.current = 0;
       wakePending.current = false;
+
+      // Start pane monitoring for Codex/Gemini detection (fire-and-forget, once per mount)
+      if (!isSshMode && !sessionMonitorStarted.current && activeConfig?.sessionName && project?.path) {
+        sessionMonitorStarted.current = true;
+        startSessionMonitoring(activeConfig.sessionName, project.path).catch((e) => {
+          console.warn("Failed to start session monitoring:", e);
+        });
+      }
     }
-  }, [status]);
+  }, [status, isSshMode, activeConfig?.sessionName, project?.path]);
 
   useEffect(() => {
     if (status === "disconnected") {

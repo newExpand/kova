@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import type { HookEvent } from "../../../lib/event-bridge/notification-events";
+import type { AgentType } from "../../../lib/tauri/commands";
 import { getPayloadString } from "../../../lib/payload-helpers";
+
+/** Map snake_case DB agent type strings to camelCase AgentType union values. */
+const AGENT_DB_TO_IPC: Record<string, AgentType> = {
+  claude_code: "claudeCode",
+  codex_cli: "codexCli",
+  gemini_cli: "geminiCli",
+};
 
 // ---------------------------------------------------------------------------
 // Path normalization
@@ -42,6 +50,8 @@ export interface AgentSessionState {
   isWaitingForInput: boolean;
   lastActivity: string;
   lastMessage: string | null;
+  /** Runtime-detected agent type from pane monitor (e.g. "codex_cli", "gemini_cli", "claude_code") */
+  detectedAgentType?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,11 +145,12 @@ export const useAgentActivityStore = create<
   getProjectSession: (projectPath) => {
     const sessions = get().sessions;
     const projectKey = normalizePathKey(projectPath);
-    const prefix = projectKey + "/.claude/worktrees/";
-    // Collect root session + all worktree sessions for this project
+    const worktreePrefix = projectKey + "/.claude/worktrees/";
+    const agentPrefix = projectKey + "/.agent/";
+    // Collect root session + worktree sessions + agent monitor sessions
     let best: AgentSessionState | undefined;
     for (const [key, session] of Object.entries(sessions)) {
-      if (key !== projectKey && !key.startsWith(prefix)) continue;
+      if (key !== projectKey && !key.startsWith(worktreePrefix) && !key.startsWith(agentPrefix)) continue;
       if (!best || sessionBusier(session, best)) {
         best = session;
       }
@@ -186,6 +197,14 @@ export const useAgentActivityStore = create<
       const sessions = { ...state.sessions };
       const now = new Date().toISOString();
 
+      // Parse detectedAgentType from path suffix (e.g. "/project/.agent/codex_cli")
+      // Convert from snake_case (DB/Rust) to camelCase (TS AgentType) for consistency
+      const agentSuffixMatch = path.match(/\/.agent\/([^/]+)$/);
+      const rawSuffix = agentSuffixMatch?.[1];
+      const detectedFromPath = rawSuffix
+        ? (AGENT_DB_TO_IPC[rawSuffix] ?? rawSuffix)
+        : undefined;
+
       // Ensure session exists for any activity event (handles mid-session app restart)
       function ensureSession(): AgentSessionState {
         if (!sessions[path]) {
@@ -200,6 +219,7 @@ export const useAgentActivityStore = create<
             isWaitingForInput: false,
             lastActivity: now,
             lastMessage: null,
+            detectedAgentType: detectedFromPath ?? "claudeCode",
           };
         }
         return sessions[path];
@@ -238,6 +258,7 @@ export const useAgentActivityStore = create<
             isWaitingForInput: false,
             lastActivity: now,
             lastMessage: "Session started",
+            detectedAgentType: detectedFromPath ?? "claudeCode",
           };
           break;
         }
@@ -315,6 +336,15 @@ export const useAgentActivityStore = create<
             ? `${teammateName} idle`
             : "Teammate idle";
           session.lastActivity = now;
+          sessions[path] = { ...session };
+          break;
+        }
+
+        case "AgentActive": {
+          const session = ensureSession();
+          session.status = "active";
+          session.lastActivity = now;
+          session.lastMessage = "Working...";
           sessions[path] = { ...session };
           break;
         }

@@ -1,5 +1,4 @@
 pub mod agent;
-pub mod agent_activity;
 pub mod environment;
 pub mod files;
 pub mod git;

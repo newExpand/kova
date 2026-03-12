@@ -538,28 +538,14 @@ export async function gitFetchRemote(path: string): Promise<GitFetchResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Agent activity commands
+// Agent session monitoring commands
 // ---------------------------------------------------------------------------
 
-export interface AgentActivityRecord {
-  id: string;
-  projectId: string;
-  eventType: string;
-  sessionId: string | null;
-  worktreePath: string | null;
-  summary: string | null;
-  payload: string | null;
-  createdAt: string;
-}
-
-export async function listAgentActivities(
-  projectId: string,
-  limit?: number,
-): Promise<AgentActivityRecord[]> {
-  return invoke<AgentActivityRecord[]>("list_agent_activities", {
-    projectId,
-    limit,
-  });
+export async function startSessionMonitoring(
+  sessionName: string,
+  projectPath: string,
+): Promise<void> {
+  return invoke<void>("start_session_monitoring", { sessionName, projectPath });
 }
 
 // ---------------------------------------------------------------------------

@@ -266,6 +266,7 @@ pub fn purge(conn: &Connection, id: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::agent_type::AgentType;
     use rusqlite::Connection;
 
     fn setup_test_db() -> Connection {
@@ -275,13 +276,15 @@ mod tests {
             .unwrap();
         conn.execute_batch(include_str!("../db/migrations/006_project_sort_order.sql"))
             .unwrap();
+        conn.execute_batch(include_str!("../db/migrations/008_project_agent_type.sql"))
+            .unwrap();
         conn
     }
 
     #[test]
     fn test_create_project() {
         let conn = setup_test_db();
-        let result = create(&conn, "Test Project", "/tmp", 0);
+        let result = create(&conn, "Test Project", "/tmp", 0, AgentType::default());
         assert!(result.is_ok());
         let project = result.unwrap();
         assert_eq!(project.name, "Test Project");
@@ -291,8 +294,8 @@ mod tests {
     #[test]
     fn test_duplicate_path_rejected() {
         let conn = setup_test_db();
-        create(&conn, "Project 1", "/tmp", 0).unwrap();
-        let result = create(&conn, "Project 2", "/tmp", 0);
+        create(&conn, "Project 1", "/tmp", 0, AgentType::default()).unwrap();
+        let result = create(&conn, "Project 2", "/tmp", 0, AgentType::default());
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AppError::Duplicate(_)));
     }
@@ -300,7 +303,7 @@ mod tests {
     #[test]
     fn test_soft_delete_and_restore() {
         let conn = setup_test_db();
-        let project = create(&conn, "Test", "/tmp", 0).unwrap();
+        let project = create(&conn, "Test", "/tmp", 0, AgentType::default()).unwrap();
 
         // Soft delete
         soft_delete(&conn, &project.id).unwrap();
@@ -317,11 +320,12 @@ mod tests {
     #[test]
     fn test_update_project() {
         let conn = setup_test_db();
-        let project = create(&conn, "Original", "/tmp", 0).unwrap();
+        let project = create(&conn, "Original", "/tmp", 0, AgentType::default()).unwrap();
 
         let input = UpdateProjectInput {
             name: Some("Updated".into()),
             color_index: Some(5),
+            agent_type: None,
         };
 
         let updated = update(&conn, &project.id, &input).unwrap();
@@ -332,7 +336,7 @@ mod tests {
     #[test]
     fn test_soft_delete_then_recreate_same_path() {
         let conn = setup_test_db();
-        let project = create(&conn, "Original", "/tmp", 0).unwrap();
+        let project = create(&conn, "Original", "/tmp", 0, AgentType::default()).unwrap();
 
         // Soft delete
         soft_delete(&conn, &project.id).unwrap();
@@ -340,7 +344,7 @@ mod tests {
         assert_eq!(projects.len(), 0);
 
         // Re-create with same path should succeed
-        let new_project = create(&conn, "Recreated", "/tmp", 3).unwrap();
+        let new_project = create(&conn, "Recreated", "/tmp", 3, AgentType::default()).unwrap();
         assert_ne!(new_project.id, project.id); // New UUID
         assert_eq!(new_project.name, "Recreated");
         assert_eq!(new_project.color_index, 3);
@@ -353,7 +357,7 @@ mod tests {
     #[test]
     fn test_purge_project() {
         let conn = setup_test_db();
-        let project = create(&conn, "ToDelete", "/tmp", 0).unwrap();
+        let project = create(&conn, "ToDelete", "/tmp", 0, AgentType::default()).unwrap();
 
         purge(&conn, &project.id).unwrap();
 
@@ -368,9 +372,9 @@ mod tests {
         let conn = setup_test_db();
 
         // Create 3 projects — each new one should be at top (sort_order=0)
-        let p1 = create(&conn, "First", "/tmp", 0).unwrap();
-        let p2 = create(&conn, "Second", "/var", 1).unwrap();
-        let p3 = create(&conn, "Third", "/etc", 2).unwrap();
+        let p1 = create(&conn, "First", "/tmp", 0, AgentType::default()).unwrap();
+        let p2 = create(&conn, "Second", "/var", 1, AgentType::default()).unwrap();
+        let p3 = create(&conn, "Third", "/etc", 2, AgentType::default()).unwrap();
 
         // list() returns ORDER BY sort_order ASC → newest first
         let projects = list(&conn).unwrap();
@@ -384,9 +388,9 @@ mod tests {
     fn test_reorder_projects() {
         let conn = setup_test_db();
 
-        let p1 = create(&conn, "A", "/tmp", 0).unwrap();
-        let p2 = create(&conn, "B", "/var", 1).unwrap();
-        let p3 = create(&conn, "C", "/etc", 2).unwrap();
+        let p1 = create(&conn, "A", "/tmp", 0, AgentType::default()).unwrap();
+        let p2 = create(&conn, "B", "/var", 1, AgentType::default()).unwrap();
+        let p3 = create(&conn, "C", "/etc", 2, AgentType::default()).unwrap();
 
         // Reorder to: p1, p3, p2
         reorder(&conn, &[p1.id.clone(), p3.id.clone(), p2.id.clone()]).unwrap();
@@ -400,7 +404,7 @@ mod tests {
     #[test]
     fn test_reorder_invalid_id() {
         let conn = setup_test_db();
-        create(&conn, "A", "/tmp", 0).unwrap();
+        create(&conn, "A", "/tmp", 0, AgentType::default()).unwrap();
 
         let result = reorder(&conn, &["nonexistent-id".to_string()]);
         assert!(result.is_err());

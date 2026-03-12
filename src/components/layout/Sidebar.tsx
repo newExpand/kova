@@ -231,13 +231,18 @@ function isAgentBusy(session: { status: string } | undefined): boolean {
 }
 
 function shortAgentLabel(agentType: string): string {
-  if (agentType in AGENT_TYPES) {
-    const label = AGENT_TYPES[agentType as keyof typeof AGENT_TYPES].label;
+  // Normalize snake_case ("codex_cli") to camelCase ("codexCli") for AGENT_TYPES lookup
+  const normalized = agentType.includes("_")
+    ? agentType.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+    : agentType;
+
+  if (normalized in AGENT_TYPES) {
+    const label = AGENT_TYPES[normalized as keyof typeof AGENT_TYPES].label;
     const spaceIdx = label.indexOf(" ");
     return spaceIdx > 0 ? label.slice(0, spaceIdx) : label;
   }
   // camelCase fallback: "claudeCode" → "Claude"
-  const spaced = agentType.replace(/([a-z])([A-Z])/g, "$1 $2");
+  const spaced = normalized.replace(/([a-z])([A-Z])/g, "$1 $2");
   const idx = spaced.indexOf(" ");
   const first = idx > 0 ? spaced.slice(0, idx) : spaced;
   return first.charAt(0).toUpperCase() + first.slice(1);
@@ -728,7 +733,7 @@ function Sidebar() {
                       <div className="flex items-center gap-1">
                         <span className="truncate flex-1 text-sm">{project.name}</span>
                         <span className="shrink-0 text-[9px] text-text-muted/60 font-medium">
-                          {shortAgentLabel(project.agentType)}
+                          {shortAgentLabel(session?.detectedAgentType ?? project.agentType)}
                         </span>
                       </div>
                       {session ? (

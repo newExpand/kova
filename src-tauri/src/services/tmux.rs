@@ -100,6 +100,206 @@ pub fn is_process_running_in_window(
     }))
 }
 
+/// Match an agent type from a process name or executable path.
+/// Uses exact-match on the basename (not substring) to avoid false positives
+/// like paths containing "codex" (e.g. `/home/user/codex-project/script.sh`).
+fn match_agent_from_name(name: &str) -> Option<crate::models::agent_type::AgentType> {
+    use crate::models::agent_type::AgentType;
+    // Extract basename from possible path (e.g. "/usr/local/bin/claude" → "claude")
+    let basename = name.rsplit('/').next().unwrap_or(name);
+    let lower = basename.to_lowercase();
+    if lower == "claude" || lower.starts_with("claude-") {
+        Some(AgentType::ClaudeCode)
+    } else if lower == "codex" || lower.starts_with("codex-") {
+        Some(AgentType::CodexCli)
+    } else if lower == "gemini" || lower.starts_with("gemini-") {
+        Some(AgentType::GeminiCli)
+    } else {
+        None
+    }
+}
+
+/// Match agent from a pgrep -fl output line.
+/// Format: "<pid> <executable> [args...]"
+/// Checks the executable name AND first argument (for Node.js wrappers like `node /path/to/codex`).
+fn match_agent_from_pgrep_line(line: &str) -> Option<crate::models::agent_type::AgentType> {
+    // pgrep -fl format: "12345 node /usr/local/bin/codex --flag"
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    // Check executable (parts[1])
+    if let Some(agent) = match_agent_from_name(parts[1]) {
+        return Some(agent);
+    }
+    // Check first argument (parts[2]) — catches `node /path/to/codex`
+    if parts.len() >= 3 {
+        if let Some(agent) = match_agent_from_name(parts[2]) {
+            return Some(agent);
+        }
+    }
+    None
+}
+
+/// Detect which agent (if any) is running in a tmux window.
+///
+/// Strategy:
+/// 1. Check `pane_current_command` — catches native binaries (e.g. `claude`)
+/// 2. If no match, get pane PIDs and inspect child processes via `pgrep -fl -P <pid>`
+///    to catch Node.js-wrapped CLIs (Codex, Gemini show as `node` in tmux)
+///
+/// Returns `Some(AgentType)` if detected, `None` otherwise.
+/// Errors from pgrep are treated as "not found" (graceful fallback).
+pub fn detect_agent_in_window(
+    session_name: &str,
+    window_name: &str,
+) -> Result<Option<crate::models::agent_type::AgentType>, crate::errors::AppError> {
+    let target = format!("{}:{}", session_name, window_name);
+
+    // Step 1: Check pane_current_command (fast path for native binaries)
+    let output = tmux_cmd()
+        .args(["list-panes", "-t", &target, "-F", "#{pane_current_command} #{pane_pid}"])
+        .output()
+        .map_err(|e| crate::errors::AppError::TmuxCommand(format!(
+            "Failed to execute tmux list-panes for {}: {}", target, e
+        )))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find window")
+            || stderr.contains("can't find session")
+            || stderr.contains("session not found")
+            || stderr.contains("no server running")
+        {
+            return Ok(None);
+        }
+        return Err(crate::errors::AppError::TmuxCommand(format!(
+            "tmux list-panes failed for {}: {}", target, stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut pane_pids: Vec<String> = Vec::new();
+
+    // Check pane_current_command first (returns just the process name, not a path)
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(2, ' ').collect();
+        let cmd = parts.first().unwrap_or(&"");
+        if parts.len() == 2 {
+            pane_pids.push(parts[1].to_string());
+        }
+
+        // Direct binary match (pane_current_command is just the exe name)
+        if let Some(agent) = match_agent_from_name(cmd) {
+            return Ok(Some(agent));
+        }
+    }
+
+    // Step 2: Inspect child processes of each pane PID
+    for pid in &pane_pids {
+        let pgrep_result = Command::new("pgrep")
+            .args(["-fl", "-P", pid])
+            .output();
+
+        let pgrep_output = match pgrep_result {
+            Ok(o) => o,
+            Err(_) => continue, // pgrep not available or exec error — skip gracefully
+        };
+
+        if !pgrep_output.status.success() {
+            continue; // No children or error — skip
+        }
+
+        let children = String::from_utf8_lossy(&pgrep_output.stdout);
+        for child_line in children.lines() {
+            if let Some(agent) = match_agent_from_pgrep_line(child_line) {
+                return Ok(Some(agent));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Detect agents across ALL panes in a tmux session.
+/// Returns a list of (window_name, AgentType) for each detected agent.
+/// Only returns non-Claude agents by default (Claude uses hooks).
+pub fn detect_agents_in_session(
+    session_name: &str,
+    include_claude: bool,
+) -> Result<Vec<(String, crate::models::agent_type::AgentType)>, crate::errors::AppError> {
+    use crate::models::agent_type::AgentType;
+
+    // Get all panes in session with window name, current command, and PID
+    let output = tmux_cmd()
+        .args([
+            "list-panes", "-s", "-t", session_name,
+            "-F", "#{window_name} #{pane_current_command} #{pane_pid}",
+        ])
+        .output()
+        .map_err(|e| crate::errors::AppError::TmuxCommand(format!(
+            "Failed to list session panes for {}: {}", session_name, e
+        )))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Propagate session-not-found as Err so callers (e.g. run_session_monitor)
+        // can distinguish "session gone" from "no agents found".
+        return Err(crate::errors::AppError::TmuxCommand(format!(
+            "tmux list-panes -s failed for {}: {}", session_name, stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut results: Vec<(String, AgentType)> = Vec::new();
+    let mut checked_windows: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Check every pane; once a window has a detected agent, skip remaining panes in that window.
+    // If detection fails for a pane, the next pane in the same window is still checked.
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let window_name = parts[0].to_string();
+
+        // Skip remaining panes if this window already has a detected agent
+        if checked_windows.contains(&window_name) {
+            continue;
+        }
+
+        let cmd = parts[1];
+        let pid = parts[2];
+
+        // Direct binary match (pane_current_command is just the exe name)
+        let mut detected: Option<AgentType> = match_agent_from_name(cmd);
+
+        // Child process fallback (pgrep -fl includes full command lines)
+        if detected.is_none() {
+            if let Ok(pgrep_output) = Command::new("pgrep").args(["-fl", "-P", pid]).output() {
+                if pgrep_output.status.success() {
+                    let children = String::from_utf8_lossy(&pgrep_output.stdout);
+                    for child_line in children.lines() {
+                        if let Some(agent) = match_agent_from_pgrep_line(child_line) {
+                            detected = Some(agent);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(agent) = detected {
+            checked_windows.insert(window_name.clone());
+            if include_claude || !matches!(agent, AgentType::ClaudeCode) {
+                results.push((window_name, agent));
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 /// Check if tmux binary is available on the system.
 /// Retries up to 3 times with 1-second intervals.
 pub fn is_tmux_available() -> bool {

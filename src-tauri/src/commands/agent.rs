@@ -3,6 +3,7 @@ use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResu
 use crate::models::agent_type::AgentType;
 use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
+use crate::services::pane_monitor;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -125,4 +126,14 @@ pub fn check_rebase_status(worktree_path: String) -> Result<RebaseStatusResult, 
 #[tauri::command]
 pub fn prune_stale_worktrees(repo_path: String) -> Result<(), AppError> {
     services::git::prune_worktrees(std::path::Path::new(&repo_path))
+}
+
+#[tauri::command]
+pub fn start_session_monitoring(
+    app: AppHandle,
+    session_name: String,
+    project_path: String,
+) -> Result<(), AppError> {
+    pane_monitor::watch_session_agents(app, session_name, project_path);
+    Ok(())
 }

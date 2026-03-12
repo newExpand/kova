@@ -215,6 +215,91 @@ pub fn run() {
                 }
             }
 
+            // Start session monitoring for projects with active tmux sessions.
+            // Uses DB-registered session names (project_tmux_sessions table) for
+            // accurate matching, not derived slugs.
+            // Runs in background thread to avoid blocking app startup.
+            {
+                let db_state = app.state::<Mutex<DbConnection>>();
+                let project_sessions: Vec<(String, String)> = match db_state.lock() {
+                    Ok(db) => {
+                        let projects = match services::project::list(&db.conn) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::error!("Session monitoring: failed to list projects: {}", e);
+                                Vec::new()
+                            }
+                        };
+                        let mut pairs = Vec::new();
+                        for project in &projects {
+                            match db.conn.prepare(
+                                "SELECT session_name FROM project_tmux_sessions WHERE project_id = ?1"
+                            ) {
+                                Ok(mut stmt) => {
+                                    match stmt.query_map(
+                                        rusqlite::params![&project.id],
+                                        |row| row.get::<_, String>(0),
+                                    ) {
+                                        Ok(rows) => {
+                                            for name in rows.flatten() {
+                                                pairs.push((project.path.clone(), name));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Session monitoring: failed to query sessions for '{}': {}",
+                                                project.name, e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Session monitoring: failed to prepare statement for '{}': {}",
+                                        project.name, e
+                                    );
+                                }
+                            }
+                        }
+                        pairs
+                    }
+                    Err(e) => {
+                        tracing::error!("Session monitoring: failed to acquire DB lock: {}", e);
+                        Vec::new()
+                    }
+                };
+
+                if !project_sessions.is_empty() {
+                    let app_handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        // Give tmux server time to be ready after app launch
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+
+                        let live_sessions = match services::tmux::list_sessions() {
+                            Ok(s) => s,
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Session monitoring skipped: failed to list tmux sessions: {}", e
+                                );
+                                return;
+                            }
+                        };
+                        let live_names: std::collections::HashSet<String> =
+                            live_sessions.iter().map(|s| s.name.clone()).collect();
+
+                        for (project_path, session_name) in &project_sessions {
+                            if live_names.contains(session_name) {
+                                services::pane_monitor::watch_session_agents(
+                                    app_handle.clone(),
+                                    session_name.clone(),
+                                    project_path.clone(),
+                                );
+                            }
+                        }
+                    });
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -289,8 +374,7 @@ pub fn run() {
             commands::agent::abort_merge_rebase,
             commands::agent::check_rebase_status,
             commands::agent::prune_stale_worktrees,
-            // Agent activity commands
-            commands::agent_activity::list_agent_activities,
+            commands::agent::start_session_monitoring,
             // SSH commands
             commands::ssh::create_ssh_connection,
             commands::ssh::list_ssh_connections,
