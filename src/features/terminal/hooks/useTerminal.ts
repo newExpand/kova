@@ -81,6 +81,33 @@ function isMouseDragMotionSequence(data: string): boolean {
   return code !== null && (code & 32) !== 0 && code < 64;
 }
 
+// Detect SGR mouse release: \x1b[<Pb;Px;Pym (lowercase 'm' terminator).
+function isSgrMouseRelease(data: string): boolean {
+  return data.length >= 6 && data[0] === '\x1b' && data[1] === '['
+    && data[2] === '<' && data.endsWith('m');
+}
+
+// Build a synthetic motion event one column past the release position.
+// tmux copy-mode uses exclusive-end: cursor position is excluded from the
+// copied text. Injecting motion at col+1 moves the cursor past the last
+// desired character so copy-selection includes it.
+// Only converts left-button (code & 3 === 0) releases.
+function sgrReleaseToMotionPlusOne(data: string): string | null {
+  const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)m$/);
+  if (!match || !match[1] || !match[2] || !match[3]) return null;
+  const rawCode = parseInt(match[1], 10);
+  if ((rawCode & 3) !== 0) return null;
+  const col = parseInt(match[2], 10) + 1;
+  return `\x1b[<${rawCode | 32};${col};${match[3]}M`;
+}
+
+// Extract column and row from an SGR mouse escape sequence.
+function parseSgrPos(data: string): { col: number; row: number } | null {
+  const match = data.match(/^\x1b\[<\d+;(\d+);(\d+)/);
+  if (!match || !match[1] || !match[2]) return null;
+  return { col: parseInt(match[1], 10), row: parseInt(match[2], 10) };
+}
+
 interface UseTerminalOptions {
   onDragState?: (isDragging: boolean) => void;
   onRequestPaneAction?: (action: PaneAction) => void;
@@ -729,9 +756,24 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
           if (xtermTextarea) xtermTextarea.value = "";
         };
 
+        // Track press position for forward-drag direction detection.
+        // Used to decide whether to inject a col+1 motion before release.
+        let dragPressCol = 0;
+        let dragPressRow = 0;
+
         // Terminal → PTY: user keystrokes (with IME guard)
         term.onData((data: string) => {
           imeLog("onData", JSON.stringify(data), "imeActive=", imeActive, "hex=", [...data].map(c => "U+"+c.charCodeAt(0).toString(16)).join(","));
+          // Track left-button press position for drag direction detection.
+          // mc < 64 excludes scroll events (wheel-up=64, wheel-down=65)
+          // whose low bits also equal 0.
+          {
+            const mc = parseMouseButtonCode(data);
+            if (mc !== null && mc < 64 && (mc & 3) === 0 && !data.endsWith("m") && (mc & 32) === 0) {
+              const pos = parseSgrPos(data);
+              if (pos) { dragPressCol = pos.col; dragPressRow = pos.row; }
+            }
+          }
           if (imeActive && parseMouseButtonCode(data) === null) return;
           // Suppress mouse click escape sequences while hovering a file path link.
           // Prevents tmux MouseUp1Pane from canceling copy-mode (scroll to bottom).
@@ -752,6 +794,22 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
             return;
           }
           if (aliveRef.current && ptyRef.current) {
+            // tmux copy-mode uses exclusive-end: the character at the cursor
+            // position is NOT included in the copied text. For L→R drags,
+            // inject a synthetic motion at col+1 so the cursor moves past
+            // the last desired character before copy-selection-and-cancel fires.
+            if (dragDistanceRef.current.exceeded && isSgrMouseRelease(data)) {
+              const releasePos = parseSgrPos(data);
+              // Forward drag: release is on a later row, or same row with col >= press.
+              // Only inject col+1 motion for forward drags to fix exclusive-end.
+              if (releasePos && (
+                releasePos.row > dragPressRow ||
+                (releasePos.row === dragPressRow && releasePos.col >= dragPressCol)
+              )) {
+                const motionSeq = sgrReleaseToMotionPlusOne(data);
+                if (motionSeq) ptyRef.current.write(motionSeq);
+              }
+            }
             ptyRef.current.write(data);
           }
         });
