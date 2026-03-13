@@ -10,7 +10,9 @@ import { WindowToolbar } from "./WindowToolbar";
 import { NewPaneDialog } from "./NewPaneDialog";
 import { ThemePickerPanel } from "./ThemePickerPanel";
 import { Button } from "../../../components/ui/button";
-import { AGENT_TYPES, DEFAULT_AGENT_TYPE, type AgentType } from "../../../lib/tauri/commands";
+import { DEFAULT_AGENT_TYPE, type AgentType } from "../../../lib/tauri/commands";
+// Direct import to avoid circular chunk warning (settings ↔ terminal barrel cycle)
+import { useSettingsStore } from "../../settings/stores/settingsStore";
 import {
   splitTmuxPaneVertical,
   splitTmuxPaneHorizontal,
@@ -57,6 +59,12 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
 
   const status = useTerminalStore((s) => s.getTerminal(storeKey).status);
   const errorMessage = useTerminalStore((s) => s.getTerminal(storeKey).error);
+  const agentCommandsRef = useRef(useSettingsStore.getState().agentCommands);
+  useEffect(() => {
+    return useSettingsStore.subscribe((s) => {
+      agentCommandsRef.current = s.agentCommands;
+    });
+  }, []);
 
   // Clean up this terminal's state on unmount
   useEffect(() => {
@@ -236,7 +244,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
       rows: 24,
       cwd: project?.path,
       initialCommand: isNewSession && project?.agentType
-        ? AGENT_TYPES[project.agentType].command
+        ? agentCommandsRef.current[project.agentType].command
         : undefined,
     });
 
@@ -492,7 +500,7 @@ function TerminalPage({ projectId, sshConnectionId, isActive }: TerminalPageProp
           return;
         }
 
-        const agentCommand = AGENT_TYPES[agentKey].command;
+        const agentCommand = agentCommandsRef.current[agentKey].command;
 
         if (remoteSN && connId) {
           await remoteActions[action]();

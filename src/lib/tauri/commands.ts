@@ -12,7 +12,7 @@ export const DEFAULT_AGENT_TYPE: AgentType = "claudeCode";
 export const AGENT_TYPES = {
   claudeCode: {
     label: "Claude Code",
-    command: "claude --dangerously-skip-permissions",
+    command: "claude",
   },
   codexCli: {
     label: "Codex CLI",
@@ -20,7 +20,7 @@ export const AGENT_TYPES = {
   },
   geminiCli: {
     label: "Gemini CLI",
-    command: "gemini --yolo",
+    command: "gemini",
   },
 } as const;
 
@@ -439,6 +439,24 @@ export async function setSetting(
 
 export async function listSettings(): Promise<AppSetting[]> {
   return invoke<AppSetting[]>("list_settings");
+}
+
+export interface AgentCommandInfo {
+  agentType: AgentType;
+  label: string;
+  command: string;
+  defaultCommand: string;
+}
+
+export async function getAgentCommands(): Promise<AgentCommandInfo[]> {
+  return invoke<AgentCommandInfo[]>("get_agent_commands");
+}
+
+export async function setAgentCommandIpc(
+  agentType: AgentType,
+  command: string,
+): Promise<void> {
+  return invoke<void>("set_agent_command", { agentType, command });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 use crate::errors::AppError;
-use crate::models::settings::AppSetting;
+use crate::models::agent_type::AgentType;
+use crate::models::settings::{AgentCommandInfo, AppSetting};
 use rusqlite::{params, Connection, OptionalExtension};
-use tracing::info;
+use tracing::{info, warn};
 
 /// Get a setting value by key. Returns None if not found.
 pub fn get(conn: &Connection, key: &str) -> Result<Option<String>, AppError> {
@@ -17,10 +18,15 @@ pub fn get(conn: &Connection, key: &str) -> Result<Option<String>, AppError> {
 }
 
 /// Get a setting value by key, returning a default if not found.
+/// Logs a warning on DB errors (used for general settings where fallback is acceptable).
 pub fn get_with_default(conn: &Connection, key: &str, default: &str) -> String {
     match get(conn, key) {
         Ok(Some(value)) => value,
-        _ => default.to_string(),
+        Ok(None) => default.to_string(),
+        Err(e) => {
+            warn!("Failed to read setting '{}', using default: {}", key, e);
+            default.to_string()
+        }
     }
 }
 
@@ -53,6 +59,61 @@ pub fn list(conn: &Connection) -> Result<Vec<AppSetting>, AppError> {
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(settings)
+}
+
+/// Map AgentType to its corresponding settings key.
+pub(crate) fn agent_command_key(agent_type: &AgentType) -> &'static str {
+    match agent_type {
+        AgentType::ClaudeCode => "agent_command_claude_code",
+        AgentType::CodexCli => "agent_command_codex_cli",
+        AgentType::GeminiCli => "agent_command_gemini_cli",
+    }
+}
+
+/// Get the agent command from settings, falling back to default if not set.
+/// Returns `Result` to propagate DB errors (unlike `get_with_default`).
+pub fn get_agent_command(conn: &Connection, agent_type: &AgentType) -> Result<String, AppError> {
+    let key = agent_command_key(agent_type);
+    let default = agent_type.base_command();
+    match get(conn, key)? {
+        Some(value) => Ok(value),
+        None => Ok(default.to_string()),
+    }
+}
+
+/// Set the agent command for a specific agent type.
+pub fn set_agent_command(
+    conn: &Connection,
+    agent_type: &AgentType,
+    command: &str,
+) -> Result<(), AppError> {
+    let key = agent_command_key(agent_type);
+    set(conn, key, command)
+}
+
+/// Get all agent commands with their current (DB-backed) and default values.
+pub fn get_all_agent_commands(conn: &Connection) -> Result<Vec<AgentCommandInfo>, AppError> {
+    AgentType::ALL
+        .iter()
+        .map(|at| {
+            let command = get_agent_command(conn, at)?;
+            Ok(AgentCommandInfo::new(*at, command))
+        })
+        .collect()
+}
+
+/// Get the agent worktree command. For Claude Code, appends --worktree flag.
+/// For other agents, returns base command unchanged.
+pub fn get_agent_worktree_command(
+    conn: &Connection,
+    agent_type: &AgentType,
+    task_name: &str,
+) -> Result<String, AppError> {
+    let base = get_agent_command(conn, agent_type)?;
+    match agent_type {
+        AgentType::ClaudeCode => Ok(format!("{} --worktree {}", base, task_name)),
+        _ => Ok(base),
+    }
 }
 
 #[cfg(test)]

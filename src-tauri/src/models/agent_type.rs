@@ -10,23 +10,20 @@ pub enum AgentType {
 }
 
 impl AgentType {
-    /// The CLI command (without worktree flags) to launch this agent
+    /// All known agent variants. Keep in sync when adding new agents.
+    pub const ALL: [AgentType; 3] = [
+        AgentType::ClaudeCode,
+        AgentType::CodexCli,
+        AgentType::GeminiCli,
+    ];
+
+    /// The CLI command (without worktree flags) to launch this agent.
+    /// This is the safe default — users can add flags via Settings.
     pub fn base_command(&self) -> &'static str {
         match self {
-            AgentType::ClaudeCode => "claude --dangerously-skip-permissions",
+            AgentType::ClaudeCode => "claude",
             AgentType::CodexCli => "codex",
-            AgentType::GeminiCli => "gemini --yolo",
-        }
-    }
-
-    /// Command with worktree flag (only Claude Code supports --worktree)
-    pub fn worktree_command(&self, task_name: &str) -> String {
-        match self {
-            AgentType::ClaudeCode => {
-                format!("claude --dangerously-skip-permissions --worktree {}", task_name)
-            }
-            // Other agents don't have worktree support — just launch base command
-            _ => self.base_command().to_string(),
+            AgentType::GeminiCli => "gemini",
         }
     }
 
@@ -96,25 +93,9 @@ mod tests {
 
     #[test]
     fn test_base_command() {
-        assert_eq!(
-            AgentType::ClaudeCode.base_command(),
-            "claude --dangerously-skip-permissions"
-        );
+        assert_eq!(AgentType::ClaudeCode.base_command(), "claude");
         assert_eq!(AgentType::CodexCli.base_command(), "codex");
-        assert_eq!(AgentType::GeminiCli.base_command(), "gemini --yolo");
-    }
-
-    #[test]
-    fn test_worktree_command() {
-        assert_eq!(
-            AgentType::ClaudeCode.worktree_command("fix-auth"),
-            "claude --dangerously-skip-permissions --worktree fix-auth"
-        );
-        assert_eq!(AgentType::CodexCli.worktree_command("fix-auth"), "codex");
-        assert_eq!(
-            AgentType::GeminiCli.worktree_command("fix-auth"),
-            "gemini --yolo"
-        );
+        assert_eq!(AgentType::GeminiCli.base_command(), "gemini");
     }
 
     #[test]

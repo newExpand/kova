@@ -1,10 +1,12 @@
+use crate::db::DbConnection;
 use crate::errors::AppError;
 use crate::models::agent::{RemoveWorktreeResult, RestoreResult, WorktreeTaskResult};
 use crate::models::agent_type::AgentType;
 use crate::models::git::{MergeToMainResult, RebaseStatusResult};
 use crate::services;
 use crate::services::pane_monitor;
-use tauri::AppHandle;
+use std::sync::Mutex;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn start_worktree_task(
@@ -13,9 +15,24 @@ pub fn start_worktree_task(
     task_name: String,
     project_path: String,
     agent_type: Option<AgentType>,
+    state: State<'_, Mutex<DbConnection>>,
 ) -> Result<WorktreeTaskResult, AppError> {
     let agent = agent_type.unwrap_or_default();
-    services::agent::start_worktree_task(&session_name, &task_name, &project_path, agent, Some(app))
+    // Query DB and release lock before tmux/hook operations
+    let agent_cmd = {
+        let db = state
+            .lock()
+            .map_err(|_| AppError::Internal("DB lock poisoned in start_worktree_task".into()))?;
+        services::settings::get_agent_worktree_command(&db.conn, &agent, &task_name)?
+    };
+    services::agent::start_worktree_task(
+        &session_name,
+        &task_name,
+        &project_path,
+        agent,
+        Some(app),
+        &agent_cmd,
+    )
 }
 
 #[tauri::command]
@@ -24,9 +41,33 @@ pub fn restore_worktree_windows(
     session_name: String,
     project_path: String,
     agent_type: Option<AgentType>,
+    state: State<'_, Mutex<DbConnection>>,
 ) -> Result<RestoreResult, AppError> {
     let agent = agent_type.unwrap_or_default();
-    services::agent::restore_worktree_windows(&session_name, &project_path, agent, Some(app))
+    // Query DB and release lock before tmux/hook operations.
+    // Restore is best-effort — fall back to base_command() on DB error.
+    let agent_cmd = {
+        let db = state
+            .lock()
+            .map_err(|_| AppError::Internal("DB lock poisoned in restore_worktree_windows".into()))?;
+        match services::settings::get_agent_command(&db.conn, &agent) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to read agent command during restore, using default: {}",
+                    e
+                );
+                agent.base_command().to_string()
+            }
+        }
+    };
+    services::agent::restore_worktree_windows(
+        &session_name,
+        &project_path,
+        agent,
+        Some(app),
+        &agent_cmd,
+    )
 }
 
 #[tauri::command]

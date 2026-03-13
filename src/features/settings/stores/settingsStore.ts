@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { getSetting, setSetting } from "../../../lib/tauri/commands";
+import {
+  getSetting,
+  setSetting,
+  getAgentCommands,
+  setAgentCommandIpc,
+  AGENT_TYPES,
+  type AgentType,
+} from "../../../lib/tauri/commands";
 import {
   DEFAULT_THEME_ID,
   getThemeById,
@@ -49,6 +56,11 @@ function getPersistedValue(key: string, fallback: string): string {
 
 // ---------------------------------------------------------------------------
 
+interface AgentCommandEntry {
+  command: string;
+  defaultCommand: string;
+}
+
 interface SettingsState {
   notificationStyle: NotificationStyle;
   terminalTheme: string;
@@ -57,6 +69,7 @@ interface SettingsState {
   terminalFontFamily: string;
   terminalFontSize: number;
   copyOnSelect: boolean;
+  agentCommands: Record<AgentType, AgentCommandEntry>;
   isLoading: boolean;
   error: string | null;
 }
@@ -70,10 +83,19 @@ interface SettingsActions {
   setTerminalFontFamily: (fontId: string) => Promise<void>;
   setTerminalFontSize: (size: number) => Promise<void>;
   setCopyOnSelect: (enabled: boolean) => Promise<void>;
+  setAgentCommand: (agentType: AgentType, command: string) => Promise<void>;
+  resetAgentCommand: (agentType: AgentType) => void;
   reset: () => void;
 }
 
 const VALID_GLASS_MODES: GlassMode[] = ["opaque", "faux"];
+
+function buildDefaultAgentCommands(): Record<AgentType, AgentCommandEntry> {
+  const entries = Object.entries(AGENT_TYPES) as [AgentType, (typeof AGENT_TYPES)[AgentType]][];
+  return Object.fromEntries(
+    entries.map(([key, val]) => [key, { command: val.command, defaultCommand: val.command }]),
+  ) as Record<AgentType, AgentCommandEntry>;
+}
 
 const initialState: SettingsState = {
   notificationStyle: "alert",
@@ -83,6 +105,7 @@ const initialState: SettingsState = {
   terminalFontFamily: DEFAULT_FONT_ID,
   terminalFontSize: DEFAULT_FONT_SIZE,
   copyOnSelect: false,
+  agentCommands: buildDefaultAgentCommands(),
   isLoading: false,
   error: null,
 };
@@ -117,6 +140,21 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         markPersisted("terminal_font_size", fontSizeStr);
         markPersisted("copy_on_select", copyOnSelectStr);
 
+        // Fetch agent commands from DB (isolated so failure doesn't discard other settings)
+        let agentCommands = { ...initialState.agentCommands };
+        try {
+          const agentCmds = await getAgentCommands();
+          for (const cmd of agentCmds) {
+            agentCommands[cmd.agentType] = {
+              command: cmd.command,
+              defaultCommand: cmd.defaultCommand,
+            };
+            markPersisted(`agent_command_${cmd.agentType}`, cmd.command);
+          }
+        } catch (agentErr) {
+          console.error("[settingsStore] Failed to fetch agent commands, using defaults:", agentErr);
+        }
+
         const theme = getThemeById(themeId);
         applyThemeCSS(theme);
         const validGlass = VALID_GLASS_MODES.includes(glassMode as GlassMode)
@@ -133,6 +171,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           terminalFontFamily: fontFamily,
           terminalFontSize: parsedFontSize,
           copyOnSelect: copyOnSelectStr === "true",
+          agentCommands,
           isLoading: false,
         });
       } catch (e) {
@@ -292,6 +331,46 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           isLoading: false,
         });
       }
+    },
+
+    setAgentCommand: async (agentType, command) => {
+      const writeKey = `agent_command_${agentType}`;
+      const seq = startWrite(writeKey);
+      const current = get().agentCommands;
+      const entry = current[agentType];
+      const effectiveCommand = command.trim() || entry.defaultCommand;
+
+      set({
+        agentCommands: {
+          ...current,
+          [agentType]: { ...entry, command: effectiveCommand },
+        },
+        error: null,
+        isLoading: true,
+      });
+      try {
+        await setAgentCommandIpc(agentType, effectiveCommand);
+        markPersisted(writeKey, effectiveCommand);
+        if (isStaleWrite(writeKey, seq)) return;
+        set({ isLoading: false });
+      } catch (e) {
+        if (isStaleWrite(writeKey, seq)) return;
+        console.error(`[settingsStore] Failed to save agent command (${agentType}):`, e);
+        const persisted = getPersistedValue(writeKey, entry.defaultCommand);
+        set({
+          agentCommands: {
+            ...get().agentCommands,
+            [agentType]: { ...entry, command: persisted },
+          },
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    resetAgentCommand: (agentType) => {
+      const defaultCmd = get().agentCommands[agentType].defaultCommand;
+      get().setAgentCommand(agentType, defaultCmd);
     },
 
     reset: () => set(initialState),

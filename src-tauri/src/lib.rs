@@ -356,6 +356,8 @@ pub fn run() {
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::settings::list_settings,
+            commands::settings::get_agent_commands,
+            commands::settings::set_agent_command,
             // Git commands
             commands::git::get_git_graph,
             commands::git::get_git_commits_page,

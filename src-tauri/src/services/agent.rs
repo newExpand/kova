@@ -85,15 +85,15 @@ pub fn start_worktree_task(
     project_path: &str,
     agent_type: AgentType,
     app_handle: Option<tauri::AppHandle>,
+    agent_cmd: &str,
 ) -> Result<WorktreeTaskResult, AppError> {
     validate_task_name(task_name)?;
 
     // Create a named window in the project session
     tmux::create_window_named(session_name, task_name, project_path)?;
 
-    // Send agent command (with worktree flag for Claude Code only)
-    let agent_cmd = agent_type.worktree_command(task_name);
-    if let Err(e) = tmux::send_keys_to_window(session_name, task_name, &agent_cmd) {
+    // Send agent command (pre-resolved from DB by the command layer)
+    if let Err(e) = tmux::send_keys_to_window(session_name, task_name, agent_cmd) {
         warn!(
             "Failed to send agent command to window '{}': {}",
             task_name, e
@@ -144,6 +144,7 @@ pub fn restore_worktree_windows(
     project_path: &str,
     agent_type: AgentType,
     app_handle: Option<tauri::AppHandle>,
+    agent_cmd: &str,
 ) -> Result<RestoreResult, AppError> {
     let repo_path = Path::new(project_path);
     let worktrees = git::get_worktrees(repo_path)?;
@@ -155,8 +156,7 @@ pub fn restore_worktree_windows(
             // Create a named window with the worktree cwd
             match tmux::create_window_named(session_name, &task_name, &wt.path) {
                 Ok(()) => {
-                    // Send agent command to the new window
-                    let agent_cmd = agent_type.base_command();
+                    // Send pre-resolved agent command to the new window
                     if let Err(e) =
                         tmux::send_keys_to_window(session_name, &task_name, agent_cmd)
                     {
