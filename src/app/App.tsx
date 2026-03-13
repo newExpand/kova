@@ -13,7 +13,7 @@ import { checkTmuxAvailable } from "../lib/tauri/commands";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
 import { useAppStore } from "../stores/appStore";
-import { useAgentFileTrackingStore } from "../features/files";
+import { useAgentFileTrackingStore, useWorkingSetReconciliation } from "../features/files";
 import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
 import { ProjectTabSwitcher } from "../features/git";
 import { SshTabSwitcher, useSshStore } from "../features/ssh";
@@ -88,6 +88,14 @@ function AppShell() {
   const pendingProjectNavigation = useAppStore(
     (s) => s.pendingProjectNavigation,
   );
+
+  // Global Working Set reconciliation — cleans up committed AI edit entries
+  // regardless of which tab is active (fixes stale entries after external commits)
+  const selectedProjectPath = useProjectStore((s) => {
+    const id = s.selectedId;
+    return id ? s.projects.find((p) => p.id === id)?.path ?? null : null;
+  });
+  useWorkingSetReconciliation(selectedProjectPath);
 
   const { handleMouseDown: handleDividerMouseDown, isResizing } = useSplitPanelResize({
     panelWidth: fileViewerPanelWidth,

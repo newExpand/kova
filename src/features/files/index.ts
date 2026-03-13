@@ -13,6 +13,9 @@ export {
 } from "./stores/agentFileTrackingStore";
 export type { FileTouch, ProjectWorkingSet } from "./stores/agentFileTrackingStore";
 
+// Hooks
+export { useWorkingSetReconciliation } from "./hooks/useWorkingSetReconciliation";
+
 // Components
 export { FileTree } from "./components/FileTree";
 export { FileTabs } from "./components/FileTabs";
