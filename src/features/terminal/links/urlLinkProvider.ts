@@ -9,7 +9,7 @@ export interface UrlLinkProviderOptions {
 
 // Match http:// and https:// URLs.
 // Stops at whitespace, quotes, backticks, and common enclosing chars.
-const URL_RE = /https?:\/\/[^\s'"`,<>\[\]{}()]+/g;
+const URL_RE = /https?:\/\/[^\s'"`,<>\[\]{}()\u0080-\uFFFF]+/g;
 
 // Trailing chars that are almost never part of a URL when at the very end
 const TRAILING_PUNCT_RE = /[.,;:!?]+$/;
