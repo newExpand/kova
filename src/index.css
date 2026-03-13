@@ -345,6 +345,7 @@ body {
 .worktree-card-exit-wrapper {
   display: grid;
   grid-template-rows: 0fr;
+  grid-template-columns: minmax(0, 1fr);
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   transition: grid-template-rows 200ms var(--ease-out-quart) 100ms,

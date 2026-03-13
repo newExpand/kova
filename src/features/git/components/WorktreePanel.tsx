@@ -188,7 +188,7 @@ export function WorktreePanel({
   }
 
   return (
-    <div className="flex w-60 shrink-0 flex-col border-l border-white/[0.06] glass-surface">
+    <div className="flex w-60 shrink-0 flex-col overflow-hidden border-l border-white/[0.06] glass-surface">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
         <span className="text-sm font-medium text-text-secondary">
@@ -215,7 +215,7 @@ export function WorktreePanel({
       </div>
 
       {/* Worktree list */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1.5">
         {worktrees.length === 0 && !isCreating ? (
           <div className="flex flex-col items-center gap-2 py-8">
             <GitBranch className="h-8 w-8 text-text-muted opacity-40" strokeWidth={1} />
@@ -229,9 +229,9 @@ export function WorktreePanel({
                 key={wt.path}
                 className={isExiting
                   ? "worktree-card-exit-wrapper"
-                  : "grid grid-rows-[1fr]"}
+                  : "grid grid-rows-[1fr] grid-cols-1"}
               >
-                <div className={isExiting ? "overflow-hidden rounded-lg" : ""}>
+                <div className={isExiting ? "overflow-hidden rounded-lg min-w-0" : "min-w-0"}>
                     <WorktreeContextMenu
                       worktree={wt}
                       projectId={projectId}
@@ -364,7 +364,7 @@ function WorktreeCard({
       onMouseEnter={() => worktree.branch && onHoverBranch?.(worktree.branch)}
       onMouseLeave={() => onLeaveBranch?.()}
       aria-label={`Open terminal for ${branchLabel}${statusLabel ? ` (${statusLabel})` : ""}`}
-      className={`w-full cursor-pointer rounded-lg border bg-white/[0.02] p-2.5 space-y-1.5 text-left
+      className={`w-full min-w-0 overflow-hidden cursor-pointer rounded-lg border bg-white/[0.02] p-2.5 space-y-1.5 text-left
         transition-all duration-150 ease-out
         hover:scale-[1.02] active:scale-[0.98]
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#1a1a2e]
@@ -376,7 +376,7 @@ function WorktreeCard({
       }
     >
       {/* Branch name row */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 min-w-0">
         {isClaudeWorktree && (
           <span className="text-[11px]" title={`${AGENT_TYPES[agentType].label} worktree`}>
             🤖
@@ -393,7 +393,7 @@ function WorktreeCard({
       </div>
 
       {/* Details row */}
-      <div className="flex items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 text-[11px] text-text-muted min-w-0">
         <span className="font-mono">{worktree.commitHash.slice(0, 7)}</span>
         {isDirty ? (
           <span
@@ -414,7 +414,7 @@ function WorktreeCard({
               ? `${worktree.status.stagedCount} staged, ${worktree.status.unstagedCount} unstaged, ${worktree.status.untrackedCount} untracked — click to view`
               : "Has uncommitted changes — click to view"
             }
-            className="rounded bg-warning/20 px-1 py-0.5 text-warning cursor-pointer hover:bg-warning/30 transition-colors"
+            className="shrink-0 rounded bg-warning/20 px-1 py-0.5 text-warning cursor-pointer hover:bg-warning/30 transition-colors"
           >
             {worktree.status
               ? `dirty (${worktree.status.stagedCount + worktree.status.unstagedCount + worktree.status.untrackedCount})`
@@ -422,7 +422,7 @@ function WorktreeCard({
             }
           </span>
         ) : isClean ? (
-          <span className="rounded bg-success/20 px-1 py-0.5 text-success">
+          <span className="shrink-0 rounded bg-success/20 px-1 py-0.5 text-success">
             clean
           </span>
         ) : null}

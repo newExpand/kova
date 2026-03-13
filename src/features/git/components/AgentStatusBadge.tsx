@@ -23,7 +23,7 @@ export function AgentStatusBadge({
   return (
     <div className="flex flex-col gap-1">
       {/* Status line: dot + action description */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 min-w-0">
         <StatusDot status={status} isWaiting={isWaitingForInput} />
         <span className="text-[11px] text-text-muted truncate">
           {isWaitingForInput && "Waiting..."}
@@ -37,7 +37,7 @@ export function AgentStatusBadge({
       </div>
       {/* Counts line: icons + numbers */}
       {(toolUseCount ?? 0) > 0 && (
-        <div className="flex items-center gap-1 pl-3.5">
+        <div className="flex items-center gap-1 pl-3.5 flex-wrap">
           <span className="flex items-center gap-0.5 text-[10px] text-text-muted" title="Tool uses">
             <Zap className="h-2.5 w-2.5" />
             {toolUseCount}
