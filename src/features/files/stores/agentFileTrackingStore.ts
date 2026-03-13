@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { normalizePathKey } from "../../git";
-import { getSetting, setSetting } from "../../../lib/tauri/commands";
+import { getSetting, setSetting, getGitStatus } from "../../../lib/tauri/commands";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,6 +120,7 @@ function evictOldest(
 
 interface AgentFileTrackingState {
   workingSets: Record<string, ProjectWorkingSet>;
+  isReconciling: boolean;
 }
 
 interface AgentFileTrackingActions {
@@ -138,6 +139,7 @@ interface AgentFileTrackingActions {
   removeAgentWrite: (projectPath: string, relativePath: string) => void;
   removeCommittedFiles: (projectPath: string, filePaths: string[]) => void;
   reconcileWithGitStatus: (projectPath: string, dirtyPaths: string[]) => void;
+  reconcileNow: (projectPath: string) => Promise<void>;
   clearProject: (projectPath: string) => void;
   restoreWorkingSets: () => Promise<void>;
   // Reset
@@ -152,6 +154,7 @@ type AgentFileTrackingStore = AgentFileTrackingState & AgentFileTrackingActions;
 
 const initialState: AgentFileTrackingState = {
   workingSets: {},
+  isReconciling: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -437,6 +440,18 @@ export const useAgentFileTrackingStore = create<AgentFileTrackingStore>()(
       });
 
       if (didUpdate) persistWorkingSets();
+    },
+
+    reconcileNow: async (projectPath) => {
+      set({ isReconciling: true });
+      try {
+        const status = await getGitStatus(projectPath);
+        get().reconcileWithGitStatus(projectPath, status.modifiedPaths);
+      } catch (err) {
+        console.error("[agentFileTracking] reconcileNow failed for project=%s:", projectPath, err);
+      } finally {
+        set({ isReconciling: false });
+      }
     },
 
     clearProject: (projectPath) => {

@@ -4,7 +4,7 @@ import type { HookEvent } from "./notification-events";
 import { setupNotificationClickEvents } from "./notification-events";
 import { useNotificationStore } from "../../features/notification";
 import { parseHookType } from "../../features/notification/types";
-import { useAgentActivityStore, useGitStore } from "../../features/git";
+import { useAgentActivityStore, useGitStore, toProjectPathKey } from "../../features/git";
 import { useProjectStore } from "../../features/project";
 import {
   useAgentFileTrackingStore,
@@ -101,6 +101,25 @@ export async function initEventBridge(): Promise<void> {
 
       // 3. File tracking (PostToolUse + Read/Edit/Write)
       handleFileTracking(hookEvent);
+
+      // 4. Reconcile working set on agent session end
+      if (hookEvent.eventType === "Stop" || hookEvent.eventType === "SessionEnd") {
+        try {
+          if (hookEvent.projectPath) {
+            const rootPath = toProjectPathKey(hookEvent.projectPath);
+            setTimeout(() => {
+              useAgentFileTrackingStore
+                .getState()
+                .reconcileNow(rootPath)
+                .catch((err: unknown) =>
+                  console.error("[event-bridge] deferred reconcileNow failed:", err),
+                );
+            }, 1000);
+          }
+        } catch (err) {
+          console.error("[event-bridge] reconciliation dispatch failed:", err);
+        }
+      }
     },
   );
 
