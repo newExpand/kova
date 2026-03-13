@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { GitBranch } from "lucide-react";
 import {
   Dialog,
@@ -41,6 +41,23 @@ export function NewPaneDialog({
 }: NewPaneDialogProps) {
   const [worktreeMode, setWorktreeMode] = useState(false);
   const [taskName, setTaskName] = useState("");
+  const defaultButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handleArrowNavigation = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const buttons = Array.from(
+      e.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
+    );
+    if (buttons.length === 0) return;
+    const currentIdx = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (currentIdx === -1) return;
+    const nextIdx =
+      e.key === "ArrowDown"
+        ? (currentIdx + 1) % buttons.length
+        : (currentIdx - 1 + buttons.length) % buttons.length;
+    buttons[nextIdx]?.focus({ focusVisible: true } as FocusOptions);
+  }, []);
 
   const isValidTaskName =
     taskName.length > 0 &&
@@ -76,7 +93,15 @@ export function NewPaneDialog({
       open={action !== null}
       onOpenChange={(open) => !open && handleCancel()}
     >
-      <DialogContent className="max-w-xs">
+      <DialogContent
+        className="max-w-xs"
+        onOpenAutoFocus={() => {
+          // Let Radix finish its focus-trap setup first, then override
+          requestAnimationFrame(() => {
+            defaultButtonRef.current?.focus({ focusVisible: true } as FocusOptions);
+          });
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {action ? ACTION_LABELS[action] : ""}
@@ -85,7 +110,7 @@ export function NewPaneDialog({
             Choose how to start the new {action ? ACTION_LABELS[action].toLowerCase() : "session"}.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2">
+        <div role="group" className="flex flex-col gap-2" onKeyDown={!worktreeMode ? handleArrowNavigation : undefined}>
           {!worktreeMode && (
             <>
               <Button
@@ -100,6 +125,7 @@ export function NewPaneDialog({
                 return (
                   <Button
                     key={type}
+                    ref={isDefault ? defaultButtonRef : undefined}
                     variant={isDefault ? "default" : "outline"}
                     className="w-full justify-start"
                     autoFocus={isDefault}
@@ -138,6 +164,9 @@ export function NewPaneDialog({
               <div>
                 <input
                   autoFocus
+                  aria-label="Task name"
+                  aria-invalid={taskName.length > 0 && !TASK_NAME_REGEX.test(taskName)}
+                  aria-describedby={taskName.length > 0 && !TASK_NAME_REGEX.test(taskName) ? "task-name-error" : undefined}
                   value={taskName}
                   onChange={(e) => setTaskName(e.target.value)}
                   onKeyDown={(e) => {
@@ -149,7 +178,7 @@ export function NewPaneDialog({
                   className="w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 {taskName.length > 0 && !TASK_NAME_REGEX.test(taskName) && (
-                  <p className="mt-1 text-xs text-danger">
+                  <p id="task-name-error" role="alert" className="mt-1 text-xs text-danger">
                     Letters, numbers, hyphens, underscores only
                   </p>
                 )}

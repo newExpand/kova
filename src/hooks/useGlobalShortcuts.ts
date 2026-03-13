@@ -29,6 +29,11 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
   }, [isCommandPaletteOpen]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // When a modal dialog is open, suppress global shortcuts except Cmd+K / Cmd+/
+    if (e.metaKey && document.querySelector('[role="dialog"]')) {
+      if (e.key !== "k" && e.key !== "/") return;
+    }
+
     // Cmd+K — Command palette (close shortcuts help first if open)
     if (e.metaKey && e.key === "k") {
       e.preventDefault();
