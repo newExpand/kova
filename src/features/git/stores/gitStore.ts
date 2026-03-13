@@ -23,6 +23,8 @@ interface GitState {
   graphData: Record<string, GitGraphData>; // keyed by projectId
   loadingProjects: Record<string, boolean>; // per-project loading state
   errorByProject: Record<string, string | undefined>; // per-project errors
+  /** Per-project generation counter — incremented on clearProject() to invalidate in-flight fetches */
+  _graphGeneration: Record<string, number>;
   selectedCommitHash: string | null;
   commitDetail: CommitDetail | null;
   isDetailLoading: boolean;
@@ -85,6 +87,7 @@ interface GitActions {
   deleteBranch: (repoPath: string, branchName: string, force: boolean, projectId: string) => Promise<void>;
   switchBranch: (repoPath: string, branchName: string, projectId: string) => Promise<void>;
   clearBranchOperationError: () => void;
+  clearProject: (projectId: string) => void;
   // Computed
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
@@ -101,6 +104,7 @@ const initialState: GitState = {
   graphData: {},
   loadingProjects: {},
   errorByProject: {},
+  _graphGeneration: {},
   selectedCommitHash: null,
   commitDetail: null,
   isDetailLoading: false,
@@ -174,12 +178,14 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
 
   // Actions
   fetchGraphData: async (projectId, projectPath, limit = DEFAULT_PAGE_SIZE) => {
+    const gen = get()._graphGeneration[projectId] ?? 0;
     set((state) => ({
       loadingProjects: { ...state.loadingProjects, [projectId]: true },
       errorByProject: { ...state.errorByProject, [projectId]: undefined },
     }));
     try {
       const data = await getGitGraph(projectPath, limit);
+      if ((get()._graphGeneration[projectId] ?? 0) !== gen) return;
       set((state) => ({
         graphData: { ...state.graphData, [projectId]: data },
         loadingProjects: { ...state.loadingProjects, [projectId]: false },
@@ -193,6 +199,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         },
       }));
     } catch (e) {
+      if ((get()._graphGeneration[projectId] ?? 0) !== gen) return;
       console.error("[gitStore] fetchGraphData failed:", e);
       set((state) => ({
         errorByProject: { ...state.errorByProject, [projectId]: toErrorMessage(e) },
@@ -204,6 +211,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   fetchMoreCommits: async (projectId, projectPath) => {
     const pagination = get().paginationByProject[projectId];
     if (!pagination || !pagination.hasMore || pagination.isFetchingMore) return;
+    const gen = get()._graphGeneration[projectId] ?? 0;
 
     set((state) => ({
       paginationByProject: {
@@ -214,6 +222,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
 
     try {
       const page = await getGitCommitsPage(projectPath, pagination.offset, DEFAULT_PAGE_SIZE);
+      if ((get()._graphGeneration[projectId] ?? 0) !== gen) return;
       const existing = get().graphData[projectId];
       if (!existing) {
         set((state) => ({
@@ -247,6 +256,7 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
         },
       }));
     } catch (e) {
+      if ((get()._graphGeneration[projectId] ?? 0) !== gen) return;
       console.error("[gitStore] fetchMoreCommits failed:", e);
       set((state) => ({
         paginationByProject: {
@@ -500,6 +510,23 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
   },
 
   clearBranchOperationError: () => set({ branchOperationError: null }),
+
+  clearProject: (projectId) => set((state) => {
+    const { [projectId]: _g, ...graphData } = state.graphData;
+    const { [projectId]: _l, ...loadingProjects } = state.loadingProjects;
+    const { [projectId]: _e, ...errorByProject } = state.errorByProject;
+    const { [projectId]: _p, ...paginationByProject } = state.paginationByProject;
+    return {
+      graphData,
+      loadingProjects,
+      errorByProject,
+      paginationByProject,
+      _graphGeneration: {
+        ...state._graphGeneration,
+        [projectId]: (state._graphGeneration[projectId] ?? 0) + 1,
+      },
+    };
+  }),
 
   reset: () => set(initialState),
 }));

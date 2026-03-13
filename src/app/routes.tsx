@@ -1,9 +1,12 @@
-import { lazy, Suspense, useState, useEffect } from "react";
+import { lazy, Suspense, useEffect, useCallback } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { TerminalSquare, Command } from "lucide-react";
 import { useTmuxStore } from "../features/tmux";
+import { useGitStore } from "../features/git";
+import { useSshGitStore } from "../features/ssh";
 import { SettingsPage } from "../features/settings";
 import { getShortcutById } from "../lib/shortcuts";
+import { useLRUPool } from "../hooks/useLRUPool";
 
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
@@ -117,19 +120,11 @@ function WelcomePage() {
   );
 }
 
-/** Layout-level terminal pool — survives route navigation */
+/** Layout-level terminal pool — survives route navigation, bounded LRU (max 2) */
 function TerminalPool() {
   const { isTerminalRoute, activeProjectId } = useTerminalRouteMatch();
-  const [visitedProjects, setVisitedProjects] = useState<string[]>([]);
-
-  // Add first-visited project to pool
-  useEffect(() => {
-    if (activeProjectId) {
-      setVisitedProjects((prev) =>
-        prev.includes(activeProjectId) ? prev : [...prev, activeProjectId],
-      );
-    }
-  }, [activeProjectId]);
+  // React unmount handles cleanup: TerminalPage → TerminalView → useTerminal.disconnect()
+  const visitedProjects = useLRUPool(activeProjectId, 2);
 
   // Clear tmux error state on project switch (only when entering a terminal)
   useEffect(() => {
@@ -171,18 +166,12 @@ function TerminalPool() {
   );
 }
 
-/** Layout-level SSH terminal pool — mirrors TerminalPool for SSH connections */
+/** Layout-level SSH terminal pool — mirrors TerminalPool for SSH connections, bounded LRU (max 2) */
 function SshTerminalPool() {
   const { isSshTerminalRoute, activeConnectionId } = useSshTerminalRouteMatch();
-  const [visitedConnections, setVisitedConnections] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (activeConnectionId) {
-      setVisitedConnections((prev) =>
-        prev.includes(activeConnectionId) ? prev : [...prev, activeConnectionId],
-      );
-    }
-  }, [activeConnectionId]);
+  // React unmount handles PTY/xterm cleanup via useTerminal.disconnect()
+  // activeConnections[id] stays alive for auto-reconnect on re-visit
+  const visitedConnections = useLRUPool(activeConnectionId, 2);
 
   return (
     <div
@@ -217,18 +206,13 @@ function SshTerminalPool() {
   );
 }
 
-/** Layout-level git graph pool — survives route navigation (mirrors TerminalPool) */
+/** Layout-level git graph pool — survives route navigation, bounded LRU (max 3) */
 function GitGraphPool() {
   const { isGitRoute, activeProjectId } = useGitRouteMatch();
-  const [visitedProjects, setVisitedProjects] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (activeProjectId) {
-      setVisitedProjects((prev) =>
-        prev.includes(activeProjectId) ? prev : [...prev, activeProjectId],
-      );
-    }
-  }, [activeProjectId]);
+  const handleGitEvict = useCallback((evictedId: string) => {
+    useGitStore.getState().clearProject(evictedId);
+  }, []);
+  const visitedProjects = useLRUPool(activeProjectId, 3, handleGitEvict);
 
   return (
     <div
@@ -263,18 +247,13 @@ function GitGraphPool() {
   );
 }
 
-/** Layout-level SSH git graph pool — survives route navigation (mirrors GitGraphPool for SSH) */
+/** Layout-level SSH git graph pool — survives route navigation, bounded LRU (max 3) */
 function SshGitGraphPool() {
   const { isSshGitRoute, activeConnectionId } = useSshGitRouteMatch();
-  const [visitedConnections, setVisitedConnections] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (activeConnectionId) {
-      setVisitedConnections((prev) =>
-        prev.includes(activeConnectionId) ? prev : [...prev, activeConnectionId],
-      );
-    }
-  }, [activeConnectionId]);
+  const handleSshGitEvict = useCallback((evictedId: string) => {
+    useSshGitStore.getState().clearConnection(evictedId);
+  }, []);
+  const visitedConnections = useLRUPool(activeConnectionId, 3, handleSshGitEvict);
 
   return (
     <div

@@ -30,6 +30,8 @@ interface SshGitState {
   paginationByConnection: Record<string, PaginationState>;
   /** Monotonically increasing counter to guard against stale fetchCommitDetail responses */
   _detailRequestId: number;
+  /** Per-connection generation counter — incremented on clearConnection() to invalidate in-flight fetches */
+  _graphGeneration: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +51,7 @@ interface SshGitActions {
   selectCommit: (hash: string | null) => void;
   fetchCommitDetail: (connectionId: string, hash: string) => Promise<void>;
   clearCommitDetail: () => void;
+  clearConnection: (connectionId: string) => void;
   reset: () => void;
 }
 
@@ -66,6 +69,7 @@ const initialState: SshGitState = {
   detailError: null,
   paginationByConnection: {},
   _detailRequestId: 0,
+  _graphGeneration: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -94,6 +98,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
 
     // Actions
     fetchGraphData: async (connectionId, limit = DEFAULT_PAGE_SIZE) => {
+      const gen = get()._graphGeneration[connectionId] ?? 0;
       set((state) => ({
         loadingConnections: {
           ...state.loadingConnections,
@@ -106,6 +111,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
       }));
       try {
         const data = await getRemoteGitGraph(connectionId, limit);
+        if ((get()._graphGeneration[connectionId] ?? 0) !== gen) return;
         set((state) => ({
           graphData: { ...state.graphData, [connectionId]: data },
           paginationByConnection: {
@@ -118,6 +124,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
           },
         }));
       } catch (e) {
+        if ((get()._graphGeneration[connectionId] ?? 0) !== gen) return;
         console.error("[sshGitStore] fetchGraphData failed:", e);
         set((state) => ({
           errorByConnection: {
@@ -126,12 +133,14 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
           },
         }));
       } finally {
-        set((state) => ({
-          loadingConnections: {
-            ...state.loadingConnections,
-            [connectionId]: false,
-          },
-        }));
+        if ((get()._graphGeneration[connectionId] ?? 0) === gen) {
+          set((state) => ({
+            loadingConnections: {
+              ...state.loadingConnections,
+              [connectionId]: false,
+            },
+          }));
+        }
       }
     },
 
@@ -139,6 +148,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
       const pagination = get().paginationByConnection[connectionId];
       if (!pagination || !pagination.hasMore || pagination.isFetchingMore)
         return;
+      const gen = get()._graphGeneration[connectionId] ?? 0;
 
       set((state) => ({
         paginationByConnection: {
@@ -153,6 +163,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
           pagination.offset,
           DEFAULT_PAGE_SIZE,
         );
+        if ((get()._graphGeneration[connectionId] ?? 0) !== gen) return;
         const existing = get().graphData[connectionId];
         if (!existing) return;
 
@@ -182,6 +193,7 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
           },
         }));
       } catch (e) {
+        if ((get()._graphGeneration[connectionId] ?? 0) !== gen) return;
         console.error("[sshGitStore] fetchMoreCommits failed:", e);
         set((state) => ({
           errorByConnection: {
@@ -190,15 +202,17 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
           },
         }));
       } finally {
-        set((state) => ({
-          paginationByConnection: {
-            ...state.paginationByConnection,
-            [connectionId]: {
-              ...(state.paginationByConnection[connectionId] ?? pagination),
-              isFetchingMore: false,
+        if ((get()._graphGeneration[connectionId] ?? 0) === gen) {
+          set((state) => ({
+            paginationByConnection: {
+              ...state.paginationByConnection,
+              [connectionId]: {
+                ...(state.paginationByConnection[connectionId] ?? pagination),
+                isFetchingMore: false,
+              },
             },
-          },
-        }));
+          }));
+        }
       }
     },
 
@@ -242,6 +256,23 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
 
     clearCommitDetail: () =>
       set({ commitDetail: null, isDetailLoading: false, detailError: null }),
+
+    clearConnection: (connectionId) => set((state) => {
+      const { [connectionId]: _g, ...graphData } = state.graphData;
+      const { [connectionId]: _l, ...loadingConnections } = state.loadingConnections;
+      const { [connectionId]: _e, ...errorByConnection } = state.errorByConnection;
+      const { [connectionId]: _p, ...paginationByConnection } = state.paginationByConnection;
+      return {
+        graphData,
+        loadingConnections,
+        errorByConnection,
+        paginationByConnection,
+        _graphGeneration: {
+          ...state._graphGeneration,
+          [connectionId]: (state._graphGeneration[connectionId] ?? 0) + 1,
+        },
+      };
+    }),
 
     reset: () => set(initialState),
   }),
