@@ -1139,3 +1139,52 @@ export async function searchFileContents(
   });
 }
 
+// ---------------------------------------------------------------------------
+// File management commands (create / delete / rename / copy)
+// ---------------------------------------------------------------------------
+
+export async function createFile(
+  projectPath: string,
+  relativePath: string,
+): Promise<FileEntry> {
+  return invoke<FileEntry>("create_file", { projectPath, relativePath });
+}
+
+export async function createDirectory(
+  projectPath: string,
+  relativePath: string,
+): Promise<FileEntry> {
+  return invoke<FileEntry>("create_directory", { projectPath, relativePath });
+}
+
+export async function deletePath(
+  projectPath: string,
+  relativePath: string,
+): Promise<void> {
+  return invoke<void>("delete_path", { projectPath, relativePath });
+}
+
+export async function renamePath(
+  projectPath: string,
+  oldRelativePath: string,
+  newRelativePath: string,
+): Promise<FileEntry> {
+  return invoke<FileEntry>("rename_path", {
+    projectPath,
+    oldRelativePath,
+    newRelativePath,
+  });
+}
+
+export async function copyExternalFiles(
+  projectPath: string,
+  targetRelativeDir: string,
+  sourcePaths: string[],
+): Promise<FileEntry[]> {
+  return invoke<FileEntry[]>("copy_external_files", {
+    projectPath,
+    targetRelativeDir,
+    sourcePaths,
+  });
+}
+

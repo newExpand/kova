@@ -3,6 +3,63 @@ use crate::models::files::{ContentSearchResult, FileContent, FileEntry, FileSear
 use crate::services;
 use tracing::error;
 
+// ---------------------------------------------------------------------------
+// File Management Commands (create / delete / rename / copy)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn create_file(
+    project_path: String,
+    relative_path: String,
+) -> Result<FileEntry, AppError> {
+    services::file_service::create_file(&project_path, &relative_path)
+}
+
+#[tauri::command]
+pub async fn create_directory(
+    project_path: String,
+    relative_path: String,
+) -> Result<FileEntry, AppError> {
+    services::file_service::create_directory(&project_path, &relative_path)
+}
+
+#[tauri::command]
+pub async fn delete_path(
+    project_path: String,
+    relative_path: String,
+) -> Result<(), AppError> {
+    services::file_service::delete_path(&project_path, &relative_path)
+}
+
+#[tauri::command]
+pub async fn rename_path(
+    project_path: String,
+    old_relative_path: String,
+    new_relative_path: String,
+) -> Result<FileEntry, AppError> {
+    services::file_service::rename_path(&project_path, &old_relative_path, &new_relative_path)
+}
+
+#[tauri::command]
+pub async fn copy_external_files(
+    project_path: String,
+    target_relative_dir: String,
+    source_paths: Vec<String>,
+) -> Result<Vec<FileEntry>, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::file_service::copy_external_files(
+            &project_path,
+            &target_relative_dir,
+            source_paths,
+        )
+    })
+    .await
+    .map_err(|e| {
+        error!("copy_external_files task panicked: {}", e);
+        AppError::Internal(format!("File copy failed unexpectedly: {}", e))
+    })?
+}
+
 #[tauri::command]
 pub async fn resolve_import_path(
     project_path: String,

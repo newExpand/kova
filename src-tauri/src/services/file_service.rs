@@ -11,6 +11,13 @@ use tracing::warn;
 /// Maximum file size for reading (5 MB)
 const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024;
 
+/// Canonicalize a project path, returning a descriptive error on failure.
+fn canonicalize_project(project: &Path) -> Result<std::path::PathBuf, AppError> {
+    project.canonicalize().map_err(|e| {
+        AppError::InvalidInput(format!("Invalid project path: {}", e))
+    })
+}
+
 /// Directories to skip during listing
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -25,12 +32,35 @@ const SKIP_DIRS: &[&str] = &[
     ".claude",
 ];
 
+/// Validate that a relative path does not escape the project root.
+/// Rejects absolute paths (Path::join would discard base) and ".." path components.
+/// Uses component-level check (not string contains) to allow "foo..bar" filenames.
+fn validate_relative_path(relative_path: &str) -> Result<(), AppError> {
+    let path = Path::new(relative_path);
+
+    // Reject absolute paths (Path::join would discard base)
+    if path.is_absolute() {
+        return Err(AppError::InvalidInput(
+            "Absolute paths are not allowed".to_string(),
+        ));
+    }
+
+    // Reject ".." components (component-level, not string contains)
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(AppError::InvalidInput(
+                "Path traversal detected: access denied".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 /// Validate that the requested path is within the project root.
 /// Returns the canonicalized absolute path on success.
 fn validate_within_project(project_path: &Path, relative_path: &str) -> Result<std::path::PathBuf, AppError> {
-    let project_root = project_path.canonicalize().map_err(|e| {
-        AppError::InvalidInput(format!("Invalid project path: {}", e))
-    })?;
+    let project_root = canonicalize_project(project_path)?;
 
     let requested = project_root.join(relative_path);
     let canonical = requested.canonicalize().map_err(|e| {
@@ -49,9 +79,7 @@ fn validate_within_project(project_path: &Path, relative_path: &str) -> Result<s
 /// Validate path for write operations where the target file may not yet exist.
 /// Canonicalizes the parent directory instead.
 fn validate_within_project_for_write(project_path: &Path, relative_path: &str) -> Result<std::path::PathBuf, AppError> {
-    let project_root = project_path.canonicalize().map_err(|e| {
-        AppError::InvalidInput(format!("Invalid project path: {}", e))
-    })?;
+    let project_root = canonicalize_project(project_path)?;
 
     let requested = project_root.join(relative_path);
     let parent = requested.parent().ok_or_else(|| {
@@ -80,9 +108,7 @@ fn validate_within_project_for_write(project_path: &Path, relative_path: &str) -
 pub fn list_directory(project_path: &str, relative_path: &str) -> Result<Vec<FileEntry>, AppError> {
     let project = Path::new(project_path);
     let dir_path = if relative_path.is_empty() || relative_path == "." {
-        project.canonicalize().map_err(|e| {
-            AppError::InvalidInput(format!("Invalid project path: {}", e))
-        })?
+        canonicalize_project(project)?
     } else {
         validate_within_project(project, relative_path)?
     };
@@ -94,10 +120,10 @@ pub fn list_directory(project_path: &str, relative_path: &str) -> Result<Vec<Fil
         )));
     }
 
+    let project_root = canonicalize_project(project)?;
+
     let mut entries = Vec::new();
-    let read_dir = std::fs::read_dir(&dir_path).map_err(|e| {
-        AppError::Io(e)
-    })?;
+    let read_dir = std::fs::read_dir(&dir_path)?;
 
     for entry_result in read_dir {
         let entry = match entry_result {
@@ -123,51 +149,12 @@ pub fn list_directory(project_path: &str, relative_path: &str) -> Result<Vec<Fil
             }
         };
 
-        let is_dir = metadata.is_dir();
-
         // Skip known heavy directories
-        if is_dir && SKIP_DIRS.contains(&name.as_str()) {
+        if metadata.is_dir() && SKIP_DIRS.contains(&name.as_str()) {
             continue;
         }
 
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| {
-                chrono::DateTime::from_timestamp(d.as_secs() as i64, 0)
-                    .map(|dt| dt.to_rfc3339())
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-
-        let extension = if is_dir {
-            None
-        } else {
-            Path::new(&name)
-                .extension()
-                .map(|e| e.to_string_lossy().to_string())
-        };
-
-        // Build relative path from project root
-        let entry_path = entry.path();
-        let project_canonical = project.canonicalize().map_err(|e| {
-            AppError::InvalidInput(format!("Invalid project path: {}", e))
-        })?;
-        let rel = entry_path
-            .strip_prefix(&project_canonical)
-            .unwrap_or(&entry_path)
-            .to_string_lossy()
-            .to_string();
-
-        entries.push(FileEntry {
-            name,
-            path: rel,
-            is_dir,
-            size: if is_dir { 0 } else { metadata.len() },
-            modified,
-            extension,
-        });
+        entries.push(build_file_entry(&entry.path(), &project_root, &metadata));
     }
 
     // Sort: directories first, then alphabetical (case-insensitive)
@@ -233,6 +220,349 @@ pub fn write_file(project_path: &str, relative_path: &str, content: &str) -> Res
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// File Management Operations (create / delete / rename / copy)
+// ---------------------------------------------------------------------------
+
+/// Protected directory names that cannot be deleted.
+const PROTECTED_DIRS: &[&str] = &[".git"];
+
+/// Maximum file size for external copy (500 MB)
+const MAX_COPY_FILE_SIZE: u64 = 500 * 1024 * 1024;
+
+/// Build a `FileEntry` from a canonicalized path and its metadata,
+/// using `project_root` to compute the relative path.
+fn build_file_entry(
+    abs_path: &Path,
+    project_root: &Path,
+    metadata: &std::fs::Metadata,
+) -> FileEntry {
+    let name = abs_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let rel = abs_path
+        .strip_prefix(project_root)
+        .unwrap_or(abs_path)
+        .to_string_lossy()
+        .to_string();
+    let is_dir = metadata.is_dir();
+    let extension = if is_dir {
+        None
+    } else {
+        abs_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+    };
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| {
+            chrono::DateTime::from_timestamp(d.as_secs() as i64, 0)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+
+    FileEntry {
+        name,
+        path: rel,
+        is_dir,
+        size: if is_dir { 0 } else { metadata.len() },
+        modified,
+        extension,
+    }
+}
+
+/// Create an empty file at the given relative path within a project.
+/// Uses atomic write (temp + rename) with 0600 permissions.
+pub fn create_file(project_path: &str, relative_path: &str) -> Result<FileEntry, AppError> {
+    let project = Path::new(project_path);
+    let file_path = validate_within_project_for_write(project, relative_path)?;
+
+    if file_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "File already exists: {}",
+            relative_path
+        )));
+    }
+
+    // Atomic write: create temp file in same directory, then rename
+    let parent = file_path.parent().ok_or_else(|| {
+        AppError::InvalidInput("Cannot determine parent directory".to_string())
+    })?;
+    let temp_path = parent.join(format!(
+        ".tmp_{}_{}",
+        std::process::id(),
+        file_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
+    ));
+
+    // Create temp file with empty content
+    std::fs::write(&temp_path, b"")?;
+
+    // Set permissions to 0600
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(&temp_path, perms) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(AppError::Io(e));
+        }
+    }
+
+    // Rename temp to target (atomic on same filesystem)
+    if let Err(e) = std::fs::rename(&temp_path, &file_path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(AppError::Io(e));
+    }
+
+    let project_root = canonicalize_project(project)?;
+    let metadata = std::fs::metadata(&file_path)?;
+    Ok(build_file_entry(&file_path, &project_root, &metadata))
+}
+
+/// Create a directory at the given relative path within a project.
+/// Parent directory must already exist (does not create intermediate directories).
+pub fn create_directory(project_path: &str, relative_path: &str) -> Result<FileEntry, AppError> {
+    let project = Path::new(project_path);
+    let dir_path = validate_within_project_for_write(project, relative_path)?;
+
+    if dir_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "Directory already exists: {}",
+            relative_path
+        )));
+    }
+
+    std::fs::create_dir(&dir_path)?;
+
+    let project_root = canonicalize_project(project)?;
+    let metadata = std::fs::metadata(&dir_path)?;
+    Ok(build_file_entry(&dir_path, &project_root, &metadata))
+}
+
+/// Delete a file or directory at the given relative path within a project.
+/// Refuses to delete the project root, protected directories (.git),
+/// or any path that contains a protected directory as a component.
+/// Symlinks are removed as links (the target is NOT deleted).
+pub fn delete_path(project_path: &str, relative_path: &str) -> Result<(), AppError> {
+    if relative_path.is_empty() || relative_path == "." {
+        return Err(AppError::InvalidInput(
+            "Cannot delete project root".to_string(),
+        ));
+    }
+
+    let project = Path::new(project_path);
+    let project_root = canonicalize_project(project)?;
+
+    // Block absolute paths and ".." traversal before any filesystem access
+    validate_relative_path(relative_path)?;
+
+    // Check symlink BEFORE canonicalize to avoid operating on the target
+    let raw_path = project_root.join(relative_path);
+    let raw_meta = std::fs::symlink_metadata(&raw_path).map_err(|e| {
+        AppError::InvalidInput(format!("Invalid path '{}': {}", relative_path, e))
+    })?;
+    if raw_meta.file_type().is_symlink() {
+        // Remove the symlink itself, not the target
+        std::fs::remove_file(&raw_path)?;
+        return Ok(());
+    }
+
+    let target_path = validate_within_project(project, relative_path)?;
+
+    // Check all path components against protected dirs (not just the leaf)
+    let rel_to_root = target_path.strip_prefix(&project_root).unwrap_or(&target_path);
+    for component in rel_to_root.components() {
+        if let std::path::Component::Normal(name) = component {
+            let name_str = name.to_string_lossy();
+            if PROTECTED_DIRS.contains(&name_str.as_ref()) {
+                return Err(AppError::InvalidInput(format!(
+                    "Cannot delete inside protected directory: {}",
+                    name_str
+                )));
+            }
+        }
+    }
+
+    if target_path.is_dir() {
+        std::fs::remove_dir_all(&target_path)?;
+    } else {
+        std::fs::remove_file(&target_path)?;
+    }
+
+    Ok(())
+}
+
+/// Rename or move a file/directory within a project.
+/// Checks destination does not already exist to prevent silent overwrites.
+/// Symlinks are renamed as links (the target is NOT moved).
+pub fn rename_path(
+    project_path: &str,
+    old_relative_path: &str,
+    new_relative_path: &str,
+) -> Result<FileEntry, AppError> {
+    let project = Path::new(project_path);
+    let project_root = canonicalize_project(project)?;
+
+    // Block absolute paths and ".." traversal before any filesystem access
+    validate_relative_path(old_relative_path)?;
+    validate_relative_path(new_relative_path)?;
+
+    // Check symlink BEFORE canonicalize to operate on the link, not the target
+    let raw_old = project_root.join(old_relative_path);
+    let raw_meta = std::fs::symlink_metadata(&raw_old).map_err(|e| {
+        AppError::InvalidInput(format!("Invalid path '{}': {}", old_relative_path, e))
+    })?;
+    let is_symlink = raw_meta.file_type().is_symlink();
+
+    let new_path = validate_within_project_for_write(project, new_relative_path)?;
+
+    if new_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "Destination already exists: {}",
+            new_relative_path
+        )));
+    }
+
+    if is_symlink {
+        // Rename the symlink itself, not the target
+        if !raw_old.exists() && !raw_meta.file_type().is_symlink() {
+            return Err(AppError::NotFound(format!(
+                "Source not found: {}",
+                old_relative_path
+            )));
+        }
+        std::fs::rename(&raw_old, &new_path)?;
+    } else {
+        let old_path = validate_within_project(project, old_relative_path)?;
+        if !old_path.exists() {
+            return Err(AppError::NotFound(format!(
+                "Source not found: {}",
+                old_relative_path
+            )));
+        }
+        std::fs::rename(&old_path, &new_path)?;
+    }
+
+    let metadata = std::fs::symlink_metadata(&new_path)?;
+    Ok(build_file_entry(&new_path, &project_root, &metadata))
+}
+
+/// Copy external files into a project directory.
+/// Source paths are absolute (from OS drag-drop). Only regular files are accepted.
+/// Folders and files larger than MAX_COPY_FILE_SIZE are rejected.
+pub fn copy_external_files(
+    project_path: &str,
+    target_relative_dir: &str,
+    source_paths: Vec<String>,
+) -> Result<Vec<FileEntry>, AppError> {
+    let project = Path::new(project_path);
+    let project_root = canonicalize_project(project)?;
+
+    // Validate target directory is within project
+    let target_dir = if target_relative_dir.is_empty() || target_relative_dir == "." {
+        project_root.clone()
+    } else {
+        validate_within_project(project, target_relative_dir)?
+    };
+
+    if !target_dir.is_dir() {
+        return Err(AppError::InvalidInput(format!(
+            "Target is not a directory: {}",
+            target_relative_dir
+        )));
+    }
+
+    let mut entries = Vec::with_capacity(source_paths.len());
+
+    for source_str in &source_paths {
+        let source = Path::new(source_str);
+
+        if !source.exists() {
+            tracing::error!("External file not found: {}", source_str);
+            return Err(AppError::NotFound(format!(
+                "Source file not found: {}",
+                source_str
+            )));
+        }
+
+        let source_meta = std::fs::metadata(source)?;
+
+        // Reject directories (v1: folder drop not supported)
+        if source_meta.is_dir() {
+            return Err(AppError::InvalidInput(
+                "Folder drop is not supported. Please drop individual files.".to_string(),
+            ));
+        }
+
+        // Reject non-regular files (symlinks to devices, named pipes, etc.)
+        if !source_meta.file_type().is_file() {
+            return Err(AppError::InvalidInput(format!(
+                "Not a regular file: {}",
+                source_str
+            )));
+        }
+
+        // Reject files exceeding size limit
+        if source_meta.len() > MAX_COPY_FILE_SIZE {
+            return Err(AppError::InvalidInput(format!(
+                "File too large: {} ({} bytes, max {} bytes)",
+                source_str,
+                source_meta.len(),
+                MAX_COPY_FILE_SIZE
+            )));
+        }
+
+        let file_name = source.file_name().ok_or_else(|| {
+            AppError::InvalidInput(format!("Cannot determine file name: {}", source_str))
+        })?;
+
+        let dest = target_dir.join(file_name);
+
+        if dest.exists() {
+            return Err(AppError::InvalidInput(format!(
+                "File already exists at destination: {}",
+                file_name.to_string_lossy()
+            )));
+        }
+
+        // Atomic copy: temp file + rename, with 0600 permissions
+        let temp_dest = target_dir.join(format!(
+            ".tmp_{}_{}",
+            std::process::id(),
+            file_name.to_string_lossy()
+        ));
+        if let Err(e) = std::fs::copy(source, &temp_dest) {
+            let _ = std::fs::remove_file(&temp_dest);
+            return Err(AppError::Io(e));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            if let Err(e) = std::fs::set_permissions(&temp_dest, perms) {
+                let _ = std::fs::remove_file(&temp_dest);
+                return Err(AppError::Io(e));
+            }
+        }
+        if let Err(e) = std::fs::rename(&temp_dest, &dest) {
+            let _ = std::fs::remove_file(&temp_dest);
+            return Err(AppError::Io(e));
+        }
+
+        let dest_meta = std::fs::metadata(&dest)?;
+        entries.push(build_file_entry(&dest, &project_root, &dest_meta));
+    }
+
+    Ok(entries)
+}
+
 /// Detect if content is binary by checking for null bytes in first 8KB.
 fn is_binary_content(data: &[u8]) -> bool {
     let check_len = data.len().min(8192);
@@ -265,9 +595,7 @@ pub fn resolve_import_path(
         )));
     }
 
-    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
-        AppError::InvalidInput(format!("Invalid project path: {}", e))
-    })?;
+    let project_root = canonicalize_project(Path::new(project_path))?;
 
     let current_dir = project_root
         .join(current_file)
@@ -506,9 +834,7 @@ pub fn search_files(
         return Ok(Vec::new());
     }
 
-    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
-        AppError::InvalidInput(format!("Invalid project path: {}", e))
-    })?;
+    let project_root = canonicalize_project(Path::new(project_path))?;
 
     let all_files = collect_all_files(&project_root)?;
 
@@ -613,9 +939,7 @@ pub fn search_file_contents(
         .build()
         .map_err(|e| AppError::InvalidInput(format!("Invalid regex: {}", e)))?;
 
-    let project_root = Path::new(project_path).canonicalize().map_err(|e| {
-        AppError::InvalidInput(format!("Invalid project path: {}", e))
-    })?;
+    let project_root = canonicalize_project(Path::new(project_path))?;
 
     let all_files = collect_all_files(&project_root)?;
     let match_limit = max_results.unwrap_or(MAX_CONTENT_MATCHES);

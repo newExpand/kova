@@ -1,6 +1,7 @@
 import { ChevronRight, Folder, File } from "lucide-react";
 import { motion } from "motion/react";
 import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
+import { FileTreeContextMenu } from "./FileTreeContextMenu";
 import type { FileEntry } from "../../../lib/tauri/commands";
 
 interface FileTreeItemProps {
@@ -30,7 +31,14 @@ export function FileTreeItem({
   const isUserEdited = !entry.isDir
     && useAgentFileTrackingStore((s) => s.isUserEdited(projectPath, entry.path));
   const paddingLeft = depth * 16 + 8;
-  const hasLeftBorder = isAgentModified || isUserEdited;
+
+  let borderClass = "";
+  if (isAgentModified) {
+    borderClass = "border-l-2 border-primary";
+  } else if (isUserEdited) {
+    borderClass = "border-l-2 border-amber-400";
+  }
+  const hasLeftBorder = borderClass !== "";
 
   const handleClick = () => {
     if (entry.isDir) {
@@ -41,52 +49,54 @@ export function FileTreeItem({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
-        isActive ? "text-text" : "text-text-secondary"
-      } ${
-        isAgentModified ? "border-l-2 border-primary" :
-        isUserEdited ? "border-l-2 border-amber-400" : ""
-      }`}
-      style={{ paddingLeft: hasLeftBorder ? paddingLeft - 2 : paddingLeft }}
-    >
-      {isActive && (
-        <motion.div
-          layoutId="activeFileBg"
-          className="absolute inset-0 z-0 rounded-sm bg-white/[0.10]"
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        />
+    <FileTreeContextMenu entry={entry} projectPath={projectPath}>
+      {({ onContextMenu }) => (
+        <button
+          type="button"
+          onClick={handleClick}
+          onContextMenu={onContextMenu}
+          className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
+            isActive ? "text-text" : "text-text-secondary"
+          } ${borderClass}`}
+          style={{ paddingLeft: hasLeftBorder ? paddingLeft - 2 : paddingLeft }}
+        >
+          {isActive && (
+            <motion.div
+              layoutId="activeFileBg"
+              className="absolute inset-0 z-0 rounded-sm bg-white/[0.10]"
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            />
+          )}
+          {entry.isDir ? (
+            <>
+              <ChevronRight
+                className={`relative h-3 w-3 shrink-0 text-text-muted transition-transform duration-150 ${
+                  isExpanded ? "rotate-90" : ""
+                }`}
+              />
+              <Folder className="relative h-3.5 w-3.5 shrink-0 text-text-muted" />
+            </>
+          ) : (
+            <>
+              <span className="relative inline-block w-3 shrink-0" />
+              <File className="relative h-3.5 w-3.5 shrink-0 text-text-muted" />
+            </>
+          )}
+          <span className="relative truncate">
+            {entry.name}
+            {isLoading && (
+              <span className="ml-1 text-[10px] text-text-muted animate-pulse">...</span>
+            )}
+          </span>
+          {/* Agent tracking dot */}
+          {isAgentModified && (
+            <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+          )}
+          {isUserEdited && !isAgentModified && (
+            <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+          )}
+        </button>
       )}
-      {entry.isDir ? (
-        <>
-          <ChevronRight
-            className={`relative h-3 w-3 shrink-0 text-text-muted transition-transform duration-150 ${
-              isExpanded ? "rotate-90" : ""
-            }`}
-          />
-          <Folder className="relative h-3.5 w-3.5 shrink-0 text-text-muted" />
-        </>
-      ) : (
-        <>
-          <span className="relative inline-block w-3 shrink-0" />
-          <File className="relative h-3.5 w-3.5 shrink-0 text-text-muted" />
-        </>
-      )}
-      <span className="relative truncate">
-        {entry.name}
-        {isLoading && (
-          <span className="ml-1 text-[10px] text-text-muted animate-pulse">...</span>
-        )}
-      </span>
-      {/* Agent tracking dot */}
-      {isAgentModified && (
-        <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-      )}
-      {isUserEdited && !isAgentModified && (
-        <span className="relative ml-auto mr-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-      )}
-    </button>
+    </FileTreeContextMenu>
   );
 }
