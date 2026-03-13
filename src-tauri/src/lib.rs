@@ -425,6 +425,11 @@ pub fn run() {
             commands::files::resolve_import_path,
             commands::files::search_project_files,
             commands::files::search_file_contents,
+            commands::files::create_file,
+            commands::files::create_directory,
+            commands::files::delete_path,
+            commands::files::rename_path,
+            commands::files::copy_external_files,
             // Environment commands
             commands::environment::check_environment,
         ])

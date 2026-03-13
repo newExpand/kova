@@ -4,6 +4,11 @@ import {
   listDirectory,
   readFile,
   writeFile,
+  createFile,
+  createDirectory,
+  deletePath,
+  renamePath,
+  copyExternalFiles,
 } from "../../../lib/tauri/commands";
 import type { OpenFile, ScrollTarget } from "../types";
 import { MAX_OPEN_FILES } from "../types";
@@ -13,10 +18,16 @@ import { useAgentFileTrackingStore } from "./agentFileTrackingStore";
 // Tree State (per project)
 // ---------------------------------------------------------------------------
 
+interface InlineCreateState {
+  parentDir: string;
+  isDir: boolean;
+}
+
 interface TreeState {
   entries: Record<string, FileEntry[]>; // keyed by relative dir path
   expandedDirs: Record<string, boolean>;
   loadingDirs: Record<string, boolean>;
+  inlineCreate: InlineCreateState | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +43,7 @@ interface FileState {
   // Loading
   isFileLoading: boolean;
   isSaving: boolean;
+  isMutating: boolean;
   error: string | null;
   // Scroll target (set by terminal links or event bridge)
   pendingScrollTarget: ScrollTarget | null;
@@ -48,6 +60,13 @@ interface FileActions {
   updateFileContent: (path: string, content: string) => void;
   saveFile: (projectPath: string, path: string) => Promise<void>;
   refreshFile: (projectPath: string, relativePath: string) => Promise<void>;
+  // File management actions (return error string on failure, null on success)
+  startInlineCreate: (projectPath: string, parentDir: string, isDir: boolean) => void;
+  cancelInlineCreate: (projectPath: string) => void;
+  createEntry: (projectPath: string, parentDir: string, name: string, isDir: boolean) => Promise<string | null>;
+  deleteEntry: (projectPath: string, relativePath: string) => Promise<string | null>;
+  renameEntry: (projectPath: string, oldPath: string, newName: string) => Promise<string | null>;
+  copyExternalEntries: (projectPath: string, targetDir: string, sourcePaths: string[]) => Promise<string | null>;
   // Scroll target
   setScrollTarget: (target: ScrollTarget) => void;
   clearScrollTarget: () => void;
@@ -69,6 +88,7 @@ const emptyTreeState: TreeState = {
   entries: {},
   expandedDirs: {},
   loadingDirs: {},
+  inlineCreate: null,
 };
 
 const initialState: FileState = {
@@ -77,9 +97,25 @@ const initialState: FileState = {
   activeFilePath: null,
   isFileLoading: false,
   isSaving: false,
+  isMutating: false,
   error: null,
   pendingScrollTarget: null,
 };
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Get parent directory from a relative path (e.g. "src/foo/bar.ts" → "src/foo") */
+function getParentDir(relativePath: string): string {
+  const idx = relativePath.lastIndexOf("/");
+  return idx === -1 ? "" : relativePath.slice(0, idx);
+}
+
+/** Create a fresh tree state to avoid mutating the shared emptyTreeState */
+function freshTreeState(): TreeState {
+  return { entries: {}, expandedDirs: {}, loadingDirs: {}, inlineCreate: null };
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -92,7 +128,7 @@ export const useFileStore = create<FileStore>()((set, get) => ({
 
   loadDirectory: async (projectPath, relativePath) => {
     const key = projectPath;
-    const tree = get().treeByProject[key] ?? { ...emptyTreeState, entries: {}, expandedDirs: {}, loadingDirs: {} };
+    const tree = get().treeByProject[key] ?? freshTreeState();
 
     // Mark loading
     set({
@@ -107,7 +143,7 @@ export const useFileStore = create<FileStore>()((set, get) => ({
 
     try {
       const entries = await listDirectory(projectPath, relativePath);
-      const currentTree = get().treeByProject[key] ?? { ...emptyTreeState, entries: {}, expandedDirs: {}, loadingDirs: {} };
+      const currentTree = get().treeByProject[key] ?? freshTreeState();
       const newLoadingDirs = { ...currentTree.loadingDirs };
       delete newLoadingDirs[relativePath];
 
@@ -123,7 +159,7 @@ export const useFileStore = create<FileStore>()((set, get) => ({
         error: null,
       });
     } catch (e) {
-      const currentTree = get().treeByProject[key] ?? { ...emptyTreeState, entries: {}, expandedDirs: {}, loadingDirs: {} };
+      const currentTree = get().treeByProject[key] ?? freshTreeState();
       const newLoadingDirs = { ...currentTree.loadingDirs };
       delete newLoadingDirs[relativePath];
 
@@ -142,7 +178,7 @@ export const useFileStore = create<FileStore>()((set, get) => ({
 
   toggleDirectory: (projectPath, relativePath) => {
     const key = projectPath;
-    const tree = get().treeByProject[key] ?? { ...emptyTreeState, entries: {}, expandedDirs: {}, loadingDirs: {} };
+    const tree = get().treeByProject[key] ?? freshTreeState();
     const isExpanded = tree.expandedDirs[relativePath] ?? false;
 
     set({
@@ -300,6 +336,226 @@ export const useFileStore = create<FileStore>()((set, get) => ({
       });
     } catch (e) {
       set({ error: String(e) });
+    }
+  },
+
+  // ── File Management Actions ──
+
+  startInlineCreate: (projectPath, parentDir, isDir) => {
+    const key = projectPath;
+    const tree = get().treeByProject[key] ?? freshTreeState();
+
+    // Ensure parent dir is expanded
+    const newExpanded = { ...tree.expandedDirs, [parentDir]: true };
+
+    set({
+      treeByProject: {
+        ...get().treeByProject,
+        [key]: {
+          ...tree,
+          expandedDirs: newExpanded,
+          inlineCreate: { parentDir, isDir },
+        },
+      },
+    });
+
+    // Load parent if not yet loaded
+    if (!tree.entries[parentDir]) {
+      get().loadDirectory(projectPath, parentDir);
+    }
+  },
+
+  cancelInlineCreate: (projectPath) => {
+    const key = projectPath;
+    const tree = get().treeByProject[key];
+    if (!tree || !tree.inlineCreate) return;
+
+    set({
+      treeByProject: {
+        ...get().treeByProject,
+        [key]: { ...tree, inlineCreate: null },
+      },
+    });
+  },
+
+  createEntry: async (projectPath, parentDir, name, isDir) => {
+    const relativePath = parentDir ? `${parentDir}/${name}` : name;
+
+    set({ isMutating: true, error: null });
+    try {
+      if (isDir) {
+        await createDirectory(projectPath, relativePath);
+      } else {
+        await createFile(projectPath, relativePath);
+      }
+
+      // Clear inline create state
+      const key = projectPath;
+      const tree = get().treeByProject[key];
+      if (tree) {
+        set({
+          treeByProject: {
+            ...get().treeByProject,
+            [key]: { ...tree, inlineCreate: null },
+          },
+        });
+      }
+
+      // Refresh parent directory and ensure it stays expanded
+      await get().loadDirectory(projectPath, parentDir);
+      const refreshedTree = get().treeByProject[key];
+      if (refreshedTree && !refreshedTree.expandedDirs[parentDir]) {
+        set({
+          treeByProject: {
+            ...get().treeByProject,
+            [key]: {
+              ...refreshedTree,
+              expandedDirs: { ...refreshedTree.expandedDirs, [parentDir]: true },
+            },
+          },
+        });
+      }
+
+      // Open the file if it was a file creation
+      if (!isDir) {
+        await get().openFile(projectPath, relativePath);
+      }
+      return null;
+    } catch (e) {
+      const msg = String(e);
+      set({ error: msg });
+      return msg;
+    } finally {
+      set({ isMutating: false });
+    }
+  },
+
+  deleteEntry: async (projectPath, relativePath) => {
+    set({ isMutating: true, error: null });
+    try {
+      await deletePath(projectPath, relativePath);
+
+      // Close the file itself or any files inside a deleted directory
+      const { openFiles } = get();
+      const deletedPrefix = relativePath + "/";
+      const filesToClose = openFiles.filter(
+        (f) => f.path === relativePath || f.path.startsWith(deletedPrefix),
+      );
+      for (const f of filesToClose) {
+        get().closeFile(f.path);
+      }
+
+      // Clean up working set tracking for all tracked descendants (not just open files)
+      const tracking = useAgentFileTrackingStore.getState();
+      const ws = tracking.getWorkingSet(projectPath);
+      for (const fp of [...Object.keys(ws.writes), ...Object.keys(ws.userEdits)]) {
+        if (fp === relativePath || fp.startsWith(deletedPrefix)) {
+          tracking.removeUserEdit(projectPath, fp);
+          tracking.removeAgentWrite(projectPath, fp);
+        }
+      }
+
+      // Refresh parent directory
+      const parentDir = getParentDir(relativePath);
+      await get().loadDirectory(projectPath, parentDir);
+      return null;
+    } catch (e) {
+      const msg = String(e);
+      set({ error: msg });
+      return msg;
+    } finally {
+      set({ isMutating: false });
+    }
+  },
+
+  renameEntry: async (projectPath, oldPath, newName) => {
+    const parentDir = getParentDir(oldPath);
+    const newPath = parentDir ? `${parentDir}/${newName}` : newName;
+
+    set({ isMutating: true, error: null });
+    try {
+      await renamePath(projectPath, oldPath, newPath);
+
+      // Update open files: exact match or files inside a renamed directory
+      const { openFiles, activeFilePath } = get();
+      const oldPrefix = oldPath + "/";
+      const updatedFiles = openFiles.map((f) => {
+        if (f.path === oldPath) {
+          return { ...f, path: newPath, name: newName };
+        }
+        if (f.path.startsWith(oldPrefix)) {
+          const newFilePath = newPath + "/" + f.path.slice(oldPrefix.length);
+          const newFileName = newFilePath.split("/").pop() ?? f.name;
+          return { ...f, path: newFilePath, name: newFileName };
+        }
+        return f;
+      });
+      let newActive = activeFilePath;
+      if (activeFilePath === oldPath) {
+        newActive = newPath;
+      } else if (activeFilePath && activeFilePath.startsWith(oldPrefix)) {
+        newActive = newPath + "/" + activeFilePath.slice(oldPrefix.length);
+      }
+      set({ openFiles: updatedFiles, activeFilePath: newActive });
+
+      // Migrate working set tracking from old paths to new paths
+      const tracking = useAgentFileTrackingStore.getState();
+      const ws = tracking.getWorkingSet(projectPath);
+
+      // Collect entries to migrate before modifying
+      const toMigrate: Array<{ oldFp: string; newFp: string; source: "writes" | "userEdits" }> = [];
+      if (ws.writes[oldPath]) toMigrate.push({ oldFp: oldPath, newFp: newPath, source: "writes" });
+      if (ws.userEdits[oldPath]) toMigrate.push({ oldFp: oldPath, newFp: newPath, source: "userEdits" });
+      for (const fp of Object.keys(ws.writes)) {
+        if (fp.startsWith(oldPrefix)) {
+          toMigrate.push({ oldFp: fp, newFp: newPath + "/" + fp.slice(oldPrefix.length), source: "writes" });
+        }
+      }
+      for (const fp of Object.keys(ws.userEdits)) {
+        if (fp.startsWith(oldPrefix)) {
+          toMigrate.push({ oldFp: fp, newFp: newPath + "/" + fp.slice(oldPrefix.length), source: "userEdits" });
+        }
+      }
+
+      // Remove old entries, then re-register at new paths
+      for (const m of toMigrate) {
+        tracking.removeUserEdit(projectPath, m.oldFp);
+        tracking.removeAgentWrite(projectPath, m.oldFp);
+      }
+      for (const m of toMigrate) {
+        if (m.source === "writes") {
+          tracking.trackAgentWrite(projectPath, m.newFp, "renamed");
+        } else {
+          tracking.trackUserEdit(projectPath, m.newFp);
+        }
+      }
+
+      // Refresh parent directory
+      await get().loadDirectory(projectPath, parentDir);
+      return null;
+    } catch (e) {
+      const msg = String(e);
+      set({ error: msg });
+      return msg;
+    } finally {
+      set({ isMutating: false });
+    }
+  },
+
+  copyExternalEntries: async (projectPath, targetDir, sourcePaths) => {
+    set({ isMutating: true, error: null });
+    try {
+      await copyExternalFiles(projectPath, targetDir, sourcePaths);
+
+      // Refresh target directory
+      await get().loadDirectory(projectPath, targetDir);
+      return null;
+    } catch (e) {
+      const msg = String(e);
+      set({ error: msg });
+      return msg;
+    } finally {
+      set({ isMutating: false });
     }
   },
 
