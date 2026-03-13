@@ -1220,3 +1220,27 @@ export async function copyExternalFiles(
   });
 }
 
+// --- Copy External Entries (with folder support + conflict strategy) ---
+
+export type ConflictStrategy = "skip" | "autoRename" | "overwrite";
+
+export interface CopyResult {
+  entries: FileEntry[];
+  skipped: string[];
+  totalBytesCopied: number;
+}
+
+export async function copyExternalEntries(
+  projectPath: string,
+  targetRelativeDir: string,
+  sourcePaths: string[],
+  conflictStrategy: ConflictStrategy,
+): Promise<CopyResult> {
+  return invoke<CopyResult>("copy_external_entries", {
+    projectPath,
+    targetRelativeDir,
+    sourcePaths,
+    conflictStrategy,
+  });
+}
+

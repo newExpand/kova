@@ -1,7 +1,7 @@
 use crate::errors::AppError;
 use crate::models::files::{
-    ContentSearchFileResult, ContentSearchMatch, ContentSearchResult, FileContent, FileEntry,
-    FileSearchResult,
+    ConflictStrategy, ContentSearchFileResult, ContentSearchMatch, ContentSearchResult,
+    CopyResult, FileContent, FileEntry, FileSearchResult,
 };
 use ignore::WalkBuilder;
 use regex::RegexBuilder;
@@ -454,9 +454,9 @@ pub fn rename_path(
     Ok(build_file_entry(&new_path, &project_root, &metadata))
 }
 
-/// Copy external files into a project directory.
+/// Copy external files into a project directory (files only, no folder support).
+/// Prefer `copy_external_entries` which supports folders and conflict strategies.
 /// Source paths are absolute (from OS drag-drop). Only regular files are accepted.
-/// Folders and files larger than MAX_COPY_FILE_SIZE are rejected.
 pub fn copy_external_files(
     project_path: &str,
     target_relative_dir: &str,
@@ -561,6 +561,359 @@ pub fn copy_external_files(
     }
 
     Ok(entries)
+}
+
+/// Maximum recursion depth for directory copy (prevents stack overflow from deep nesting).
+const MAX_COPY_DEPTH: u32 = 20;
+
+/// Maximum cumulative copy size (2 GB).
+const MAX_CUMULATIVE_COPY_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Validate file size limits and perform an atomic copy.
+/// Checks per-file and cumulative limits, then delegates to `atomic_copy_file`.
+fn validate_and_copy_file(
+    source: &Path,
+    dest: &Path,
+    file_size: u64,
+    result: &mut CopyResult,
+) -> Result<(), AppError> {
+    if file_size > MAX_COPY_FILE_SIZE {
+        tracing::error!("File too large: {:?} ({} bytes)", source, file_size);
+        return Err(AppError::InvalidInput(format!(
+            "File too large: {} ({} bytes, max {} bytes)",
+            source.display(),
+            file_size,
+            MAX_COPY_FILE_SIZE
+        )));
+    }
+    if result.total_bytes_copied + file_size > MAX_CUMULATIVE_COPY_SIZE {
+        tracing::error!("Cumulative copy size exceeded");
+        return Err(AppError::InvalidInput(
+            "Total copy size exceeds 2 GB limit".to_string(),
+        ));
+    }
+    atomic_copy_file(source, dest)?;
+    result.total_bytes_copied += file_size;
+    Ok(())
+}
+
+/// Copy external files and directories into a project directory.
+/// Source paths are absolute (from OS drag-drop). Both files and folders are accepted.
+/// Directories are copied recursively with structure preserved.
+/// Symlinks are silently skipped. Individual files capped at 500 MB, total at 2 GB.
+/// Maximum directory nesting depth: 20 levels.
+pub fn copy_external_entries(
+    project_path: &str,
+    target_relative_dir: &str,
+    source_paths: Vec<String>,
+    conflict_strategy: ConflictStrategy,
+) -> Result<CopyResult, AppError> {
+    let project = Path::new(project_path);
+    let project_root = canonicalize_project(project)?;
+
+    let target_dir = if target_relative_dir.is_empty() || target_relative_dir == "." {
+        project_root.clone()
+    } else {
+        validate_within_project(project, target_relative_dir)?
+    };
+
+    if !target_dir.is_dir() {
+        tracing::error!("Target is not a directory: {}", target_relative_dir);
+        return Err(AppError::InvalidInput(format!(
+            "Target is not a directory: {}",
+            target_relative_dir
+        )));
+    }
+
+    let mut result = CopyResult {
+        entries: Vec::with_capacity(source_paths.len()),
+        skipped: Vec::new(),
+        total_bytes_copied: 0,
+    };
+
+    for source_str in &source_paths {
+        let source = Path::new(source_str);
+
+        if !source.exists() {
+            tracing::error!("External source not found: {}", source_str);
+            return Err(AppError::NotFound(format!(
+                "Source not found: {}",
+                source_str
+            )));
+        }
+
+        // Use symlink_metadata to detect symlinks without following them
+        let source_meta = std::fs::symlink_metadata(source)?;
+
+        if source_meta.file_type().is_symlink() {
+            result.skipped.push(source_str.clone());
+            continue;
+        }
+
+        let file_name = source.file_name().ok_or_else(|| {
+            AppError::InvalidInput(format!("Cannot determine name: {}", source_str))
+        })?;
+
+        let dest = resolve_conflict(&target_dir, file_name, &conflict_strategy)?;
+        let dest = match dest {
+            Some(d) => d,
+            None => {
+                // Skip strategy: file exists, skip it
+                result.skipped.push(source_str.clone());
+                continue;
+            }
+        };
+
+        if source_meta.is_dir() {
+            // Overwrite: remove conflicting file so we can create a directory
+            if dest.exists() && !dest.is_dir() {
+                if matches!(conflict_strategy, ConflictStrategy::Overwrite) {
+                    std::fs::remove_file(&dest)?;
+                } else {
+                    tracing::error!("Cannot copy directory over existing file: {:?}", dest);
+                    return Err(AppError::InvalidInput(format!(
+                        "Cannot copy directory '{}': a file with that name already exists",
+                        file_name.to_string_lossy()
+                    )));
+                }
+            }
+            let dest_existed_before = dest.exists();
+            if let Err(e) = copy_dir_recursive(
+                source,
+                &dest,
+                &project_root,
+                &conflict_strategy,
+                &mut result,
+                0,
+            ) {
+                // Best-effort cleanup of partially copied directory
+                if !dest_existed_before {
+                    if let Err(cleanup_err) = std::fs::remove_dir_all(&dest) {
+                        warn!(
+                            "Failed to clean up partial copy at {:?}: {}",
+                            dest, cleanup_err
+                        );
+                    }
+                }
+                return Err(e);
+            }
+            let dir_meta = std::fs::metadata(&dest)?;
+            result.entries.push(build_file_entry(&dest, &project_root, &dir_meta));
+        } else if source_meta.is_file() {
+            // Overwrite: remove conflicting directory so we can copy a file
+            if dest.exists() && dest.is_dir() {
+                if matches!(conflict_strategy, ConflictStrategy::Overwrite) {
+                    std::fs::remove_dir_all(&dest)?;
+                } else {
+                    tracing::error!("Cannot copy file over existing directory: {:?}", dest);
+                    return Err(AppError::InvalidInput(format!(
+                        "Cannot copy file '{}': a directory with that name already exists",
+                        file_name.to_string_lossy()
+                    )));
+                }
+            }
+            validate_and_copy_file(source, &dest, source_meta.len(), &mut result)?;
+            let dest_meta = std::fs::metadata(&dest)?;
+            result.entries.push(build_file_entry(&dest, &project_root, &dest_meta));
+        } else {
+            // Skip non-regular files (named pipes, devices, etc.)
+            result.skipped.push(source_str.clone());
+        }
+    }
+
+    Ok(result)
+}
+
+/// Resolve a destination path, handling filename conflicts per strategy.
+/// - Skip: returns None when the destination already exists.
+/// - Overwrite: returns the existing path (caller handles type mismatch).
+/// - AutoRename: tries "name (1)" through "name (99)", returns Err if all taken.
+fn resolve_conflict(
+    target_dir: &Path,
+    file_name: &std::ffi::OsStr,
+    strategy: &ConflictStrategy,
+) -> Result<Option<std::path::PathBuf>, AppError> {
+    let dest = target_dir.join(file_name);
+    if !dest.exists() {
+        return Ok(Some(dest));
+    }
+
+    match strategy {
+        ConflictStrategy::Skip => Ok(None),
+        ConflictStrategy::Overwrite => Ok(Some(dest)),
+        ConflictStrategy::AutoRename => {
+            let name = file_name.to_string_lossy();
+            let (stem, ext) = match name.rfind('.') {
+                Some(dot) if dot > 0 => (&name[..dot], Some(&name[dot..])),
+                _ => (name.as_ref(), None),
+            };
+            for i in 1..=99 {
+                let new_name = match ext {
+                    Some(e) => format!("{} ({}){}", stem, i, e),
+                    None => format!("{} ({})", stem, i),
+                };
+                let candidate = target_dir.join(&new_name);
+                if !candidate.exists() {
+                    return Ok(Some(candidate));
+                }
+            }
+            tracing::error!("Cannot auto-rename: all variants exist for {}", name);
+            Err(AppError::InvalidInput(format!(
+                "Cannot auto-rename: all variants exist for {}",
+                name
+            )))
+        }
+    }
+}
+
+/// Atomically copy a single file: write to temp, set permissions, rename.
+fn atomic_copy_file(source: &Path, dest: &Path) -> Result<(), AppError> {
+    let parent = dest.parent().ok_or_else(|| {
+        tracing::error!("Destination has no parent directory: {:?}", dest);
+        AppError::InvalidInput("Destination has no parent directory".to_string())
+    })?;
+    let file_name = dest
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("file"));
+    let temp_dest = parent.join(format!(
+        ".tmp_{}_{}",
+        std::process::id(),
+        file_name.to_string_lossy()
+    ));
+
+    let cleanup_temp = |temp: &Path| {
+        if let Err(cleanup_err) = std::fs::remove_file(temp) {
+            warn!("Failed to clean up temp file {:?}: {}", temp, cleanup_err);
+        }
+    };
+
+    if let Err(e) = std::fs::copy(source, &temp_dest) {
+        tracing::error!("Failed to copy {:?} to {:?}: {}", source, temp_dest, e);
+        cleanup_temp(&temp_dest);
+        return Err(AppError::Io(e));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(&temp_dest, perms) {
+            tracing::error!("Failed to set permissions on {:?}: {}", temp_dest, e);
+            cleanup_temp(&temp_dest);
+            return Err(AppError::Io(e));
+        }
+    }
+    if let Err(e) = std::fs::rename(&temp_dest, dest) {
+        tracing::error!("Failed to rename {:?} to {:?}: {}", temp_dest, dest, e);
+        cleanup_temp(&temp_dest);
+        return Err(AppError::Io(e));
+    }
+    Ok(())
+}
+
+/// Recursively copy a directory, preserving structure.
+/// Validates the destination remains within project_root at each level.
+/// Symlinks, oversized files, and non-regular entries are skipped.
+fn copy_dir_recursive(
+    source: &Path,
+    dest: &Path,
+    project_root: &Path,
+    strategy: &ConflictStrategy,
+    result: &mut CopyResult,
+    depth: u32,
+) -> Result<(), AppError> {
+    if depth >= MAX_COPY_DEPTH {
+        tracing::error!("Max copy depth ({}) exceeded at {:?}", MAX_COPY_DEPTH, source);
+        return Err(AppError::InvalidInput(format!(
+            "Directory nesting too deep (max {} levels)",
+            MAX_COPY_DEPTH
+        )));
+    }
+
+    // Validate destination is within project root.
+    // For existing paths, canonicalize directly; for new ones, validate the parent.
+    if dest.exists() {
+        let canonical = dest.canonicalize().map_err(|e| {
+            AppError::InvalidInput(format!("Cannot resolve destination: {}", e))
+        })?;
+        if !canonical.starts_with(project_root) {
+            return Err(AppError::InvalidInput(
+                "Destination escapes project root".to_string(),
+            ));
+        }
+    } else {
+        let parent = dest.parent().ok_or_else(|| {
+            AppError::InvalidInput("Destination has no parent".to_string())
+        })?;
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            AppError::InvalidInput(format!("Cannot resolve parent: {}", e))
+        })?;
+        if !canonical_parent.starts_with(project_root) {
+            return Err(AppError::InvalidInput(
+                "Destination escapes project root".to_string(),
+            ));
+        }
+    }
+
+    if !dest.exists() {
+        std::fs::create_dir(dest)?;
+    }
+
+    let entries = std::fs::read_dir(source).map_err(|e| {
+        tracing::error!("Cannot read directory {:?}: {}", source, e);
+        AppError::Io(e)
+    })?;
+
+    for entry_result in entries {
+        let entry = entry_result?;
+        let entry_meta = std::fs::symlink_metadata(entry.path())?;
+
+        // Skip symlinks
+        if entry_meta.file_type().is_symlink() {
+            result.skipped.push(entry.path().to_string_lossy().to_string());
+            continue;
+        }
+
+        let entry_name = entry.file_name();
+        let child_dest = resolve_conflict(dest, &entry_name, strategy)?;
+        let child_dest = match child_dest {
+            Some(d) => d,
+            None => {
+                result.skipped.push(entry.path().to_string_lossy().to_string());
+                continue;
+            }
+        };
+
+        if entry_meta.is_dir() {
+            // Overwrite: remove conflicting file so we can create a subdirectory
+            if child_dest.exists()
+                && !child_dest.is_dir()
+                && matches!(strategy, ConflictStrategy::Overwrite)
+            {
+                std::fs::remove_file(&child_dest)?;
+            }
+            copy_dir_recursive(
+                &entry.path(),
+                &child_dest,
+                project_root,
+                strategy,
+                result,
+                depth + 1,
+            )?;
+        } else if entry_meta.is_file() {
+            // Overwrite: remove conflicting directory so we can copy a file
+            if child_dest.exists()
+                && child_dest.is_dir()
+                && matches!(strategy, ConflictStrategy::Overwrite)
+            {
+                std::fs::remove_dir_all(&child_dest)?;
+            }
+            validate_and_copy_file(&entry.path(), &child_dest, entry_meta.len(), result)?;
+        } else {
+            result.skipped.push(entry.path().to_string_lossy().to_string());
+        }
+    }
+
+    Ok(())
 }
 
 /// Detect if content is binary by checking for null bytes in first 8KB.

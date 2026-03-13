@@ -7,6 +7,7 @@ import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
 import { useAppStore } from "../../../stores/appStore";
 import { FileTreeItem } from "./FileTreeItem";
 import { InlineCreateInput } from "./InlineCreateInput";
+import { useFileTreeDropZone } from "../hooks/useFileTreeDropZone";
 import { searchProjectFiles } from "../../../lib/tauri/commands";
 import type { FileEntry, FileSearchResult } from "../../../lib/tauri/commands";
 import type { FileTouch, ProjectWorkingSet } from "../stores/agentFileTrackingStore";
@@ -126,6 +127,14 @@ export function FileTree({ projectPath }: FileTreeProps) {
   const rootEntries = tree.entries[""] ?? tree.entries["."] ?? [];
   const isSearching = localQuery.trim().length > 0;
 
+  // Drop zone hook for external file/folder drag-and-drop
+  const treeContainerRef = useRef<HTMLDivElement>(null);
+  const dropState = useFileTreeDropZone({
+    projectPath,
+    containerRef: treeContainerRef,
+    enabled: !isSearching,
+  });
+
   const hasWorkingSet =
     Object.keys(workingSet.writes).length +
     Object.keys(workingSet.userEdits).length > 0;
@@ -193,9 +202,26 @@ export function FileTree({ projectPath }: FileTreeProps) {
 
       {/* Tree or Search Results */}
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden py-1 glass-scrollbar"
+        ref={treeContainerRef}
+        className="relative flex-1 overflow-y-auto overflow-x-hidden py-1 glass-scrollbar"
         onContextMenu={handleRootContextMenu}
       >
+        {/* Drop zone overlay */}
+        {dropState.isDragOver && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary/60 bg-primary/[0.06] pointer-events-none">
+            <span className="text-xs text-primary font-medium">
+              {dropState.fileCount > 0
+                ? `Drop ${dropState.fileCount} item(s) here`
+                : "Drop files here"}
+            </span>
+          </div>
+        )}
+        {/* Drop error banner */}
+        {dropState.dropError && (
+          <div className="mx-1 mb-1 rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1.5 text-[11px] text-red-400">
+            {dropState.dropError}
+          </div>
+        )}
         {isSearching ? (
           <SearchResults
             results={searchResults}
@@ -211,6 +237,7 @@ export function FileTree({ projectPath }: FileTreeProps) {
             projectPath={projectPath}
             tree={tree}
             activeFilePath={activeFilePath}
+            dropTargetPath={dropState.targetDirPath}
             onToggle={toggleDirectory}
             onOpenFile={openFile}
           />
@@ -412,6 +439,7 @@ interface FileTreeContentProps {
   projectPath: string;
   tree: ReturnType<ReturnType<typeof useFileStore.getState>["getTreeState"]>;
   activeFilePath: string | null;
+  dropTargetPath?: string | null;
   onToggle: (projectPath: string, relativePath: string) => void;
   onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
 }
@@ -422,6 +450,7 @@ function FileTreeContent({
   projectPath,
   tree,
   activeFilePath,
+  dropTargetPath,
   onToggle,
   onOpenFile,
 }: FileTreeContentProps) {
@@ -445,6 +474,7 @@ function FileTreeContent({
           projectPath={projectPath}
           tree={tree}
           activeFilePath={activeFilePath}
+          dropTargetPath={dropTargetPath}
           onToggle={onToggle}
           onOpenFile={onOpenFile}
         />
@@ -461,6 +491,7 @@ interface TreeEntriesProps {
   projectPath: string;
   tree: ReturnType<ReturnType<typeof useFileStore.getState>["getTreeState"]>;
   activeFilePath: string | null;
+  dropTargetPath?: string | null;
   onToggle: (projectPath: string, relativePath: string) => void;
   onOpenFile: (projectPath: string, relativePath: string) => Promise<void>;
 }
@@ -471,6 +502,7 @@ function TreeEntries({
   projectPath,
   tree,
   activeFilePath,
+  dropTargetPath,
   onToggle,
   onOpenFile,
 }: TreeEntriesProps) {
@@ -493,6 +525,7 @@ function TreeEntries({
               isExpanded={isExpanded}
               isLoading={isLoading}
               isActive={!entry.isDir && activeFilePath === entry.path}
+              isDropTarget={entry.isDir && dropTargetPath === entry.path}
               onToggle={() => onToggle(projectPath, entry.path)}
               onClick={() => onOpenFile(projectPath, entry.path)}
               projectPath={projectPath}
@@ -522,6 +555,7 @@ function TreeEntries({
                       projectPath={projectPath}
                       tree={tree}
                       activeFilePath={activeFilePath}
+                      dropTargetPath={dropTargetPath}
                       onToggle={onToggle}
                       onOpenFile={onOpenFile}
                     />

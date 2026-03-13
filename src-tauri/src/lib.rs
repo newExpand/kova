@@ -430,6 +430,7 @@ pub fn run() {
             commands::files::delete_path,
             commands::files::rename_path,
             commands::files::copy_external_files,
+            commands::files::copy_external_entries,
             // Environment commands
             commands::environment::check_environment,
         ])

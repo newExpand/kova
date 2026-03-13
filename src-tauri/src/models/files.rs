@@ -55,3 +55,21 @@ pub struct ContentSearchResult {
     pub truncated: bool,
     pub duration_ms: u64,
 }
+
+/// Strategy for resolving filename conflicts during external copy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictStrategy {
+    Skip,
+    AutoRename,
+    Overwrite,
+}
+
+/// Result of copying external files/folders into a project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyResult {
+    pub entries: Vec<FileEntry>,
+    pub skipped: Vec<String>,
+    pub total_bytes_copied: u64,
+}

@@ -10,6 +10,7 @@ interface FileTreeItemProps {
   isExpanded: boolean;
   isLoading: boolean;
   isActive: boolean;
+  isDropTarget?: boolean;
   onToggle: () => void;
   onClick: () => void;
   projectPath: string;
@@ -21,6 +22,7 @@ export function FileTreeItem({
   isExpanded,
   isLoading,
   isActive,
+  isDropTarget = false,
   onToggle,
   onClick,
   projectPath,
@@ -55,9 +57,10 @@ export function FileTreeItem({
           type="button"
           onClick={handleClick}
           onContextMenu={onContextMenu}
+          data-drop-path={entry.isDir ? entry.path : undefined}
           className={`relative flex w-full items-center gap-1.5 py-[3px] text-left text-[12px] transition-colors hover:bg-white/[0.06] ${
             isActive ? "text-text" : "text-text-secondary"
-          } ${borderClass}`}
+          } ${borderClass} ${isDropTarget ? "bg-primary/[0.12] ring-1 ring-primary/40 rounded-sm" : ""}`}
           style={{ paddingLeft: hasLeftBorder ? paddingLeft - 2 : paddingLeft }}
         >
           {isActive && (

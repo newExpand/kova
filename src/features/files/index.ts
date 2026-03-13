@@ -15,6 +15,8 @@ export type { FileTouch, ProjectWorkingSet } from "./stores/agentFileTrackingSto
 
 // Hooks
 export { useWorkingSetReconciliation } from "./hooks/useWorkingSetReconciliation";
+export { useFileTreeDropZone } from "./hooks/useFileTreeDropZone";
+export type { DropZoneState } from "./hooks/useFileTreeDropZone";
 
 // Components
 export { FileTree } from "./components/FileTree";

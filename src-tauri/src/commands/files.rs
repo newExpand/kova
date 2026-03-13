@@ -1,5 +1,7 @@
 use crate::errors::AppError;
-use crate::models::files::{ContentSearchResult, FileContent, FileEntry, FileSearchResult};
+use crate::models::files::{
+    ConflictStrategy, ContentSearchResult, CopyResult, FileContent, FileEntry, FileSearchResult,
+};
 use crate::services;
 use tracing::error;
 
@@ -56,6 +58,28 @@ pub async fn copy_external_files(
     .await
     .map_err(|e| {
         error!("copy_external_files task panicked: {}", e);
+        AppError::Internal(format!("File copy failed unexpectedly: {}", e))
+    })?
+}
+
+#[tauri::command]
+pub async fn copy_external_entries(
+    project_path: String,
+    target_relative_dir: String,
+    source_paths: Vec<String>,
+    conflict_strategy: ConflictStrategy,
+) -> Result<CopyResult, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::file_service::copy_external_entries(
+            &project_path,
+            &target_relative_dir,
+            source_paths,
+            conflict_strategy,
+        )
+    })
+    .await
+    .map_err(|e| {
+        error!("copy_external_entries task panicked: {}", e);
         AppError::Internal(format!("File copy failed unexpectedly: {}", e))
     })?
 }

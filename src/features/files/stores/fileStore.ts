@@ -8,8 +8,9 @@ import {
   createDirectory,
   deletePath,
   renamePath,
-  copyExternalFiles,
+  copyExternalEntries,
 } from "../../../lib/tauri/commands";
+import type { ConflictStrategy, CopyResult } from "../../../lib/tauri/commands";
 import type { OpenFile, ScrollTarget } from "../types";
 import { MAX_OPEN_FILES } from "../types";
 import { useAgentFileTrackingStore } from "./agentFileTrackingStore";
@@ -66,7 +67,7 @@ interface FileActions {
   createEntry: (projectPath: string, parentDir: string, name: string, isDir: boolean) => Promise<string | null>;
   deleteEntry: (projectPath: string, relativePath: string) => Promise<string | null>;
   renameEntry: (projectPath: string, oldPath: string, newName: string) => Promise<string | null>;
-  copyExternalEntries: (projectPath: string, targetDir: string, sourcePaths: string[]) => Promise<string | null>;
+  copyExternalEntriesToTree: (projectPath: string, targetDir: string, sourcePaths: string[], strategy: ConflictStrategy) => Promise<CopyResult | null>;
   // Scroll target
   setScrollTarget: (target: ScrollTarget) => void;
   clearScrollTarget: () => void;
@@ -542,18 +543,19 @@ export const useFileStore = create<FileStore>()((set, get) => ({
     }
   },
 
-  copyExternalEntries: async (projectPath, targetDir, sourcePaths) => {
+  copyExternalEntriesToTree: async (projectPath, targetDir, sourcePaths, strategy) => {
     set({ isMutating: true, error: null });
     try {
-      await copyExternalFiles(projectPath, targetDir, sourcePaths);
-
-      // Refresh target directory
+      const result = await copyExternalEntries(projectPath, targetDir, sourcePaths, strategy);
       await get().loadDirectory(projectPath, targetDir);
-      return null;
+      if (result.skipped.length > 0) {
+        set({ error: `${result.skipped.length} file(s) skipped (already exist or symlinks)` });
+      }
+      return result;
     } catch (e) {
       const msg = String(e);
       set({ error: msg });
-      return msg;
+      return null;
     } finally {
       set({ isMutating: false });
     }
