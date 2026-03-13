@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useCallback } from "react";
+import { lazy, Suspense, useEffect, useCallback, useRef } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { TerminalSquare, Command } from "lucide-react";
 import { useTmuxStore } from "../features/tmux";
 import { useGitStore } from "../features/git";
-import { useSshGitStore } from "../features/ssh";
+import { useSshGitStore, useSshStore } from "../features/ssh";
 import { SettingsPage } from "../features/settings";
 import { getShortcutById } from "../lib/shortcuts";
 import { useLRUPool } from "../hooks/useLRUPool";
@@ -123,7 +123,10 @@ function WelcomePage() {
 /** Layout-level terminal pool — survives route navigation, bounded LRU (max 2) */
 function TerminalPool() {
   const { isTerminalRoute, activeProjectId } = useTerminalRouteMatch();
-  // React unmount handles cleanup: TerminalPage → TerminalView → useTerminal.disconnect()
+
+  // No onEvict for session monitors: they are global services started at boot
+  // (lib.rs:232) and should outlive the UI pool. They self-terminate when the
+  // tmux session is destroyed or the 24h max lifetime is reached.
   const visitedProjects = useLRUPool(activeProjectId, 2);
 
   // Clear tmux error state on project switch (only when entering a terminal)
@@ -169,9 +172,20 @@ function TerminalPool() {
 /** Layout-level SSH terminal pool — mirrors TerminalPool for SSH connections, bounded LRU (max 2) */
 function SshTerminalPool() {
   const { isSshTerminalRoute, activeConnectionId } = useSshTerminalRouteMatch();
-  // React unmount handles PTY/xterm cleanup via useTerminal.disconnect()
-  // activeConnections[id] stays alive for auto-reconnect on re-visit
-  const visitedConnections = useLRUPool(activeConnectionId, 2);
+
+  // Clean up orphaned store entries on eviction.
+  // PTY is already killed by useTerminal's unmount cleanup.
+  const handleSshTerminalEvict = useCallback((evictedId: string) => {
+    const state = useSshStore.getState();
+    const { [evictedId]: _pid, ...remainPids } = state.sshPtyPids;
+    const { [evictedId]: _conn, ...remainConn } = state.activeConnections;
+    useSshStore.setState({
+      sshPtyPids: remainPids,
+      activeConnections: remainConn,
+    });
+  }, []);
+
+  const visitedConnections = useLRUPool(activeConnectionId, 2, handleSshTerminalEvict);
 
   return (
     <div
@@ -206,13 +220,25 @@ function SshTerminalPool() {
   );
 }
 
-/** Layout-level git graph pool — survives route navigation, bounded LRU (max 3) */
+/** Layout-level git graph pool — survives route navigation, bounded LRU (max 2) */
 function GitGraphPool() {
   const { isGitRoute, activeProjectId } = useGitRouteMatch();
+  const prevActiveRef = useRef<string | null>(null);
+
+  // Trim inactive graph to 50 commits to save memory while keeping it in the pool.
+  // Full clearProject happens on eviction; useGitPolling refetches 200 on re-activation.
+  useEffect(() => {
+    const prev = prevActiveRef.current;
+    prevActiveRef.current = activeProjectId;
+    if (prev && prev !== activeProjectId) {
+      useGitStore.getState().trimProject(prev);
+    }
+  }, [activeProjectId]);
+
   const handleGitEvict = useCallback((evictedId: string) => {
     useGitStore.getState().clearProject(evictedId);
   }, []);
-  const visitedProjects = useLRUPool(activeProjectId, 3, handleGitEvict);
+  const visitedProjects = useLRUPool(activeProjectId, 2, handleGitEvict);
 
   return (
     <div
@@ -247,13 +273,25 @@ function GitGraphPool() {
   );
 }
 
-/** Layout-level SSH git graph pool — survives route navigation, bounded LRU (max 3) */
+/** Layout-level SSH git graph pool — survives route navigation, bounded LRU (max 2) */
 function SshGitGraphPool() {
   const { isSshGitRoute, activeConnectionId } = useSshGitRouteMatch();
+  const prevActiveRef = useRef<string | null>(null);
+
+  // Trim inactive graph to 50 commits to save memory while keeping it in the pool.
+  // Full clearConnection happens on eviction; SSH polling refetches on re-activation.
+  useEffect(() => {
+    const prev = prevActiveRef.current;
+    prevActiveRef.current = activeConnectionId;
+    if (prev && prev !== activeConnectionId) {
+      useSshGitStore.getState().trimConnection(prev);
+    }
+  }, [activeConnectionId]);
+
   const handleSshGitEvict = useCallback((evictedId: string) => {
     useSshGitStore.getState().clearConnection(evictedId);
   }, []);
-  const visitedConnections = useLRUPool(activeConnectionId, 3, handleSshGitEvict);
+  const visitedConnections = useLRUPool(activeConnectionId, 2, handleSshGitEvict);
 
   return (
     <div

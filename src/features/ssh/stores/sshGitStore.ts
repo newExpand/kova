@@ -52,6 +52,7 @@ interface SshGitActions {
   fetchCommitDetail: (connectionId: string, hash: string) => Promise<void>;
   clearCommitDetail: () => void;
   clearConnection: (connectionId: string) => void;
+  trimConnection: (connectionId: string, maxCommits?: number) => void;
   reset: () => void;
 }
 
@@ -267,6 +268,25 @@ export const useSshGitStore = create<SshGitState & SshGitActions>()(
         loadingConnections,
         errorByConnection,
         paginationByConnection,
+        _graphGeneration: {
+          ...state._graphGeneration,
+          [connectionId]: (state._graphGeneration[connectionId] ?? 0) + 1,
+        },
+      };
+    }),
+
+    trimConnection: (connectionId, maxCommits = 50) => set((state) => {
+      const graph = state.graphData[connectionId];
+      if (!graph || graph.commits.length <= maxCommits) return state;
+      return {
+        graphData: {
+          ...state.graphData,
+          [connectionId]: { ...graph, commits: graph.commits.slice(0, maxCommits) },
+        },
+        paginationByConnection: {
+          ...state.paginationByConnection,
+          [connectionId]: { offset: maxCommits, hasMore: true, isFetchingMore: false },
+        },
         _graphGeneration: {
           ...state._graphGeneration,
           [connectionId]: (state._graphGeneration[connectionId] ?? 0) + 1,

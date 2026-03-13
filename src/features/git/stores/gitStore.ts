@@ -88,6 +88,7 @@ interface GitActions {
   switchBranch: (repoPath: string, branchName: string, projectId: string) => Promise<void>;
   clearBranchOperationError: () => void;
   clearProject: (projectId: string) => void;
+  trimProject: (projectId: string, maxCommits?: number) => void;
   // Computed
   getGraphForProject: (projectId: string) => GitGraphData | undefined;
   isProjectLoading: (projectId: string) => boolean;
@@ -521,6 +522,25 @@ export const useGitStore = create<GitState & GitActions>()((set, get) => ({
       loadingProjects,
       errorByProject,
       paginationByProject,
+      _graphGeneration: {
+        ...state._graphGeneration,
+        [projectId]: (state._graphGeneration[projectId] ?? 0) + 1,
+      },
+    };
+  }),
+
+  trimProject: (projectId, maxCommits = 50) => set((state) => {
+    const graph = state.graphData[projectId];
+    if (!graph || graph.commits.length <= maxCommits) return state;
+    return {
+      graphData: {
+        ...state.graphData,
+        [projectId]: { ...graph, commits: graph.commits.slice(0, maxCommits) },
+      },
+      paginationByProject: {
+        ...state.paginationByProject,
+        [projectId]: { offset: maxCommits, hasMore: true, isFetchingMore: false },
+      },
       _graphGeneration: {
         ...state._graphGeneration,
         [projectId]: (state._graphGeneration[projectId] ?? 0) + 1,

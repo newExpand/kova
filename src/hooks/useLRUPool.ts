@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from "react";
 
 /**
  * Bounded LRU pool that keeps at most `maxSize` items.
- * When a new item is added and the pool is full, the least-recently-used item
- * is evicted and `onEvict` is called.
+ * When a new item is added and the pool is full, the least-recently-used item(s)
+ * are evicted and `onEvict` is called for each.
  *
  * - Re-activating an existing item promotes it to MRU (moves to end).
  * - `activeId` is never evicted.
@@ -39,7 +39,9 @@ export function useLRUPool(
     });
   }, [activeId, maxSize]);
 
-  // Fire onEvict callbacks after React has committed (unmount cleanup runs first)
+  // Fire onEvict callbacks after React has committed (unmount cleanup runs first).
+  // Depends on [pool] because setPool() is the only path that queues evictions,
+  // and every eviction changes the pool array reference.
   useEffect(() => {
     if (pendingEvictions.current.length === 0) return;
     if (!onEvict) {
@@ -51,7 +53,7 @@ export function useLRUPool(
     for (const id of evictions) {
       onEvict(id);
     }
-  });
+  }, [pool, onEvict]);
 
   return pool;
 }
