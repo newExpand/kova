@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 
 // ---------------------------------------------------------------------------
 // IPC Types — match Rust structs with serde(rename_all = "camelCase")
@@ -1155,5 +1155,19 @@ export async function searchFileContents(
     isRegex,
     maxResults,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Asset URL
+// ---------------------------------------------------------------------------
+
+/** Convert a project-relative file path to a webview-loadable asset URL.
+ *  Rejects path traversal attempts (../) to prevent reading outside the project. */
+export function getAssetUrl(projectPath: string, relativePath: string): string {
+  if (relativePath.split("/").some((seg) => seg === "..")) {
+    throw new Error(`Invalid path: path traversal detected in "${relativePath}"`);
+  }
+  const normalized = relativePath.replace(/^\/+/, "");
+  return convertFileSrc(`${projectPath}/${normalized}`);
 }
 

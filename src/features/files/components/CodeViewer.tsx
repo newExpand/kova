@@ -4,8 +4,20 @@ import { File } from "lucide-react";
 import { useFileStore } from "../stores/fileStore";
 import { useCodeMirror } from "../hooks/useCodeMirror";
 import { FileBreadcrumb } from "./FileBreadcrumb";
+import { ImagePreview } from "./ImagePreview";
 import { useAgentFileTrackingStore } from "../stores/agentFileTrackingStore";
 import { getFileDiff } from "../../../lib/tauri/commands";
+
+const IMAGE_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif",
+]);
+
+function isImageFile(fileName: string): boolean {
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex <= 0) return false;
+  const ext = fileName.slice(dotIndex + 1).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
+}
 
 interface CodeViewerProps {
   projectPath: string;
@@ -108,6 +120,21 @@ export function CodeViewer({ projectPath }: CodeViewerProps) {
         <File className="h-8 w-8 opacity-30" />
         <span className="text-sm">Select a file to view</span>
       </div>
+    );
+  }
+
+  // Image files: show preview (covers both binary raster images and text-based SVGs)
+  if (isImageFile(activeFile.name)) {
+    return (
+      <>
+        <FileBreadcrumb projectPath={projectPath} />
+        <ImagePreview
+          key={activeFile.path}
+          projectPath={projectPath}
+          relativePath={activeFile.path}
+          fileName={activeFile.name}
+        />
+      </>
     );
   }
 
