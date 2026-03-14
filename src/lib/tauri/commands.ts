@@ -569,6 +569,10 @@ export async function startSessionMonitoring(
   return invoke<void>("start_session_monitoring", { sessionName, projectPath });
 }
 
+export async function killIdleAgent(paneId: string): Promise<number | null> {
+  return invoke<number | null>("kill_idle_agent", { paneId });
+}
+
 // ---------------------------------------------------------------------------
 // Agent worktree commands
 // ---------------------------------------------------------------------------

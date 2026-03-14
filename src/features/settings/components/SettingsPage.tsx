@@ -154,6 +154,10 @@ function SettingsPage() {
   const setNotificationStyle = useSettingsStore((s) => s.setNotificationStyle);
   const setAgentCommand = useSettingsStore((s) => s.setAgentCommand);
   const alerterInstalled = useSettingsStore((s) => s.alerterInstalled);
+  const idleCleanupEnabled = useSettingsStore((s) => s.idleCleanupEnabled);
+  const idleCleanupHours = useSettingsStore((s) => s.idleCleanupHours);
+  const setIdleCleanupEnabled = useSettingsStore((s) => s.setIdleCleanupEnabled);
+  const setIdleCleanupHours = useSettingsStore((s) => s.setIdleCleanupHours);
 
   useEffect(() => {
     fetchSettings();
@@ -227,6 +231,71 @@ function SettingsPage() {
                   disabled={isLoading}
                 />
               ))}
+            </div>
+          </section>
+
+          {/* Idle Agent Cleanup Section */}
+          <section>
+            <h2 className="mb-1 text-sm font-semibold text-text">
+              Agent Cleanup
+            </h2>
+            <p className="mb-4 text-xs text-text-muted">
+              Automatically terminate idle agent processes to reclaim memory.
+              Tmux panes are preserved.
+            </p>
+
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={idleCleanupEnabled}
+                  onClick={() => void setIdleCleanupEnabled(!idleCleanupEnabled)}
+                  disabled={isLoading}
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                    idleCleanupEnabled ? "bg-primary" : "bg-white/[0.15]",
+                    isLoading && "opacity-50 pointer-events-none",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+                      idleCleanupEnabled && "translate-x-4",
+                    )}
+                  />
+                </button>
+                <span className="text-sm text-text">
+                  Enable idle agent cleanup
+                </span>
+              </label>
+
+              <div className={cn(
+                "flex items-center gap-3",
+                !idleCleanupEnabled && "opacity-40 pointer-events-none",
+              )}>
+                <label className="text-xs text-text-muted whitespace-nowrap">
+                  Idle timeout
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={idleCleanupHours}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(val)) void setIdleCleanupHours(val);
+                  }}
+                  disabled={isLoading || !idleCleanupEnabled}
+                  className={cn(
+                    "w-20 rounded-md border px-3 py-1.5 text-sm text-center",
+                    "border-white/[0.10] bg-white/[0.04] text-text",
+                    "focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30",
+                    isLoading && "opacity-50 pointer-events-none",
+                  )}
+                />
+                <span className="text-xs text-text-muted">hours</span>
+              </div>
             </div>
           </section>
 

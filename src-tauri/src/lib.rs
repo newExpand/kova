@@ -390,6 +390,7 @@ pub fn run() {
             commands::agent::check_rebase_status,
             commands::agent::prune_stale_worktrees,
             commands::agent::start_session_monitoring,
+            commands::agent::kill_idle_agent,
             // SSH commands
             commands::ssh::create_ssh_connection,
             commands::ssh::list_ssh_connections,

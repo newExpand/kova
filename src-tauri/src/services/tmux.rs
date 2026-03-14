@@ -369,6 +369,89 @@ pub fn find_agent_pid_in_pane(pane_pid: &str) -> Option<AgentPidInfo> {
     None
 }
 
+/// Kill the agent process running in a tmux pane (if any), then clean up
+/// orphaned child processes (e.g. MCP servers).
+///
+/// Returns `Ok(Some(pid))` with the terminated agent PID on success,
+/// `Ok(None)` if no agent was found in the pane.
+/// The tmux pane itself is preserved — only processes are terminated.
+pub fn kill_agent_in_pane(pane_id: &str) -> Result<Option<u32>, AppError> {
+    // 1. Detect agent existence and get the pane's shell PID
+    let (_agent_type, pane_pid) = match detect_agent_in_pane(pane_id)? {
+        Some(pair) => pair,
+        None => return Ok(None),
+    };
+
+    // 2. Find the exact agent PID via process tree inspection
+    let agent_info = match find_agent_pid_in_pane(&pane_pid) {
+        Some(info) => info,
+        None => return Ok(None),
+    };
+
+    let agent_pid = agent_info.pid;
+
+    // 3. Collect child PIDs (MCP servers) BEFORE killing the agent.
+    //    Claude Code does not reliably clean up MCP server children on SIGTERM
+    //    (see: github.com/anthropics/claude-code/issues/1935).
+    let child_pids = collect_child_pids(agent_pid);
+
+    // 4. Send SIGTERM to the agent — give it a chance to clean up gracefully
+    match Command::new("kill")
+        .arg("-TERM")
+        .arg(agent_pid.to_string())
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            tracing::info!("Sent SIGTERM to idle agent (PID {}) in pane {}", agent_pid, pane_id);
+        }
+        Ok(_) => {
+            tracing::info!("SIGTERM for agent PID {} returned non-zero (likely already exited)", agent_pid);
+        }
+        Err(e) => {
+            tracing::error!("Failed to kill agent PID {}: {}", agent_pid, e);
+            return Err(AppError::TmuxCommand(format!(
+                "Failed to send SIGTERM to agent PID {}: {}", agent_pid, e
+            )));
+        }
+    }
+
+    // 5. Brief pause to let the agent's own cleanup handlers run
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // 6. Kill any remaining child processes (orphaned MCP servers)
+    for child_pid in &child_pids {
+        let _ = Command::new("kill")
+            .arg("-TERM")
+            .arg(child_pid.to_string())
+            .output();
+    }
+
+    if !child_pids.is_empty() {
+        tracing::info!(
+            "Sent SIGTERM to {} orphaned children of agent PID {}: {:?}",
+            child_pids.len(), agent_pid, child_pids
+        );
+    }
+
+    Ok(Some(agent_pid))
+}
+
+/// Collect all direct child PIDs of a process via `pgrep -P`.
+fn collect_child_pids(parent_pid: u32) -> Vec<u32> {
+    let output = match Command::new("pgrep")
+        .args(["-P", &parent_pid.to_string()])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
+}
+
 /// Count all descendant processes of `root_pid` using a single `ps` call.
 ///
 /// Fetches the full system (pid, ppid) table, builds a parent→children map,

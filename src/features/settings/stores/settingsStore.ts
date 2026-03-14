@@ -70,6 +70,8 @@ interface SettingsState {
   terminalFontFamily: string;
   terminalFontSize: number;
   copyOnSelect: boolean;
+  idleCleanupEnabled: boolean;
+  idleCleanupHours: number;
   agentCommands: Record<AgentType, AgentCommandEntry>;
   alerterInstalled: boolean | null;
   isLoading: boolean;
@@ -85,6 +87,8 @@ interface SettingsActions {
   setTerminalFontFamily: (fontId: string) => Promise<void>;
   setTerminalFontSize: (size: number) => Promise<void>;
   setCopyOnSelect: (enabled: boolean) => Promise<void>;
+  setIdleCleanupEnabled: (enabled: boolean) => Promise<void>;
+  setIdleCleanupHours: (hours: number) => Promise<void>;
   setAgentCommand: (agentType: AgentType, command: string) => Promise<void>;
   resetAgentCommand: (agentType: AgentType) => void;
   reset: () => void;
@@ -107,6 +111,8 @@ const initialState: SettingsState = {
   terminalFontFamily: DEFAULT_FONT_ID,
   terminalFontSize: DEFAULT_FONT_SIZE,
   copyOnSelect: false,
+  idleCleanupEnabled: true,
+  idleCleanupHours: 24,
   agentCommands: buildDefaultAgentCommands(),
   alerterInstalled: null,
   isLoading: false,
@@ -124,7 +130,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     fetchSettings: async () => {
       set({ isLoading: true, error: null });
       try {
-        const [rawStyle, themeId, glassMode, opacityStr, fontFamily, fontSizeStr, copyOnSelectStr, envResult] = await Promise.all([
+        const [rawStyle, themeId, glassMode, opacityStr, fontFamily, fontSizeStr, copyOnSelectStr, idleCleanupEnabledStr, idleCleanupHoursStr, envResult] = await Promise.all([
           getSetting("notification_style", ""),
           getSetting("terminal_theme", DEFAULT_THEME_ID),
           getSetting("terminal_glass_mode", "opaque"),
@@ -132,6 +138,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           getSetting("terminal_font_family", DEFAULT_FONT_ID),
           getSetting("terminal_font_size", String(DEFAULT_FONT_SIZE)),
           getSetting("copy_on_select", "false"),
+          getSetting("idle_cleanup_enabled", "true"),
+          getSetting("idle_cleanup_hours", "24"),
           getCachedEnvironment().catch((envErr: unknown) => {
             console.error("[settingsStore] Environment check failed, using default notification style:", envErr);
             return null;
@@ -162,6 +170,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         markPersisted("terminal_font_family", fontFamily);
         markPersisted("terminal_font_size", fontSizeStr);
         markPersisted("copy_on_select", copyOnSelectStr);
+        markPersisted("idle_cleanup_enabled", idleCleanupEnabledStr);
+        markPersisted("idle_cleanup_hours", idleCleanupHoursStr);
 
         // Fetch agent commands from DB (isolated so failure doesn't discard other settings)
         let agentCommands = { ...initialState.agentCommands };
@@ -194,6 +204,8 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           terminalFontFamily: fontFamily,
           terminalFontSize: parsedFontSize,
           copyOnSelect: copyOnSelectStr === "true",
+          idleCleanupEnabled: idleCleanupEnabledStr === "true",
+          idleCleanupHours: Math.min(168, Math.max(1, parseInt(idleCleanupHoursStr, 10) || 24)),
           agentCommands,
           alerterInstalled: detectedAlerter,
           isLoading: false,
@@ -351,6 +363,48 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
         const persisted = getPersistedValue("copy_on_select", "false") === "true";
         set({
           copyOnSelect: persisted,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    setIdleCleanupEnabled: async (enabled) => {
+      const seq = startWrite("idle_cleanup_enabled");
+      set({ idleCleanupEnabled: enabled, error: null, isLoading: true });
+      try {
+        await setSetting("idle_cleanup_enabled", String(enabled));
+        markPersisted("idle_cleanup_enabled", String(enabled));
+        if (isStaleWrite("idle_cleanup_enabled", seq)) return;
+        set({ isLoading: false });
+      } catch (e) {
+        if (isStaleWrite("idle_cleanup_enabled", seq)) return;
+        console.error("[settingsStore] Failed to save idle_cleanup_enabled:", e);
+        const persisted = getPersistedValue("idle_cleanup_enabled", "true") === "true";
+        set({
+          idleCleanupEnabled: persisted,
+          error: extractErrorMessage(e),
+          isLoading: false,
+        });
+      }
+    },
+
+    setIdleCleanupHours: async (hours) => {
+      const seq = startWrite("idle_cleanup_hours");
+      const clamped = Math.min(168, Math.max(1, hours));
+      set({ idleCleanupHours: clamped, error: null, isLoading: true });
+      try {
+        await setSetting("idle_cleanup_hours", String(clamped));
+        markPersisted("idle_cleanup_hours", String(clamped));
+        if (isStaleWrite("idle_cleanup_hours", seq)) return;
+        set({ isLoading: false });
+      } catch (e) {
+        if (isStaleWrite("idle_cleanup_hours", seq)) return;
+        console.error("[settingsStore] Failed to save idle_cleanup_hours:", e);
+        const persisted = Math.min(168, Math.max(1,
+          parseInt(getPersistedValue("idle_cleanup_hours", "24"), 10) || 24));
+        set({
+          idleCleanupHours: persisted,
           error: extractErrorMessage(e),
           isLoading: false,
         });

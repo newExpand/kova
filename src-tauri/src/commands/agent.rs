@@ -182,3 +182,8 @@ pub fn start_session_monitoring(
     Ok(())
 }
 
+#[tauri::command]
+pub fn kill_idle_agent(pane_id: String) -> Result<Option<u32>, AppError> {
+    services::tmux::kill_agent_in_pane(&pane_id)
+}
+
