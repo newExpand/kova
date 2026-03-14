@@ -19,11 +19,11 @@ Stable terminal + visual tmux & git worktree + AI agent monitoring — in one na
 
 ## Why Kova?
 
-Existing terminals weren't built for AI agent workloads. Long-running agent sessions cause **memory leaks** and **UI corruption**. tmux and git worktree are powerful but have **steep CLI learning curves**. And there's **no way to track** which code was written by which AI agent.
+Using AI coding agents every day, I kept running into the same friction in the terminal — **memory getting heavy** as sessions grow, **managing tmux and worktrees through CLI** every time, and **no way to see at a glance** which commits came from which agent.
 
-Kova solves all three:
+Kova started from that experience:
 
-- **Stable terminal** — no memory leaks or UI breakage after `/clear`, even in long sessions
+- **Stable terminal** — xterm.js runs with zero scrollback buffer; all history is delegated to tmux, keeping the WebView memory footprint constant regardless of session length
 - **Visual tmux & worktree** — manage panes, windows, and worktrees through GUI instead of CLI commands
 - **AI agent awareness** — auto-detect agent commits, monitor activity, zero-config hook injection
 
@@ -31,7 +31,7 @@ Kova solves all three:
 
 ### Embedded Terminal with tmux
 
-Full terminal emulator (xterm.js 6.0) with native tmux integration. Split panes, multiple windows, and session persistence across app restarts. 22+ stability fixes for Korean IME, CPU spikes, memory leaks, and sleep/wake crashes.
+Full terminal emulator (xterm.js 6.0) with native tmux integration. Split panes, multiple windows, and session persistence across app restarts. The terminal renders only the visible viewport — scroll history lives entirely in tmux's server process, so the app's memory stays flat even after hours of heavy output. 22+ stability fixes for Korean IME, CPU spikes, and sleep/wake recovery.
 
 ![Terminal](docs/assets/screenshots/screenshot-terminal.png)
 
@@ -77,6 +77,8 @@ Full keyboard shortcut system — ⌘K command palette, ⌘1-9 project switching
 
 ### File Explorer & Editor
 
+![File Editor](docs/assets/screenshots/screenshot-file-editor.png)
+
 Browse project files with a virtualized tree. Built-in CodeMirror editor with syntax highlighting for 60+ languages. ⌘P fuzzy search, ⌘⇧F content search, and ⌘Click import navigation.
 
 ### SSH Remote
@@ -96,7 +98,7 @@ Connect to remote machines over SSH. Full terminal + git graph support on remote
 
 ```bash
 # Clone
-git clone https://github.com/YOUR_USERNAME/kova.git
+git clone https://github.com/newExpand/kova.git
 cd kova
 
 # Install dependencies

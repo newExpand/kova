@@ -37,3 +37,6 @@ src-tauri/gen/
 
 # Claude Code
 .claude/
+
+# Demo video project
+video/
