@@ -89,32 +89,38 @@ Connect to remote machines over SSH. Full terminal + git graph support on remote
 
 ### Prerequisites
 
-- macOS (Apple Silicon or Intel)
+- macOS 13+ Ventura (Apple Silicon recommended; Intel builds from source)
 - [tmux](https://github.com/tmux/tmux) installed (`brew install tmux`)
 - [Git](https://git-scm.com/) installed
 - At least one AI coding agent: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 
-### Install from Source
+### Install via Homebrew (recommended)
 
 ```bash
-# Clone
+brew tap newExpand/kova
+brew install --no-quarantine --cask kova
+```
+
+### Download DMG
+
+1. Download [Kova_0.1.0_aarch64.dmg](https://github.com/newExpand/kova/releases/latest/download/Kova_0.1.0_aarch64.dmg) from the latest release (Apple Silicon).
+2. Open the DMG, drag **Kova** to Applications.
+3. On first launch, macOS will block the app because it is not notarized. Remove the quarantine flag:
+   ```bash
+   xattr -d com.apple.quarantine /Applications/Kova.app
+   ```
+   Then open Kova normally.
+
+### Build from Source
+
+```bash
 git clone https://github.com/newExpand/kova.git
 cd kova
-
-# Install dependencies
 bun install
-
-# Run in development mode
-bun tauri dev
-
-# Build for production
 bun tauri build
 ```
 
-<!-- ### Install via Homebrew (coming soon)
-```bash
-brew install --cask kova
-``` -->
+The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`. This is the only option for Intel Macs.
 
 ## Tech Stack
 
@@ -188,7 +194,7 @@ cargo test
 - [ ] Cherry-pick workflow
 - [ ] GitHub/GitLab integration (issues, PRs)
 - [ ] Linux support
-- [ ] Homebrew Cask distribution
+- [x] Homebrew tap distribution
 
 ## Contributing
 
