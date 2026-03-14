@@ -79,82 +79,103 @@ function handleFileTracking(hookEvent: HookEvent): void {
 // ---------------------------------------------------------------------------
 
 let unlisteners: UnlistenFn[] = [];
+let generation = 0;
 
 export async function initEventBridge(): Promise<void> {
-  // Single listener: handles notification + agent activity + file tracking
-  const hookUnlisten = await listen<Omit<HookEvent, "eventType"> & { eventType: string }>(
-    "notification:hook-received",
-    (event) => {
-      // Parse raw string from Rust into typed HookType
-      const hookEvent: HookEvent = {
-        ...event.payload,
-        eventType: parseHookType(event.payload.eventType),
-      };
+  const currentGen = ++generation;
 
-      // 1. Notification store (all events)
-      useNotificationStore.getState().pushRealtimeEvent(hookEvent);
+  // Register all 4 listeners in parallel
+  const [hookUnlisten, worktreeReadyUnlisten, alerterFallbackUnlisten, clickUnlisteners] =
+    await Promise.all([
+      // Single listener: handles notification + agent activity + file tracking
+      listen<Omit<HookEvent, "eventType"> & { eventType: string }>(
+        "notification:hook-received",
+        (event) => {
+          // Parse raw string from Rust into typed HookType
+          const hookEvent: HookEvent = {
+            ...event.payload,
+            eventType: parseHookType(event.payload.eventType),
+          };
 
-      // 2. Agent activity store (matching types only)
-      if (AGENT_ACTIVITY_TYPES.has(hookEvent.eventType)) {
-        useAgentActivityStore.getState().pushActivity(hookEvent);
-      }
+          // 1. Notification store (all events)
+          useNotificationStore.getState().pushRealtimeEvent(hookEvent);
 
-      // 3. File tracking (PostToolUse + Read/Edit/Write)
-      handleFileTracking(hookEvent);
-
-      // 4. Reconcile working set on agent session end
-      if (hookEvent.eventType === "Stop" || hookEvent.eventType === "SessionEnd") {
-        try {
-          if (hookEvent.projectPath) {
-            const rootPath = toProjectPathKey(hookEvent.projectPath);
-            setTimeout(() => {
-              useAgentFileTrackingStore
-                .getState()
-                .reconcileNow(rootPath)
-                .catch((err: unknown) =>
-                  console.error("[event-bridge] deferred reconcileNow failed:", err),
-                );
-            }, 1000);
+          // 2. Agent activity store (matching types only)
+          if (AGENT_ACTIVITY_TYPES.has(hookEvent.eventType)) {
+            useAgentActivityStore.getState().pushActivity(hookEvent);
           }
-        } catch (err) {
-          console.error("[event-bridge] reconciliation dispatch failed:", err);
+
+          // 3. File tracking (PostToolUse + Read/Edit/Write)
+          handleFileTracking(hookEvent);
+
+          // 4. Reconcile working set on agent session end
+          if (hookEvent.eventType === "Stop" || hookEvent.eventType === "SessionEnd") {
+            try {
+              if (hookEvent.projectPath) {
+                const rootPath = toProjectPathKey(hookEvent.projectPath);
+                setTimeout(() => {
+                  useAgentFileTrackingStore
+                    .getState()
+                    .reconcileNow(rootPath)
+                    .catch((err: unknown) =>
+                      console.error("[event-bridge] deferred reconcileNow failed:", err),
+                    );
+                }, 1000);
+              }
+            } catch (err) {
+              console.error("[event-bridge] reconciliation dispatch failed:", err);
+            }
+          }
+        },
+      ),
+
+      // worktree:ready — emitted when Rust background thread detects a worktree directory
+      listen<{
+        projectPath: string;
+        taskName: string;
+        worktreePath: string;
+      }>("worktree:ready", (event) => {
+        const { projectPath } = event.payload;
+        const projects = useProjectStore.getState().projects;
+        const match = projects.find((p) => p.path === projectPath);
+        if (match) {
+          useGitStore.getState().fetchGraphData(match.id, projectPath);
+        } else {
+          console.warn(
+            "[event-bridge] worktree:ready — no project match for path:",
+            projectPath,
+            "Known paths:",
+            projects.map((p) => p.path),
+          );
         }
-      }
-    },
-  );
+      }),
 
-  // worktree:ready — emitted when Rust background thread detects a worktree directory
-  const worktreeReadyUnlisten = await listen<{
-    projectPath: string;
-    taskName: string;
-    worktreePath: string;
-  }>("worktree:ready", (event) => {
-    const { projectPath } = event.payload;
-    const projects = useProjectStore.getState().projects;
-    const match = projects.find((p) => p.path === projectPath);
-    if (match) {
-      useGitStore.getState().fetchGraphData(match.id, projectPath);
-    } else {
-      console.warn(
-        "[event-bridge] worktree:ready — no project match for path:",
-        projectPath,
-        "Known paths:",
-        projects.map((p) => p.path),
-      );
+      // alerter-fallback — once per session, show install hint
+      listen("notification:alerter-fallback", () => {
+        useNotificationStore.getState().showAlerterFallbackWarning();
+      }),
+
+      // notification:clicked keeps a separate listener
+      setupNotificationClickEvents(),
+    ]);
+
+  // If a newer init or destroy was called while we awaited, discard these listeners
+  if (currentGen !== generation) {
+    hookUnlisten();
+    worktreeReadyUnlisten();
+    alerterFallbackUnlisten();
+    for (const fn of clickUnlisteners) {
+      fn();
     }
-  });
+    return;
+  }
 
-  // alerter-fallback — once per session, show install hint
-  const alerterFallbackUnlisten = await listen("notification:alerter-fallback", () => {
-    useNotificationStore.getState().showAlerterFallbackWarning();
-  });
-
-  // notification:clicked keeps a separate listener
-  const clickUnlisteners = await setupNotificationClickEvents();
   unlisteners.push(hookUnlisten, worktreeReadyUnlisten, alerterFallbackUnlisten, ...clickUnlisteners);
 }
 
 export function destroyEventBridge(): void {
+  // Increment generation to invalidate any in-flight init
+  generation++;
   for (const fn of unlisteners) {
     fn();
   }
