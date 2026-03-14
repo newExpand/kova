@@ -98,7 +98,8 @@ Connect to remote machines over SSH. Full terminal + git graph support on remote
 
 ```bash
 brew tap newExpand/kova
-brew install --no-quarantine --cask kova
+brew install --cask kova
+xattr -d com.apple.quarantine /Applications/Kova.app
 ```
 
 ### Download DMG
