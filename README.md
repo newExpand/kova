@@ -2,17 +2,16 @@
 
 # Kova
 
-**A terminal workspace that tracks the traces AI agents leave in your code.**
+**A native terminal workspace with visual tmux/worktree management and AI agent awareness.**
 
-Terminal multiplexer + Git graph + AI agent monitor — in one native app.
+Stable terminal + visual tmux & git worktree + AI agent monitoring — in one native macOS app.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange)](https://v2.tauri.app)
 [![React 19](https://img.shields.io/badge/React-19-61dafb)](https://react.dev)
 [![Rust](https://img.shields.io/badge/Rust-2021-dea584)](https://www.rust-lang.org)
 
-<!-- TODO: Add screenshot or GIF demo here -->
-<!-- ![Kova Screenshot](docs/assets/screenshot.png) -->
+![Kova Screenshot](docs/assets/screenshots/screenshot-welcome.png)
 
 </div>
 
@@ -20,38 +19,68 @@ Terminal multiplexer + Git graph + AI agent monitor — in one native app.
 
 ## Why Kova?
 
-AI coding agents (Claude Code, Codex, Gemini CLI) are writing more code than ever. But tracking **who wrote what**, managing **multiple agent worktrees**, and monitoring **agent activity** requires juggling tmux, Git GUIs, and terminal windows separately.
+Existing terminals weren't built for AI agent workloads. Long-running agent sessions cause **memory leaks** and **UI corruption**. tmux and git worktree are powerful but have **steep CLI learning curves**. And there's **no way to track** which code was written by which AI agent.
 
-Kova combines all three into a single native macOS app:
+Kova solves all three:
 
-- **See** which commits were written by AI vs. human at a glance
-- **Monitor** agent activity in real-time with auto-injected hooks
-- **Manage** worktrees, branches, and merges without leaving the terminal
+- **Stable terminal** — no memory leaks or UI breakage after `/clear`, even in long sessions
+- **Visual tmux & worktree** — manage panes, windows, and worktrees through GUI instead of CLI commands
+- **AI agent awareness** — auto-detect agent commits, monitor activity, zero-config hook injection
 
 ## Features
 
 ### Embedded Terminal with tmux
-Full terminal emulator (xterm.js) with native tmux integration. Split panes, multiple windows, 12 color themes, 9 font presets.
 
-<!-- ![Terminal](docs/assets/terminal.png) -->
+Full terminal emulator (xterm.js 6.0) with native tmux integration. Split panes, multiple windows, and session persistence across app restarts. 22+ stability fixes for Korean IME, CPU spikes, memory leaks, and sleep/wake crashes.
+
+![Terminal](docs/assets/screenshots/screenshot-terminal.png)
 
 ### AI-Aware Git Graph
-Visual git log with automatic agent attribution badges. Hover a worktree to highlight its entire branch lane. Commit detail panel with full diff viewer.
 
-<!-- ![Git Graph](docs/assets/git-graph.png) -->
+Visual git log with automatic agent attribution badges. Hover a worktree card to highlight its entire branch lane — and vice versa. Infinite scroll with virtual rendering for large repositories.
 
-### Multi-Agent Monitoring
-Supports Claude Code, Codex CLI, and Gemini CLI. Hook injection is automatic — create a project, and Kova installs the necessary hooks. Real-time notifications via native macOS alerts.
+![Git Graph](docs/assets/screenshots/screenshot-git-graph.png)
 
-<!-- ![Notifications](docs/assets/notifications.png) -->
+### Commit Detail with Agent Attribution
+
+See exactly which commits were AI-generated. Full diff viewer with line-by-line highlighting and `Co-Authored-By` trailer detection. One click from graph to full diff.
+
+![Commit Detail](docs/assets/screenshots/screenshot-commit-detail.png)
+
+### Working Changes
+
+Stage, unstage, and commit directly from the git graph. Per-worktree dirty state tracking with file-level diff view.
+
+![Working Changes](docs/assets/screenshots/screenshot-working-changes.png)
+
+### Multi-Agent Support
+
+Supports **Claude Code**, **Codex CLI**, and **Gemini CLI**. Hook injection is automatic — create a project, and Kova installs the necessary hooks. Codex (which lacks hook support) is monitored via background process detection.
+
+![New Project](docs/assets/screenshots/screenshot-new-project.png)
 
 ### Worktree Management
+
 Create agent worktrees, assign tasks, track dirty state, and merge back to main — all from the GUI. Bidirectional cross-highlighting between worktree cards and git graph branches.
 
+### Theme & Font Customization
+
+12 dark terminal themes (Dracula, Nord, Catppuccin, Gruvbox, and more) and 9 font presets (JetBrains Mono, Cascadia Code, Iosevka, and more). Adjustable terminal opacity.
+
+![Theme Picker](docs/assets/screenshots/screenshot-terminal-settings.png)
+
+### Keyboard-Driven Workflow
+
+Full keyboard shortcut system — ⌘K command palette, ⌘1-9 project switching, ⌘⇧G terminal/git toggle, ⌘P file search, and more.
+
+![Keyboard Shortcuts](docs/assets/screenshots/screenshot-shortcuts-help.png)
+
 ### File Explorer & Editor
-Browse project files with a virtualized tree. Open files in a built-in CodeMirror editor with syntax highlighting for 60+ languages. Search file contents with grep.
+
+Browse project files with a virtualized tree. Built-in CodeMirror editor with syntax highlighting for 60+ languages. ⌘P fuzzy search, ⌘⇧F content search, and ⌘Click import navigation.
 
 ### SSH Remote
+
 Connect to remote machines over SSH. Full terminal + git graph support on remote projects, with the same UX as local.
 
 ## Quick Start
