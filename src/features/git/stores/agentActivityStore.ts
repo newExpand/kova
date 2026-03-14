@@ -96,6 +96,9 @@ const initialState: AgentActivityState = {
 const MAX_REALTIME_EVENTS = 100;
 const DONE_AUTO_RESET_MS = 30_000; // 30s auto-reset after Done
 const LOADING_TIMEOUT_MS = 15_000; // 15s: ESC during thinking won't fire Stop hook
+const MAX_SESSION_STALE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const EVICTION_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let lastEvictionCheck = 0;
 const doneTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const loadingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -106,6 +109,32 @@ function clearTimer(map: Map<string, ReturnType<typeof setTimeout>>, key: string
     clearTimeout(timer);
     map.delete(key);
   }
+}
+
+/** Evict orphaned sessions that have been stale for over MAX_SESSION_STALE_MS.
+ *  Runs at most once every EVICTION_CHECK_INTERVAL_MS (throttled via lastEvictionCheck). */
+function evictStaleSessions(sessions: Record<string, AgentSessionState>): Record<string, AgentSessionState> | null {
+  const now = Date.now();
+  if (now - lastEvictionCheck < EVICTION_CHECK_INTERVAL_MS) return null;
+  lastEvictionCheck = now;
+
+  const keysToEvict: string[] = [];
+  for (const [key, session] of Object.entries(sessions)) {
+    if (session.status === "done") continue; // done sessions have their own 30s auto-cleanup
+    if (now - new Date(session.lastActivity).getTime() > MAX_SESSION_STALE_MS) {
+      keysToEvict.push(key);
+    }
+  }
+
+  if (keysToEvict.length === 0) return null;
+
+  const updated = { ...sessions };
+  for (const key of keysToEvict) {
+    clearTimer(doneTimers, key);
+    clearTimer(loadingTimers, key);
+    delete updated[key];
+  }
+  return updated;
 }
 
 // ---------------------------------------------------------------------------
@@ -454,7 +483,10 @@ export const useAgentActivityStore = create<
         }
       }
 
-      return { sessions, realtimeActivities };
+      // Evict orphaned sessions that crashed without Stop/SessionEnd
+      const evicted = evictStaleSessions(sessions);
+
+      return { sessions: evicted ?? sessions, realtimeActivities };
     });
 
     if (event.eventType === "SessionEnd" || event.eventType === "Stop") {
@@ -504,6 +536,7 @@ export const useAgentActivityStore = create<
     doneTimers.clear();
     for (const timer of loadingTimers.values()) clearTimeout(timer);
     loadingTimers.clear();
+    lastEvictionCheck = 0;
     set(initialState);
   },
 }));
