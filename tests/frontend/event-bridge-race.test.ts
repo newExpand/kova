@@ -4,7 +4,7 @@
  * Verifies that the generation counter prevents orphaned listeners
  * when init/destroy overlap (e.g., React StrictMode double mount).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Track all listeners created by listen() ──────────────────────────────
 
@@ -65,6 +65,10 @@ describe("Event Bridge Race Condition", () => {
     // Clear all tracked listeners
     activeListeners.length = 0;
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    destroyEventBridge();
   });
 
   it("should have exactly 4 listeners after init", async () => {
