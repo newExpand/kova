@@ -77,6 +77,35 @@ fn is_command_available(cmd: &str, args: &[&str]) -> bool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_command_version_with_echo() {
+        // echo is always available on macOS/Linux
+        let version = get_command_version("echo", &["hello"]);
+        assert_eq!(version, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_get_command_version_nonexistent() {
+        let version = get_command_version("nonexistent_binary_xyz_42", &["--version"]);
+        assert!(version.is_none());
+    }
+
+    #[test]
+    fn test_is_command_available_true() {
+        // echo is always available
+        assert!(is_command_available("echo", &["hello"]));
+    }
+
+    #[test]
+    fn test_is_command_available_false() {
+        assert!(!is_command_available("nonexistent_binary_xyz_42", &[]));
+    }
+}
+
 fn get_command_version(cmd: &str, args: &[&str]) -> Option<String> {
     match Command::new(cmd)
         .args(args)

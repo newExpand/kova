@@ -203,6 +203,66 @@ describe("NotificationStore", () => {
     });
   });
 
+  // ── Feature: alerter fallback warning ──────────────────────────────
+  describe("alerter fallback warning", () => {
+    it("should show alerter fallback warning", () => {
+      expect(useNotificationStore.getState().alerterFallbackShown).toBe(false);
+
+      act(() => {
+        useNotificationStore.getState().showAlerterFallbackWarning();
+      });
+
+      expect(useNotificationStore.getState().alerterFallbackShown).toBe(true);
+    });
+
+    it("should dismiss alerter fallback warning", () => {
+      act(() => {
+        useNotificationStore.getState().showAlerterFallbackWarning();
+      });
+      expect(useNotificationStore.getState().alerterFallbackShown).toBe(true);
+
+      act(() => {
+        useNotificationStore.getState().dismissAlerterFallbackWarning();
+      });
+      expect(useNotificationStore.getState().alerterFallbackShown).toBe(false);
+    });
+  });
+
+  // ── Feature: clearRealtimeEvents ─────────────────────────────────
+  describe("clearRealtimeEvents", () => {
+    it("should clear all realtime events", () => {
+      act(() => {
+        useNotificationStore.getState().pushRealtimeEvent({
+          projectPath: "/test",
+          eventType: "Notification",
+          payload: {},
+          timestamp: "2024-01-01T00:00:00Z",
+        });
+      });
+      expect(useNotificationStore.getState().realtimeEvents).toHaveLength(1);
+
+      act(() => {
+        useNotificationStore.getState().clearRealtimeEvents();
+      });
+      expect(useNotificationStore.getState().realtimeEvents).toHaveLength(0);
+    });
+  });
+
+  // ── Feature: setPanelOpen ────────────────────────────────────────
+  describe("setPanelOpen", () => {
+    it("should set panel open state directly", () => {
+      act(() => {
+        useNotificationStore.getState().setPanelOpen(true);
+      });
+      expect(useNotificationStore.getState().isPanelOpen).toBe(true);
+
+      act(() => {
+        useNotificationStore.getState().setPanelOpen(false);
+      });
+      expect(useNotificationStore.getState().isPanelOpen).toBe(false);
+    });
+  });
+
   // ── Reset ─────────────────────────────────────────────────────────
   describe("reset", () => {
     it("should reset to initial state", () => {
@@ -233,6 +293,7 @@ describe("NotificationStore", () => {
       expect(state.error).toBeNull();
       expect(state.unreadCount).toBe(0);
       expect(state.isPanelOpen).toBe(false);
+      expect(state.alerterFallbackShown).toBe(false);
     });
   });
 });

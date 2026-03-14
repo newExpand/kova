@@ -184,4 +184,84 @@ mod tests {
             .expect("Table should still exist");
         assert_eq!(count, 1);
     }
+
+    // ── Agent Command Tests (new functions from recent commits) ─────
+
+    #[test]
+    fn test_agent_command_key_mapping() {
+        assert_eq!(agent_command_key(&AgentType::ClaudeCode), "agent_command_claude_code");
+        assert_eq!(agent_command_key(&AgentType::CodexCli), "agent_command_codex_cli");
+        assert_eq!(agent_command_key(&AgentType::GeminiCli), "agent_command_gemini_cli");
+    }
+
+    #[test]
+    fn test_get_agent_command_default_fallback() {
+        let conn = setup_test_db();
+        let cmd = get_agent_command(&conn, &AgentType::ClaudeCode).expect("Should get");
+        assert_eq!(cmd, "claude");
+    }
+
+    #[test]
+    fn test_set_and_get_agent_command() {
+        let conn = setup_test_db();
+        set_agent_command(&conn, &AgentType::ClaudeCode, "/usr/local/bin/claude --flag")
+            .expect("Should set");
+        let cmd = get_agent_command(&conn, &AgentType::ClaudeCode).expect("Should get");
+        assert_eq!(cmd, "/usr/local/bin/claude --flag");
+    }
+
+    #[test]
+    fn test_get_all_agent_commands_returns_all_three() {
+        let conn = setup_test_db();
+        let cmds = get_all_agent_commands(&conn).expect("Should get all");
+        assert_eq!(cmds.len(), 3);
+
+        let labels: Vec<&str> = cmds.iter().map(|c| c.label.as_str()).collect();
+        assert!(labels.contains(&"Claude Code"));
+        assert!(labels.contains(&"Codex CLI"));
+        assert!(labels.contains(&"Gemini CLI"));
+    }
+
+    #[test]
+    fn test_get_all_agent_commands_with_custom() {
+        let conn = setup_test_db();
+        set_agent_command(&conn, &AgentType::ClaudeCode, "/custom/claude")
+            .expect("Should set");
+
+        let cmds = get_all_agent_commands(&conn).expect("Should get all");
+        let claude = cmds.iter().find(|c| c.label == "Claude Code").unwrap();
+        assert_eq!(claude.command, "/custom/claude");
+        assert_eq!(claude.default_command, "claude");
+
+        // Others should still use defaults
+        let codex = cmds.iter().find(|c| c.label == "Codex CLI").unwrap();
+        assert_eq!(codex.command, codex.default_command);
+    }
+
+    #[test]
+    fn test_get_agent_worktree_command_claude() {
+        let conn = setup_test_db();
+        let cmd = get_agent_worktree_command(&conn, &AgentType::ClaudeCode, "my-task")
+            .expect("Should get");
+        assert_eq!(cmd, "claude --worktree my-task");
+    }
+
+    #[test]
+    fn test_get_agent_worktree_command_codex() {
+        let conn = setup_test_db();
+        let cmd = get_agent_worktree_command(&conn, &AgentType::CodexCli, "my-task")
+            .expect("Should get");
+        // CodexCli does NOT append --worktree
+        assert_eq!(cmd, "codex");
+    }
+
+    #[test]
+    fn test_get_agent_worktree_command_with_custom_base() {
+        let conn = setup_test_db();
+        set_agent_command(&conn, &AgentType::ClaudeCode, "/opt/claude")
+            .expect("Should set");
+        let cmd = get_agent_worktree_command(&conn, &AgentType::ClaudeCode, "feat-1")
+            .expect("Should get");
+        assert_eq!(cmd, "/opt/claude --worktree feat-1");
+    }
 }

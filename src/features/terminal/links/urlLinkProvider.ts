@@ -20,7 +20,8 @@ interface FoundUrl {
   url: string;
 }
 
-function findUrls(text: string): FoundUrl[] {
+/** @visibleForTesting */
+export function findUrls(text: string): FoundUrl[] {
   const results: FoundUrl[] = [];
   URL_RE.lastIndex = 0;
   let match: RegExpExecArray | null;

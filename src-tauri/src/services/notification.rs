@@ -482,6 +482,29 @@ mod tests {
         assert_eq!(escape_applescript("cr\r\ntest"), "cr test");
     }
 
+    // ── escape_alerter_arg tests (new function from recent commits) ──
+
+    #[test]
+    fn test_escape_alerter_arg_leading_bracket() {
+        assert_eq!(escape_alerter_arg("[Error] something"), "\\[Error] something");
+    }
+
+    #[test]
+    fn test_escape_alerter_arg_no_bracket() {
+        assert_eq!(escape_alerter_arg("Normal text"), "Normal text");
+    }
+
+    #[test]
+    fn test_escape_alerter_arg_empty() {
+        assert_eq!(escape_alerter_arg(""), "");
+    }
+
+    #[test]
+    fn test_escape_alerter_arg_bracket_mid_string() {
+        // Only leading '[' should be escaped, mid-string '[' is left alone
+        assert_eq!(escape_alerter_arg("Hello [world]"), "Hello [world]");
+    }
+
     #[test]
     fn test_prune_old_notifications() {
         let conn = setup_test_db();

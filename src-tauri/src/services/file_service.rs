@@ -1387,3 +1387,702 @@ pub fn search_file_contents(
         files,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn temp_project() -> std::path::PathBuf {
+        let tmp = std::env::temp_dir().join(format!(
+            "flow-orche-file-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        tmp
+    }
+
+    // -----------------------------------------------------------------------
+    // Group A — Path Validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_relative_path_rejects_dotdot() {
+        let result = validate_relative_path("../etc/passwd");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Path traversal"), "unexpected error: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_relative_path_rejects_middle_dotdot() {
+        let result = validate_relative_path("subdir/../../etc");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Path traversal"), "unexpected error: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_relative_path_rejects_absolute() {
+        let result = validate_relative_path("/etc/passwd");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Absolute paths are not allowed"),
+            "unexpected error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_validate_relative_path_allows_double_dot_in_name() {
+        let result = validate_relative_path("foo..bar.txt");
+        assert!(result.is_ok(), "should allow double dots in filename");
+    }
+
+    #[test]
+    fn test_validate_relative_path_allows_normal() {
+        let result = validate_relative_path("src/main.rs");
+        assert!(result.is_ok(), "should allow normal relative paths");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_validate_within_project_symlink_escape() {
+        let tmp = temp_project();
+        // Create a symlink inside the project that points outside
+        let link = tmp.join("escape_link");
+        std::os::unix::fs::symlink("/etc", &link).unwrap();
+
+        let result = validate_within_project(&tmp, "escape_link/passwd");
+        assert!(result.is_err(), "symlink escape should be rejected");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_validate_within_project_for_write_parent_escape() {
+        let tmp = temp_project();
+
+        let result = validate_within_project_for_write(&tmp, "../outside.txt");
+        assert!(result.is_err(), "parent escape should be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Path traversal"), "unexpected error: {}", msg);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_validate_within_project_for_write_valid_new_file() {
+        let tmp = temp_project();
+
+        let result = validate_within_project_for_write(&tmp, "newfile.txt");
+        assert!(result.is_ok(), "valid new file should be accepted");
+        let path = result.unwrap();
+        // The returned path should end with the filename and reside under tmp
+        assert!(path.ends_with("newfile.txt"));
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        assert!(
+            path.starts_with(&canonical_tmp),
+            "path {:?} should start with {:?}",
+            path,
+            canonical_tmp
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+    // Group B — File CRUD
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_create_file_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let entry = create_file(&tmp_str, "hello.txt").unwrap();
+        assert_eq!(entry.name, "hello.txt");
+        assert!(!entry.is_dir);
+        assert_eq!(entry.size, 0);
+        assert_eq!(entry.extension, Some("txt".to_string()));
+
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        let file_on_disk = canonical_tmp.join("hello.txt");
+        assert!(file_on_disk.exists(), "file should exist on disk");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_create_file_already_exists() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_file(&tmp_str, "dup.txt").unwrap();
+        let result = create_file(&tmp_str, "dup.txt");
+        assert!(result.is_err(), "duplicate create should fail");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("already exists"), "unexpected error: {}", msg);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_create_file_traversal_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result = create_file(&tmp_str, "../escape.txt");
+        assert!(result.is_err(), "traversal should be blocked");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_create_file_permissions_0600() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_file(&tmp_str, "secure.txt").unwrap();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        let meta = std::fs::metadata(canonical_tmp.join("secure.txt")).unwrap();
+        let mode = meta.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "file permissions should be 0600, got {:o}", mode);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_create_directory_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let entry = create_directory(&tmp_str, "subdir").unwrap();
+        assert_eq!(entry.name, "subdir");
+        assert!(entry.is_dir);
+        assert_eq!(entry.extension, None);
+
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        assert!(canonical_tmp.join("subdir").is_dir(), "directory should exist on disk");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_create_directory_already_exists() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_directory(&tmp_str, "mydir").unwrap();
+        let result = create_directory(&tmp_str, "mydir");
+        assert!(result.is_err(), "duplicate directory create should fail");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("already exists"), "unexpected error: {}", msg);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_create_directory_traversal_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result = create_directory(&tmp_str, "../../escape");
+        assert!(result.is_err(), "traversal should be blocked");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_delete_path_file() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_file(&tmp_str, "to_delete.txt").unwrap();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        assert!(canonical_tmp.join("to_delete.txt").exists());
+
+        delete_path(&tmp_str, "to_delete.txt").unwrap();
+        assert!(
+            !canonical_tmp.join("to_delete.txt").exists(),
+            "file should be gone after delete"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_delete_path_directory() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        create_directory(&tmp_str, "dir_to_del").unwrap();
+        // Put a file inside so we test recursive delete
+        std::fs::write(canonical_tmp.join("dir_to_del/inner.txt"), "data").unwrap();
+        assert!(canonical_tmp.join("dir_to_del").is_dir());
+
+        delete_path(&tmp_str, "dir_to_del").unwrap();
+        assert!(
+            !canonical_tmp.join("dir_to_del").exists(),
+            "directory should be removed"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_delete_path_project_root_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result_empty = delete_path(&tmp_str, "");
+        assert!(result_empty.is_err());
+        let msg = result_empty.unwrap_err().to_string();
+        assert!(msg.contains("Cannot delete project root"), "unexpected: {}", msg);
+
+        let result_dot = delete_path(&tmp_str, ".");
+        assert!(result_dot.is_err());
+        let msg = result_dot.unwrap_err().to_string();
+        assert!(msg.contains("Cannot delete project root"), "unexpected: {}", msg);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_delete_path_protected_git_dir() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        // Create a .git directory
+        std::fs::create_dir(canonical_tmp.join(".git")).unwrap();
+
+        let result = delete_path(&tmp_str, ".git");
+        assert!(result.is_err(), "deleting .git should be blocked");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("protected directory"),
+            "unexpected error: {}",
+            msg
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_delete_path_traversal_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result = delete_path(&tmp_str, "../sibling");
+        assert!(result.is_err(), "traversal delete should be blocked");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_rename_path_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        create_file(&tmp_str, "a.txt").unwrap();
+        assert!(canonical_tmp.join("a.txt").exists());
+
+        let entry = rename_path(&tmp_str, "a.txt", "b.txt").unwrap();
+        assert_eq!(entry.name, "b.txt");
+        assert!(!canonical_tmp.join("a.txt").exists(), "old file should be gone");
+        assert!(canonical_tmp.join("b.txt").exists(), "new file should exist");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+    // Group C — Utility Functions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_detect_language_rust() {
+        assert_eq!(detect_language("src/main.rs"), "rust");
+    }
+
+    #[test]
+    fn test_detect_language_tsx() {
+        assert_eq!(detect_language("components/App.tsx"), "tsx");
+    }
+
+    #[test]
+    fn test_detect_language_unknown() {
+        assert_eq!(detect_language("data.xyz"), "text");
+    }
+
+    #[test]
+    fn test_detect_language_no_extension() {
+        assert_eq!(detect_language("Makefile"), "text");
+    }
+
+    #[test]
+    fn test_is_binary_content_with_null() {
+        assert!(
+            is_binary_content(b"hello\x00world"),
+            "data with null byte should be binary"
+        );
+    }
+
+    #[test]
+    fn test_is_binary_content_text_only() {
+        assert!(
+            !is_binary_content(b"hello world"),
+            "plain text should not be binary"
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_score_match() {
+        let score = fuzzy_score("app", "src/App.tsx");
+        assert!(score.is_some(), "should match");
+        assert!(
+            score.unwrap() > 0,
+            "score should be positive, got {}",
+            score.unwrap()
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_score_no_match() {
+        let score = fuzzy_score("xyz", "App.tsx");
+        assert!(score.is_none(), "should not match non-existent subsequence");
+    }
+
+    // -----------------------------------------------------------------------
+    // Group D — Conflict Resolution
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_resolve_conflict_no_conflict() {
+        let tmp = temp_project();
+
+        let result = resolve_conflict(&tmp, OsStr::new("brand_new.txt"), &ConflictStrategy::Skip).unwrap();
+        assert!(result.is_some(), "no conflict should return Some");
+        assert!(result.unwrap().ends_with("brand_new.txt"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_resolve_conflict_skip() {
+        let tmp = temp_project();
+        std::fs::write(tmp.join("existing.txt"), "data").unwrap();
+
+        let result =
+            resolve_conflict(&tmp, OsStr::new("existing.txt"), &ConflictStrategy::Skip).unwrap();
+        assert!(result.is_none(), "Skip strategy should return None on conflict");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_resolve_conflict_overwrite() {
+        let tmp = temp_project();
+        std::fs::write(tmp.join("existing.txt"), "data").unwrap();
+
+        let result =
+            resolve_conflict(&tmp, OsStr::new("existing.txt"), &ConflictStrategy::Overwrite)
+                .unwrap();
+        assert!(result.is_some(), "Overwrite should return Some");
+        assert!(
+            result.unwrap().ends_with("existing.txt"),
+            "Overwrite should return the original path"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_resolve_conflict_auto_rename() {
+        let tmp = temp_project();
+        std::fs::write(tmp.join("a.txt"), "data").unwrap();
+
+        let result =
+            resolve_conflict(&tmp, OsStr::new("a.txt"), &ConflictStrategy::AutoRename).unwrap();
+        assert!(result.is_some(), "AutoRename should return Some");
+        let path = result.unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(name, "a (1).txt", "should rename to a (1).txt, got {}", name);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_resolve_conflict_auto_rename_no_extension() {
+        let tmp = temp_project();
+        std::fs::create_dir(tmp.join("docs")).unwrap();
+
+        let result =
+            resolve_conflict(&tmp, OsStr::new("docs"), &ConflictStrategy::AutoRename).unwrap();
+        assert!(result.is_some(), "AutoRename should return Some");
+        let path = result.unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(name, "docs (1)", "should rename to docs (1), got {}", name);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+    // Group E — Read / Write / List
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_read_file_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_file(&tmp_str, "readme.rs").unwrap();
+        write_file(&tmp_str, "readme.rs", "fn main() {}").unwrap();
+
+        let fc = read_file(&tmp_str, "readme.rs").unwrap();
+        assert_eq!(fc.content, "fn main() {}");
+        assert_eq!(fc.language, "rust");
+        assert!(!fc.is_binary);
+        assert_eq!(fc.path, "readme.rs");
+        assert!(fc.size > 0);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_read_file_binary_detection() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        create_file(&tmp_str, "image.bin").unwrap();
+        std::fs::write(canonical_tmp.join("image.bin"), b"header\x00\x01\x02data").unwrap();
+
+        let fc = read_file(&tmp_str, "image.bin").unwrap();
+        assert!(fc.is_binary, "file with null byte should be binary");
+        assert!(fc.content.is_empty(), "binary file content should be empty string");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_read_file_traversal_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result = read_file(&tmp_str, "../secret.txt");
+        assert!(result.is_err(), "traversal read should be blocked");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_write_file_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        create_file(&tmp_str, "output.txt").unwrap();
+        write_file(&tmp_str, "output.txt", "hello world").unwrap();
+
+        let on_disk = std::fs::read_to_string(canonical_tmp.join("output.txt")).unwrap();
+        assert_eq!(on_disk, "hello world");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_write_file_traversal_blocked() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        let result = write_file(&tmp_str, "../escape.txt", "evil");
+        assert!(result.is_err(), "traversal write should be blocked");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_list_directory_root() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        create_directory(&tmp_str, "alpha_dir").unwrap();
+        create_file(&tmp_str, "beta.txt").unwrap();
+        create_file(&tmp_str, "gamma.rs").unwrap();
+
+        let entries = list_directory(&tmp_str, "").unwrap();
+
+        // Should have at least 3 entries
+        assert!(entries.len() >= 3, "expected at least 3 entries, got {}", entries.len());
+
+        // Directories should come first
+        let first_dir_idx = entries.iter().position(|e| e.name == "alpha_dir");
+        let first_file_idx = entries.iter().position(|e| e.name == "beta.txt");
+        assert!(
+            first_dir_idx.is_some() && first_file_idx.is_some(),
+            "expected both dir and file entries"
+        );
+        assert!(
+            first_dir_idx.unwrap() < first_file_idx.unwrap(),
+            "directories should sort before files"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_list_directory_skips_hidden() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let canonical_tmp = tmp.canonicalize().unwrap();
+
+        create_file(&tmp_str, "visible.txt").unwrap();
+        // Create a hidden file directly (bypassing create_file which might reject dotfiles)
+        std::fs::write(canonical_tmp.join(".hidden_file"), "secret").unwrap();
+
+        let entries = list_directory(&tmp_str, "").unwrap();
+        let hidden = entries.iter().find(|e| e.name == ".hidden_file");
+        assert!(
+            hidden.is_none(),
+            "hidden files should be excluded from listing"
+        );
+
+        let visible = entries.iter().find(|e| e.name == "visible.txt");
+        assert!(visible.is_some(), "visible file should be in listing");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+    // Group F — External Copy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_copy_external_entries_file_success() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        // Create an external source directory with a file
+        let external = std::env::temp_dir().join(format!(
+            "flow-orche-ext-src-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("ext_file.txt"), "external content").unwrap();
+
+        let source_path = external.join("ext_file.txt").to_string_lossy().to_string();
+
+        let result = copy_external_entries(
+            &tmp_str,
+            "",
+            vec![source_path],
+            ConflictStrategy::Skip,
+        )
+        .unwrap();
+
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].name, "ext_file.txt");
+        assert!(result.skipped.is_empty());
+
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        let copied = std::fs::read_to_string(canonical_tmp.join("ext_file.txt")).unwrap();
+        assert_eq!(copied, "external content");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&external);
+    }
+
+    #[test]
+    fn test_copy_external_entries_skip_strategy() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        // Create an existing file in the project
+        create_file(&tmp_str, "conflict.txt").unwrap();
+        write_file(&tmp_str, "conflict.txt", "original").unwrap();
+
+        // Create an external file with the same name
+        let external = std::env::temp_dir().join(format!(
+            "flow-orche-ext-skip-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("conflict.txt"), "new content").unwrap();
+
+        let source_path = external.join("conflict.txt").to_string_lossy().to_string();
+
+        let result = copy_external_entries(
+            &tmp_str,
+            "",
+            vec![source_path.clone()],
+            ConflictStrategy::Skip,
+        )
+        .unwrap();
+
+        assert!(result.entries.is_empty(), "skipped file should not appear in entries");
+        assert_eq!(result.skipped.len(), 1, "should have one skipped entry");
+        assert_eq!(result.skipped[0], source_path);
+
+        // Verify original content is preserved
+        let fc = read_file(&tmp_str, "conflict.txt").unwrap();
+        assert_eq!(fc.content, "original", "original content should be preserved");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&external);
+    }
+
+    #[test]
+    fn test_copy_external_entries_auto_rename() {
+        let tmp = temp_project();
+        let tmp_str = tmp.to_string_lossy().to_string();
+
+        // Create an existing file in the project
+        create_file(&tmp_str, "doc.txt").unwrap();
+        write_file(&tmp_str, "doc.txt", "original").unwrap();
+
+        // Create an external file with the same name
+        let external = std::env::temp_dir().join(format!(
+            "flow-orche-ext-rename-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("doc.txt"), "renamed content").unwrap();
+
+        let source_path = external.join("doc.txt").to_string_lossy().to_string();
+
+        let result = copy_external_entries(
+            &tmp_str,
+            "",
+            vec![source_path],
+            ConflictStrategy::AutoRename,
+        )
+        .unwrap();
+
+        assert_eq!(result.entries.len(), 1, "should have one copied entry");
+        assert_eq!(
+            result.entries[0].name, "doc (1).txt",
+            "auto-renamed file should be doc (1).txt, got {}",
+            result.entries[0].name
+        );
+        assert!(result.skipped.is_empty());
+
+        // Verify original is untouched
+        let original = read_file(&tmp_str, "doc.txt").unwrap();
+        assert_eq!(original.content, "original");
+
+        // Verify renamed copy exists
+        let canonical_tmp = tmp.canonicalize().unwrap();
+        let renamed = std::fs::read_to_string(canonical_tmp.join("doc (1).txt")).unwrap();
+        assert_eq!(renamed, "renamed content");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&external);
+    }
+}

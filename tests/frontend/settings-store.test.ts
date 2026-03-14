@@ -204,3 +204,137 @@ describe("SettingsStore — notification_style defaults", () => {
     expect(state.isLoading).toBe(false);
   });
 });
+
+// ── Agent Commands ──────────────────────────────────────────────────
+
+const mockSetAgentCommand = vi.mocked(commands.setAgentCommandIpc);
+
+describe("SettingsStore — agent commands", () => {
+  beforeEach(() => {
+    useSettingsStore.getState().reset();
+    vi.clearAllMocks();
+  });
+
+  it("fetches agent commands and populates state during fetchSettings", async () => {
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockResolvedValue([
+      { agentType: "claudeCode", label: "Claude Code", command: "/custom/claude", defaultCommand: "claude" },
+      { agentType: "codexCli", label: "Codex CLI", command: "codex", defaultCommand: "codex" },
+      { agentType: "geminiCli", label: "Gemini CLI", command: "gemini", defaultCommand: "gemini" },
+    ]);
+
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    const state = useSettingsStore.getState();
+    expect(state.agentCommands.claudeCode.command).toBe("/custom/claude");
+    expect(state.agentCommands.codexCli.command).toBe("codex");
+  });
+
+  it("uses default commands when getAgentCommands fails", async () => {
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockRejectedValue(new Error("DB error"));
+
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    const state = useSettingsStore.getState();
+    // Should use AGENT_TYPES defaults
+    expect(state.agentCommands.claudeCode.command).toBe("claude");
+    expect(state.agentCommands.codexCli.command).toBe("codex");
+    expect(state.isLoading).toBe(false);
+  });
+
+  it("persists agent command on setAgentCommand success", async () => {
+    // First fetch to initialize
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockResolvedValue([]);
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    // Set custom command
+    mockSetAgentCommand.mockResolvedValue(undefined);
+
+    await act(async () => {
+      await useSettingsStore.getState().setAgentCommand("claudeCode", "/usr/local/bin/claude");
+    });
+
+    const state = useSettingsStore.getState();
+    expect(state.agentCommands.claudeCode.command).toBe("/usr/local/bin/claude");
+    expect(state.isLoading).toBe(false);
+    expect(mockSetAgentCommand).toHaveBeenCalledWith("claudeCode", "/usr/local/bin/claude");
+  });
+
+  it("rolls back to persisted value on setAgentCommand failure", async () => {
+    // Fetch with initial command
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockResolvedValue([
+      { agentType: "claudeCode", label: "Claude Code", command: "claude", defaultCommand: "claude" },
+    ]);
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    // Attempt to set custom command — fails
+    mockSetAgentCommand.mockRejectedValue(new Error("DB write failed"));
+
+    await act(async () => {
+      await useSettingsStore.getState().setAgentCommand("claudeCode", "/bad/path");
+    });
+
+    // Should rollback to persisted value
+    const state = useSettingsStore.getState();
+    expect(state.agentCommands.claudeCode.command).toBe("claude");
+    expect(state.error).toBe("DB write failed");
+  });
+
+  it("uses defaultCommand when empty string is passed to setAgentCommand", async () => {
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockResolvedValue([]);
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    mockSetAgentCommand.mockResolvedValue(undefined);
+
+    await act(async () => {
+      await useSettingsStore.getState().setAgentCommand("claudeCode", "   ");
+    });
+
+    // Empty string should resolve to defaultCommand
+    expect(mockSetAgentCommand).toHaveBeenCalledWith("claudeCode", "claude");
+    expect(useSettingsStore.getState().agentCommands.claudeCode.command).toBe("claude");
+  });
+
+  it("delegates to setAgentCommand with defaultCommand on resetAgentCommand", async () => {
+    mockSettingsWithStyle("alert");
+    mockGetCachedEnv.mockResolvedValue(MOCK_ENV_WITH_ALERTER);
+    mockSetSetting.mockResolvedValue(undefined);
+    mockGetAgentCommands.mockResolvedValue([]);
+    await act(async () => {
+      await useSettingsStore.getState().fetchSettings();
+    });
+
+    mockSetAgentCommand.mockResolvedValue(undefined);
+
+    await act(async () => {
+      useSettingsStore.getState().resetAgentCommand("claudeCode");
+    });
+
+    // Should call setAgentCommandIpc with the default
+    expect(mockSetAgentCommand).toHaveBeenCalledWith("claudeCode", "claude");
+  });
+});
