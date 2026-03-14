@@ -71,7 +71,7 @@ Create agent worktrees, assign tasks, track dirty state, and merge back to main 
 
 ### Keyboard-Driven Workflow
 
-Full keyboard shortcut system — ⌘K command palette, ⌘1-9 project switching, ⌘⇧G terminal/git toggle, ⌘P file search, and more.
+Full keyboard shortcut system — ⌘/ shortcut help, ⌘K command palette, ⌘1-9 project switching, ⌘⇧G terminal/git toggle, ⌘P file search, and more.
 
 ![Keyboard Shortcuts](docs/assets/screenshots/screenshot-shortcuts-help.png)
 
