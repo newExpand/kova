@@ -113,7 +113,10 @@ export async function initEventBridge(): Promise<void> {
             try {
               if (hookEvent.projectPath) {
                 const rootPath = toProjectPathKey(hookEvent.projectPath);
+                const eventGen = generation;
                 setTimeout(() => {
+                  // Skip if bridge was destroyed/re-initialized since this event
+                  if (eventGen !== generation) return;
                   useAgentFileTrackingStore
                     .getState()
                     .reconcileNow(rootPath)
