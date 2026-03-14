@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use tauri::State;
 
-/// Read event server port from ~/.flow-orche/event-server.port
+/// Read event server port from ~/.kova/event-server.port
 pub(crate) fn read_event_server_port() -> Result<u16, AppError> {
     crate::services::event_server::read_port_from_file()
 }

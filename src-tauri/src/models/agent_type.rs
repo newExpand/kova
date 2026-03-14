@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// AI agent types supported by flow-orche
+/// AI agent types supported by kova
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AgentType {

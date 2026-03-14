@@ -109,11 +109,11 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::from_default_env()
-                .add_directive("flow_orche=info".parse().unwrap()),
+                .add_directive("kova=info".parse().unwrap()),
         )
         .init();
 
-    tracing::info!("Starting Clew");
+    tracing::info!("Starting Kova");
 
     // Enrich PATH + TERMINFO_DIRS before any child process is spawned
     enrich_env();

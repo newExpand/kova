@@ -33,7 +33,7 @@ pub fn read_settings_local_json(project_path: &Path) -> Result<Value, AppError> 
     Ok(settings)
 }
 
-/// All hook types that flow-orche installs for Claude Code integration.
+/// All hook types that kova installs for Claude Code integration.
 const HOOK_TYPES: &[&str] = &[
     "Stop",
     "PermissionRequest",
@@ -48,7 +48,7 @@ const HOOK_TYPES: &[&str] = &[
     "UserPromptSubmit",
 ];
 
-/// Generate hook commands for flow-orche event server
+/// Generate hook commands for kova event server
 pub fn generate_hook_commands(project_path: &str, port: u16) -> HashMap<String, Value> {
     let encoded_path: String = form_urlencoded::byte_serialize(project_path.as_bytes()).collect();
 
@@ -74,7 +74,7 @@ pub fn generate_hook_commands(project_path: &str, port: u16) -> HashMap<String, 
     hooks
 }
 
-/// Returns true if the given hook entry was injected by flow-orche
+/// Returns true if the given hook entry was injected by kova
 /// (identified by the characteristic `127.0.0.1` + `/hook` URL pattern).
 fn is_flow_orche_hook(entry: &Value) -> bool {
     entry
@@ -108,7 +108,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
         .as_object_mut()
         .ok_or_else(|| AppError::Hook("hooks is not an object".into()))?;
 
-    // Generate flow-orche hooks
+    // Generate kova hooks
     let flow_orche_hooks = generate_hook_commands(&path_str, port);
 
     for (hook_type, hook_value) in flow_orche_hooks {
@@ -119,7 +119,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
             AppError::Hook(format!("hooks.{} is not an array", hook_type))
         })?;
 
-        // Remove existing flow-orche hooks, then add the new one
+        // Remove existing kova hooks, then add the new one
         existing_array.retain(|h| !is_flow_orche_hook(h));
         existing_array.push(hook_value);
     }
@@ -137,7 +137,7 @@ pub fn inject_hooks(project_path: &Path, port: u16) -> Result<(), AppError> {
 
 // ─── Gemini CLI hooks ────────────────────────────────────────────────
 
-/// Gemini CLI hook types → flow-orche event types.
+/// Gemini CLI hook types → kova event types.
 /// Gemini hooks fire on stdin JSON containing `cwd`, `session_id`, etc.
 const GEMINI_HOOK_MAP: &[(&str, &str)] = &[
     ("SessionStart", "SessionStart"),
@@ -163,7 +163,7 @@ fn generate_stdin_hook_command(port: u16, event_type: &str) -> String {
 
 /// Inject hooks into Gemini CLI's global settings (`~/.gemini/settings.json`).
 ///
-/// Idempotent: removes existing flow-orche hooks (identified by `127.0.0.1` + `/hook`)
+/// Idempotent: removes existing kova hooks (identified by `127.0.0.1` + `/hook`)
 /// before re-injecting with the current port.
 pub fn inject_gemini_hooks(port: u16) -> Result<(), AppError> {
     let home = dirs::home_dir()
@@ -243,7 +243,7 @@ pub fn inject_codex_notify(port: u16) -> Result<(), AppError> {
         String::new()
     };
 
-    // Remove existing flow-orche notify lines and marker comments.
+    // Remove existing kova notify lines and marker comments.
     // Codex CLI expects `notify = [...]` (array of strings), NOT `[notify]` table.
     let marker = "# flow-orche notify";
 
@@ -332,7 +332,7 @@ pub fn inject_codex_notify(port: u16) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Remove flow-orche hooks from project settings.json
+/// Remove kova hooks from project settings.json
 pub fn remove_hooks(project_path: &Path) -> Result<(), AppError> {
     let canonical_path = fs::canonicalize(project_path)?;
     let mut settings = read_settings_local_json(&canonical_path)?;

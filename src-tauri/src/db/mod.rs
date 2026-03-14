@@ -10,7 +10,7 @@ pub struct DbConnection {
 
 impl DbConnection {
     pub fn initialize(app: &tauri::App) -> Result<Self, AppError> {
-        // 1. Get app data directory (~/.flow-orche/)
+        // 1. Get app data directory (~/.kova/)
         let app_data_dir = app
             .path()
             .app_data_dir()
@@ -19,7 +19,7 @@ impl DbConnection {
         // Create directory if it doesn't exist
         fs::create_dir_all(&app_data_dir)?;
 
-        let db_path = app_data_dir.join("flow-orche.db");
+        let db_path = app_data_dir.join("kova.db");
         info!("Initializing database at {:?}", db_path);
 
         // 2. Open SQLite connection and configure security/performance PRAGMAs

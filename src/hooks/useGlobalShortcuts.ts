@@ -56,13 +56,13 @@ export function useGlobalShortcuts(): GlobalShortcutsReturn {
     // Cmd+N — New project (dispatches custom event for Sidebar to handle)
     if (e.metaKey && e.key === "n") {
       e.preventDefault();
-      window.dispatchEvent(new CustomEvent("flow-orche:new-project"));
+      window.dispatchEvent(new CustomEvent("kova:new-project"));
     }
 
     // Cmd+Shift+G — Toggle Terminal ↔ Git Graph
     if (e.metaKey && e.shiftKey && e.key === "g") {
       e.preventDefault();
-      window.dispatchEvent(new CustomEvent("flow-orche:toggle-git"));
+      window.dispatchEvent(new CustomEvent("kova:toggle-git"));
     }
 
     // Cmd+Shift+F — Search in Files (content search)

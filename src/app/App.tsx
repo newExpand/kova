@@ -53,7 +53,7 @@ function TitleBar() {
         <SshTabSwitcher connectionId={sshConnectionId} />
       ) : (
         <span className="text-xs font-medium tracking-wide text-text-muted select-none">
-          Clew
+          Kova
         </span>
       )}
       {/* Right spacer */}
@@ -133,9 +133,9 @@ function AppShell() {
     function handleOpenShortcutsHelp() {
       setShortcutsHelpOpen(true);
     }
-    window.addEventListener("flow-orche:open-shortcuts-help", handleOpenShortcutsHelp);
+    window.addEventListener("kova:open-shortcuts-help", handleOpenShortcutsHelp);
     return () =>
-      window.removeEventListener("flow-orche:open-shortcuts-help", handleOpenShortcutsHelp);
+      window.removeEventListener("kova:open-shortcuts-help", handleOpenShortcutsHelp);
   }, [setShortcutsHelpOpen]);
 
   // Cmd+Shift+G → Toggle Terminal ↔ Git Graph
@@ -150,9 +150,9 @@ function AppShell() {
         navigate(`/projects/${selectedId}/git`);
       }
     }
-    window.addEventListener("flow-orche:toggle-git", handleToggleGit);
+    window.addEventListener("kova:toggle-git", handleToggleGit);
     return () =>
-      window.removeEventListener("flow-orche:toggle-git", handleToggleGit);
+      window.removeEventListener("kova:toggle-git", handleToggleGit);
   }, [navigate]);
 
   return (

@@ -28,7 +28,7 @@ import type { SessionInfo, TmuxPane } from "../../src/lib/tauri/commands";
 const mockCommands = vi.mocked(commands);
 
 const MOCK_APP_SESSION: SessionInfo = {
-  name: "flow-orche-mvp",
+  name: "kova-mvp",
   windows: 3,
   created: "1706000000",
   attached: true,
@@ -55,7 +55,7 @@ const MOCK_OTHER_PROJECT_SESSION: SessionInfo = {
 };
 
 const MOCK_PANE: TmuxPane = {
-  sessionName: "flow-orche-mvp",
+  sessionName: "kova-mvp",
   windowIndex: 0,
   paneIndex: 0,
   paneTitle: "team-lead",
@@ -64,7 +64,7 @@ const MOCK_PANE: TmuxPane = {
 };
 
 const MOCK_PANE_2: TmuxPane = {
-  sessionName: "flow-orche-mvp",
+  sessionName: "kova-mvp",
   windowIndex: 0,
   paneIndex: 1,
   paneTitle: "agent-1",
@@ -202,11 +202,11 @@ describe("TmuxStore", () => {
       mockCommands.listTmuxPanes.mockResolvedValue([MOCK_PANE, MOCK_PANE_2]);
 
       await act(async () => {
-        await useTmuxStore.getState().fetchPanes("flow-orche-mvp");
+        await useTmuxStore.getState().fetchPanes("kova-mvp");
       });
 
       const state = useTmuxStore.getState();
-      const panes = state.panes["flow-orche-mvp"];
+      const panes = state.panes["kova-mvp"];
       expect(panes).toHaveLength(2);
       expect(panes[0].paneTitle).toBe("team-lead");
       expect(panes[0].paneCurrentCommand).toBe("claude");
@@ -220,14 +220,14 @@ describe("TmuxStore", () => {
       mockCommands.listTmuxPanes.mockResolvedValueOnce([]);
 
       await act(async () => {
-        await useTmuxStore.getState().fetchPanes("flow-orche-mvp");
+        await useTmuxStore.getState().fetchPanes("kova-mvp");
       });
       await act(async () => {
         await useTmuxStore.getState().fetchPanes("test-session");
       });
 
       const state = useTmuxStore.getState();
-      expect(state.panes["flow-orche-mvp"]).toHaveLength(1);
+      expect(state.panes["kova-mvp"]).toHaveLength(1);
       expect(state.panes["test-session"]).toEqual([]);
     });
   });
@@ -238,21 +238,21 @@ describe("TmuxStore", () => {
       mockCommands.listTmuxPanes.mockResolvedValue([MOCK_PANE]);
 
       act(() => {
-        useTmuxStore.getState().selectSession("flow-orche-mvp");
+        useTmuxStore.getState().selectSession("kova-mvp");
       });
 
-      expect(useTmuxStore.getState().selectedSession).toBe("flow-orche-mvp");
+      expect(useTmuxStore.getState().selectedSession).toBe("kova-mvp");
 
       // Wait for pane fetch
       await vi.waitFor(() => {
         expect(mockCommands.listTmuxPanes).toHaveBeenCalledWith(
-          "flow-orche-mvp",
+          "kova-mvp",
         );
       });
     });
 
     it("should deselect with null", () => {
-      useTmuxStore.setState({ selectedSession: "flow-orche-mvp" });
+      useTmuxStore.setState({ selectedSession: "kova-mvp" });
 
       act(() => {
         useTmuxStore.getState().selectSession(null);
@@ -263,11 +263,11 @@ describe("TmuxStore", () => {
 
     it("should not re-fetch panes if already cached", () => {
       useTmuxStore.setState({
-        panes: { "flow-orche-mvp": [MOCK_PANE] },
+        panes: { "kova-mvp": [MOCK_PANE] },
       });
 
       act(() => {
-        useTmuxStore.getState().selectSession("flow-orche-mvp");
+        useTmuxStore.getState().selectSession("kova-mvp");
       });
 
       // Should not call listTmuxPanes since panes are already cached
@@ -297,7 +297,7 @@ describe("TmuxStore", () => {
       );
 
       expect(projectSessions).toHaveLength(1);
-      expect(projectSessions[0].name).toBe("flow-orche-mvp");
+      expect(projectSessions[0].name).toBe("kova-mvp");
       expect(externalSessions).toHaveLength(2);
     });
   });
@@ -307,8 +307,8 @@ describe("TmuxStore", () => {
     it("should reset to initial state", () => {
       useTmuxStore.setState({
         sessions: [MOCK_APP_SESSION],
-        selectedSession: "flow-orche-mvp",
-        panes: { "flow-orche-mvp": [MOCK_PANE] },
+        selectedSession: "kova-mvp",
+        panes: { "kova-mvp": [MOCK_PANE] },
         isAvailable: true,
         isLoading: true,
       });

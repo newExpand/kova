@@ -2,7 +2,7 @@
 
 ## Context
 
-flow-orche의 git graph/worktree panel에 "에이전트 워크플로우 특화" 인터랙션을 추가한다.
+kova의 git graph/worktree panel에 "에이전트 워크플로우 특화" 인터랙션을 추가한다.
 일반 Git GUI(GitKraken, Fork)와 경쟁하지 않고, 에이전트 오케스트레이터만이 할 수 있는
 고수준 액션을 제공하여 차별화한다.
 

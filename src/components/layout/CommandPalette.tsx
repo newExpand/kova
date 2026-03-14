@@ -40,7 +40,7 @@ function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const handleNewProject = useCallback(() => {
     onOpenChange(false);
-    window.dispatchEvent(new CustomEvent("flow-orche:new-project"));
+    window.dispatchEvent(new CustomEvent("kova:new-project"));
   }, [onOpenChange]);
 
   return (
@@ -58,7 +58,7 @@ function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <CommandItem
             onSelect={() => {
               onOpenChange(false);
-              window.dispatchEvent(new CustomEvent("flow-orche:open-shortcuts-help"));
+              window.dispatchEvent(new CustomEvent("kova:open-shortcuts-help"));
             }}
           >
             <Keyboard className="h-4 w-4" />

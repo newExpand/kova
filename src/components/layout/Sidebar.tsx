@@ -423,8 +423,8 @@ function Sidebar() {
   // Listen for "New Project" event from CommandPalette / Cmd+N
   useEffect(() => {
     const handleNewProject = () => setIsAddOpen(true);
-    window.addEventListener("flow-orche:new-project", handleNewProject);
-    return () => window.removeEventListener("flow-orche:new-project", handleNewProject);
+    window.addEventListener("kova:new-project", handleNewProject);
+    return () => window.removeEventListener("kova:new-project", handleNewProject);
   }, []);
 
   // Cleanup delete timer on unmount
@@ -878,7 +878,7 @@ function Sidebar() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>
-            <DialogDescription>Add a new project to manage with Clew</DialogDescription>
+            <DialogDescription>Add a new project to manage with Kova</DialogDescription>
           </DialogHeader>
           <ProjectForm
             onSubmit={async (input) => {

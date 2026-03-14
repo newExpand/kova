@@ -464,12 +464,12 @@ fn extract_parent_project_path(path: &str) -> Option<String> {
         .map(|idx| path[..idx].to_string())
 }
 
-/// Get the directory for the port file (~/.flow-orche/).
+/// Get the directory for the port file (~/.kova/).
 fn get_port_dir() -> Result<std::path::PathBuf, AppError> {
     let home = dirs::home_dir().ok_or_else(|| {
         AppError::EventServer("Could not determine home directory".into())
     })?;
-    Ok(home.join(".flow-orche"))
+    Ok(home.join(".kova"))
 }
 
 #[cfg(test)]
@@ -511,6 +511,6 @@ mod tests {
         let dir = get_port_dir();
         assert!(dir.is_ok());
         let path = dir.expect("Should get port dir");
-        assert!(path.to_str().expect("Should be valid string").contains(".flow-orche"));
+        assert!(path.to_str().expect("Should be valid string").contains(".kova"));
     }
 }

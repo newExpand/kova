@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tracing::{info, warn};
 
-/// Active alerter PID per group. Keys are formatted as `"flow-orche:{group_id}"`.
+/// Active alerter PID per group. Keys are formatted as `"kova:{group_id}"`.
 /// Prevents alerter process accumulation by killing the previous process before spawning a new one.
 static ACTIVE_ALERTER_PIDS: LazyLock<Mutex<HashMap<String, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));

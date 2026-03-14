@@ -53,7 +53,7 @@ src/
 ## 4. Event Server
 
 - Flow: Claude Code Hook → curl POST `127.0.0.1:{PORT}/hook` → tiny_http (Rust thread) → `app.emit` → Event Bridge → notificationStore → macOS native alert
-- Port file: `~/.flow-orche/event-server.port`
+- Port file: `~/.kova/event-server.port`
 - Server binds to `127.0.0.1` ONLY (never `0.0.0.0`)
 
 ## 5. Security Rules

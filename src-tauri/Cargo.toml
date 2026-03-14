@@ -1,12 +1,12 @@
 [package]
-name = "flow-orche"
+name = "kova"
 version = "0.1.0"
-description = "Clew — Claude Code Agent Teams Orchestrator"
+description = "Kova — Terminal workspace that tracks the traces AI agents leave in your code"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "flow_orche_lib"
+name = "kova_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
