@@ -11,6 +11,8 @@ vi.mock("../../src/lib/payload-helpers", () => ({
   getPayloadObject: () => undefined,
 }));
 
+// NOTE: Run this file individually (bun test tests/frontend/agentActivityStore-eviction.test.ts)
+// as bun's vitest shim lacks vi.unmock, causing cross-file mock contamination in full suite runs.
 import { useAgentActivityStore } from "../../src/features/git/stores/agentActivityStore";
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
@@ -50,7 +52,7 @@ describe("agentActivityStore session eviction", () => {
   });
 
   afterEach(() => {
-    dateNowSpy.mockRestore();
+    dateNowSpy?.mockRestore();
   });
 
   it("should NOT evict sessions younger than 4 hours", () => {
