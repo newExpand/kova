@@ -7,6 +7,7 @@ import { useSshGitStore, useSshStore } from "../features/ssh";
 import { SettingsPage } from "../features/settings";
 import { getShortcutById } from "../lib/shortcuts";
 import { useLRUPool } from "../hooks/useLRUPool";
+import { EnvironmentCheckCard } from "../features/environment";
 
 // Lazy-load TerminalPage (xterm.js is in this chunk)
 const TerminalPage = lazy(
@@ -115,6 +116,9 @@ function WelcomePage() {
             );
           })}
         </div>
+
+        {/* Environment check */}
+        <EnvironmentCheckCard />
       </div>
     </div>
   );

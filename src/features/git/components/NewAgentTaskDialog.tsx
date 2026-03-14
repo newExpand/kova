@@ -10,6 +10,9 @@ import {
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
 import { startWorktreeTask, AGENT_TYPES, DEFAULT_AGENT_TYPE, type AgentType } from "../../../lib/tauri/commands";
+import { useSystemCheck } from "../../environment";
+import type { EnvironmentCheck } from "../../environment";
+import { useSettingsStore } from "../../settings/stores/settingsStore";
 
 interface NewAgentTaskDialogProps {
   open: boolean;
@@ -23,6 +26,27 @@ interface NewAgentTaskDialogProps {
 const TASK_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 const MAX_TASK_NAME_LENGTH = 50;
 
+interface AgentCommandEntry { command: string; defaultCommand: string }
+
+function getAgentStatus(
+  env: EnvironmentCheck | null,
+  agentType: AgentType,
+  agentCommands: Record<AgentType, AgentCommandEntry>,
+): { installed: boolean; cmd: string } | null {
+  if (!env) return null;
+  // Custom command configured → treat as available regardless of binary detection
+  const entry = agentCommands[agentType];
+  if (entry.command !== entry.defaultCommand) return { installed: true, cmd: entry.command };
+  switch (agentType) {
+    case "claudeCode":
+      return { installed: env.claudeCodeInstalled, cmd: "npm install -g @anthropic-ai/claude-code" };
+    case "codexCli":
+      return { installed: env.codexCliInstalled, cmd: "npm install -g @openai/codex" };
+    case "geminiCli":
+      return { installed: env.geminiCliInstalled, cmd: "npm install -g @google/gemini-cli" };
+  }
+}
+
 export function NewAgentTaskDialog({
   open,
   onOpenChange,
@@ -32,6 +56,9 @@ export function NewAgentTaskDialog({
   onCreated,
 }: NewAgentTaskDialogProps) {
   const agentLabel = AGENT_TYPES[agentType].label;
+  const { env } = useSystemCheck();
+  const agentCommands = useSettingsStore((s) => s.agentCommands);
+  const agentStatus = getAgentStatus(env, agentType, agentCommands);
   const [taskName, setTaskName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +76,10 @@ export function NewAgentTaskDialog({
     taskName.length <= MAX_TASK_NAME_LENGTH &&
     TASK_NAME_REGEX.test(taskName);
 
+  const agentBlocked = agentStatus !== null && !agentStatus.installed;
+
   const handleSubmit = useCallback(async () => {
-    if (!isValid || !sessionName) return;
+    if (!isValid || !sessionName || agentBlocked) return;
 
     setIsLoading(true);
     setError(null);
@@ -65,16 +94,16 @@ export function NewAgentTaskDialog({
     } finally {
       setIsLoading(false);
     }
-  }, [isValid, sessionName, taskName, projectPath, agentType, onOpenChange, onCreated]);
+  }, [isValid, sessionName, taskName, projectPath, agentType, agentBlocked, onOpenChange, onCreated]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && isValid && !isLoading) {
+      if (e.key === "Enter" && isValid && !isLoading && !agentBlocked) {
         e.preventDefault();
         handleSubmit();
       }
     },
-    [isValid, isLoading, handleSubmit],
+    [isValid, isLoading, agentBlocked, handleSubmit],
   );
 
   return (
@@ -122,6 +151,18 @@ export function NewAgentTaskDialog({
             </p>
           )}
 
+          {agentStatus && !agentStatus.installed && (
+            <div className="rounded-md bg-warning/10 px-3 py-2 text-sm">
+              <p className="font-medium text-warning">{agentLabel} is not installed</p>
+              <p className="mt-1 text-xs text-text-muted">
+                Install with:{" "}
+                <code className="rounded bg-bg-tertiary px-1 py-0.5 font-mono">
+                  {agentStatus.cmd}
+                </code>
+              </p>
+            </div>
+          )}
+
           {!sessionName && (
             <p className="text-sm text-warning">
               No active tmux session. Open the terminal first.
@@ -141,7 +182,7 @@ export function NewAgentTaskDialog({
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={!isValid || isLoading || !sessionName}
+            disabled={!isValid || isLoading || !sessionName || agentBlocked}
           >
             {isLoading ? (
               <>

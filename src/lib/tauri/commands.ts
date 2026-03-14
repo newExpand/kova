@@ -120,6 +120,9 @@ export interface EnvironmentCheck {
   codexCliVersion: string | null;
   geminiCliInstalled: boolean;
   geminiCliVersion: string | null;
+  gitInstalled: boolean;
+  gitVersion: string | null;
+  alerterInstalled: boolean;
   shellType: string;
 }
 

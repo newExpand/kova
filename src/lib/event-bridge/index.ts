@@ -144,9 +144,14 @@ export async function initEventBridge(): Promise<void> {
     }
   });
 
+  // alerter-fallback — once per session, show install hint
+  const alerterFallbackUnlisten = await listen("notification:alerter-fallback", () => {
+    useNotificationStore.getState().showAlerterFallbackWarning();
+  });
+
   // notification:clicked keeps a separate listener
   const clickUnlisteners = await setupNotificationClickEvents();
-  unlisteners.push(hookUnlisten, worktreeReadyUnlisten, ...clickUnlisteners);
+  unlisteners.push(hookUnlisten, worktreeReadyUnlisten, alerterFallbackUnlisten, ...clickUnlisteners);
 }
 
 export function destroyEventBridge(): void {

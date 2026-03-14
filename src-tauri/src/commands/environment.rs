@@ -13,16 +13,36 @@ pub struct EnvironmentCheck {
     pub codex_cli_version: Option<String>,
     pub gemini_cli_installed: bool,
     pub gemini_cli_version: Option<String>,
+    pub git_installed: bool,
+    pub git_version: Option<String>,
+    pub alerter_installed: bool,
     pub shell_type: String,
 }
 
 #[tauri::command]
 pub fn check_environment() -> Result<EnvironmentCheck, AppError> {
-    let tmux_version = get_command_version("tmux", &["-V"]);
-    let claude_version = get_command_version("claude", &["--version"]);
-    let codex_version = get_command_version("codex", &["--version"]);
-    let gemini_version = get_command_version("gemini", &["--version"]);
     let shell_type = std::env::var("SHELL").unwrap_or_else(|_| "unknown".into());
+
+    // Spawn all version checks in parallel — each process can take 50-200ms,
+    // so sequential execution totals ~500ms+. With threads: ~max(single) ≈ 100ms.
+    let (tmux_version, claude_version, codex_version, gemini_version, git_version, alerter_installed) =
+        std::thread::scope(|s| {
+            let h_tmux = s.spawn(|| get_command_version("tmux", &["-V"]));
+            let h_claude = s.spawn(|| get_command_version("claude", &["--version"]));
+            let h_codex = s.spawn(|| get_command_version("codex", &["--version"]));
+            let h_gemini = s.spawn(|| get_command_version("gemini", &["--version"]));
+            let h_git = s.spawn(|| get_command_version("git", &["--version"]));
+            let h_alerter = s.spawn(|| is_command_available("alerter", &["-help"]));
+
+            (
+                h_tmux.join().unwrap_or(None),
+                h_claude.join().unwrap_or(None),
+                h_codex.join().unwrap_or(None),
+                h_gemini.join().unwrap_or(None),
+                h_git.join().unwrap_or(None),
+                h_alerter.join().unwrap_or(false),
+            )
+        });
 
     Ok(EnvironmentCheck {
         tmux_installed: tmux_version.is_some(),
@@ -33,17 +53,44 @@ pub fn check_environment() -> Result<EnvironmentCheck, AppError> {
         codex_cli_version: codex_version,
         gemini_cli_installed: gemini_version.is_some(),
         gemini_cli_version: gemini_version,
+        git_installed: git_version.is_some(),
+        git_version,
+        alerter_installed,
         shell_type,
     })
 }
 
+fn is_command_available(cmd: &str, args: &[&str]) -> bool {
+    match Command::new(cmd)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            tracing::warn!("Failed to detect {}: {}", cmd, e);
+            false
+        }
+    }
+}
+
 fn get_command_version(cmd: &str, args: &[&str]) -> Option<String> {
-    Command::new(cmd)
+    match Command::new(cmd)
         .args(args)
         .stdin(std::process::Stdio::null())
         .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
+    {
+        Ok(o) if o.status.success() => {
+            String::from_utf8(o.stdout).ok().map(|s| s.trim().to_string())
+        }
+        Ok(_) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::warn!("Failed to detect {}: {}", cmd, e);
+            None
+        }
+    }
 }

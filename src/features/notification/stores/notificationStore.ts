@@ -15,6 +15,7 @@ interface NotificationState {
   error: string | null;
   unreadCount: number;
   isPanelOpen: boolean;
+  alerterFallbackShown: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,6 +34,10 @@ interface NotificationActions {
   togglePanel: () => void;
   setPanelOpen: (open: boolean) => void;
   markAllRead: () => void;
+
+  // Alerter fallback
+  showAlerterFallbackWarning: () => void;
+  dismissAlerterFallbackWarning: () => void;
 
   // Reset
   reset: () => void;
@@ -55,6 +60,7 @@ const initialState: NotificationState = {
   error: null,
   unreadCount: 0,
   isPanelOpen: false,
+  alerterFallbackShown: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +123,12 @@ export const useNotificationStore = create<NotificationStore>()(
 
       markAllRead: () =>
         set({ unreadCount: 0 }, undefined, "markAllRead"),
+
+      showAlerterFallbackWarning: () =>
+        set({ alerterFallbackShown: true }, undefined, "showAlerterFallbackWarning"),
+
+      dismissAlerterFallbackWarning: () =>
+        set({ alerterFallbackShown: false }, undefined, "dismissAlerterFallbackWarning"),
 
       reset: () => set(initialState, undefined, "reset"),
     }),

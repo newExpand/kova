@@ -153,6 +153,7 @@ function SettingsPage() {
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
   const setNotificationStyle = useSettingsStore((s) => s.setNotificationStyle);
   const setAgentCommand = useSettingsStore((s) => s.setAgentCommand);
+  const alerterInstalled = useSettingsStore((s) => s.alerterInstalled);
 
   useEffect(() => {
     fetchSettings();
@@ -188,9 +189,11 @@ function SettingsPage() {
                 value="alert"
                 current={notificationStyle}
                 label="Alert (persistent)"
-                description="Stays on screen until you dismiss it. Requires alerter to be installed."
+                description={alerterInstalled === false
+                  ? "Requires: brew install alerter"
+                  : "Stays on screen until you dismiss it."}
                 onChange={setNotificationStyle}
-                disabled={isLoading}
+                disabled={isLoading || alerterInstalled === null || alerterInstalled === false}
               />
               <RadioOption
                 value="banner"

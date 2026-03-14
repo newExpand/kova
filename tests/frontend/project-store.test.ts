@@ -119,6 +119,7 @@ describe("ProjectStore", () => {
         "Test Project",
         "/Users/test/project",
         0,
+        undefined,
       );
     });
 
@@ -139,7 +140,7 @@ describe("ProjectStore", () => {
       expect(useProjectStore.getState().error).toBe("Duplicate path");
     });
 
-    it("should default colorIndex to 0 when not provided", async () => {
+    it("should auto-assign colorIndex via pickLeastUsedColor when not provided", async () => {
       mockCommands.createProject.mockResolvedValue(MOCK_PROJECT);
 
       await act(async () => {
@@ -149,7 +150,13 @@ describe("ProjectStore", () => {
         });
       });
 
-      expect(mockCommands.createProject).toHaveBeenCalledWith("Test", "/test", 0);
+      // pickLeastUsedColor uses Math.random() — verify a valid index is passed
+      expect(mockCommands.createProject).toHaveBeenCalledWith(
+        "Test",
+        "/test",
+        expect.any(Number),
+        undefined,
+      );
     });
   });
 

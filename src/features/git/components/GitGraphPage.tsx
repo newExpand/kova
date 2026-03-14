@@ -6,6 +6,7 @@ import { CommitDetailPanel } from "./CommitDetailPanel";
 import { WorkingChangesPanel } from "./WorkingChangesPanel";
 import { WorktreePanel } from "./WorktreePanel";
 import { MergeProgressDialog } from "./MergeProgressDialog";
+import { useSystemCheck } from "../../environment";
 import { useProjectStore } from "../../project/stores/projectStore";
 import { useTmuxSessions } from "../../tmux/hooks/useTmuxSessions";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
@@ -17,6 +18,44 @@ interface GitGraphPageProps {
 }
 
 export default function GitGraphPage({ projectId, isActive }: GitGraphPageProps) {
+  const { env, isLoading: envLoading } = useSystemCheck();
+
+  // Guard — git not installed (checked BEFORE heavy hooks to avoid unnecessary IPC calls)
+  if (envLoading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="text-sm text-text-muted animate-pulse">Loading...</span>
+      </div>
+    );
+  }
+  if (env !== null && !env.gitInstalled) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="glass-surface rounded-xl p-6 text-center max-w-md">
+          <GitBranch className="mx-auto h-12 w-12 text-text-muted opacity-40 mb-4" strokeWidth={1} />
+          <p className="text-sm text-text">git is not installed</p>
+          <p className="mt-3 text-xs text-text-muted">Install with one of:</p>
+          <div className="mt-2 space-y-1.5">
+            <p className="text-xs text-text-muted">
+              <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                brew install git
+              </code>
+            </p>
+            <p className="text-xs text-text-muted">
+              <code className="rounded bg-bg-tertiary px-1.5 py-0.5 font-mono">
+                xcode-select --install
+              </code>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <GitGraphPageInner projectId={projectId} isActive={isActive} />;
+}
+
+function GitGraphPageInner({ projectId, isActive }: GitGraphPageProps) {
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   );

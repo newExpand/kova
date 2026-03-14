@@ -3,6 +3,7 @@ use crate::models::notification::NotificationRecord;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::io::Read as _;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,6 +15,10 @@ use tracing::{info, warn};
 /// Prevents alerter process accumulation by killing the previous process before spawning a new one.
 static ACTIVE_ALERTER_PIDS: LazyLock<Mutex<HashMap<String, u32>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Tracks whether alerter-fallback event has been emitted this session.
+static ALERTER_FALLBACK_EMITTED: LazyLock<AtomicBool> =
+    LazyLock::new(|| AtomicBool::new(false));
 
 /// Maximum time an alerter process can live before being killed via SIGKILL.
 const ALERTER_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
@@ -126,6 +131,8 @@ fn send_via_alerter_or_osascript(
     // Kill previous alerter for this group to prevent process accumulation
     kill_previous_alerter(&alerter_group);
 
+    let app_for_fallback = app_handle.clone();
+
     match std::process::Command::new("alerter")
         .arg("-title")
         .arg(escape_alerter_arg(title))
@@ -226,6 +233,14 @@ fn send_via_alerter_or_osascript(
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             warn!("alerter not found, falling back to osascript");
+            if ALERTER_FALLBACK_EMITTED
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                if let Err(e) = app_for_fallback.emit("notification:alerter-fallback", ()) {
+                    warn!("Failed to emit alerter-fallback event: {}", e);
+                }
+            }
         }
         Err(e) => {
             warn!("alerter failed: {}, falling back to osascript", e);
@@ -252,14 +267,17 @@ fn send_via_osascript(title: &str, body: &str) -> Result<(), AppError> {
             thread::spawn(move || {
                 let _ = child.wait();
             });
+            info!("Native notification sent (osascript): {}", title);
+            Ok(())
         }
         Err(e) => {
-            warn!("osascript notification failed: {}", e);
+            tracing::error!("osascript notification failed: {}", e);
+            Err(AppError::Internal(format!(
+                "Failed to send notification via osascript: {}",
+                e
+            )))
         }
     }
-
-    info!("Native notification sent (osascript): {}", title);
-    Ok(())
 }
 
 /// Store a notification record in the database.

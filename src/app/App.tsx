@@ -7,17 +7,18 @@ import { Sidebar } from "../components/layout/Sidebar";
 import { StatusBar } from "../components/layout/StatusBar";
 import { CommandPalette } from "../components/layout/CommandPalette";
 import { ShortcutsHelpModal } from "../components/layout/ShortcutsHelpModal";
-import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { ErrorBoundary } from "../components/ui/error-boundary";
 import { checkTmuxAvailable } from "../lib/tauri/commands";
+import { cn } from "../lib/utils";
+import { useAgentFileTrackingStore, useWorkingSetReconciliation } from "../features/files";
+import { ProjectTabSwitcher } from "../features/git";
+import { AlerterFallbackToast } from "../features/notification";
 import { useProjectStore } from "../features/project/stores/projectStore";
 import { useSettingsStore } from "../features/settings/stores/settingsStore";
-import { useAppStore } from "../stores/appStore";
-import { useAgentFileTrackingStore, useWorkingSetReconciliation } from "../features/files";
-import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
-import { ProjectTabSwitcher } from "../features/git";
 import { SshTabSwitcher, useSshStore } from "../features/ssh";
-import { cn } from "../lib/utils";
+import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import { useSplitPanelResize } from "../hooks/useSplitPanelResize";
+import { useAppStore } from "../stores/appStore";
 
 const FileViewerPanel = lazy(() => import("../components/layout/FileViewerPanel"));
 
@@ -234,6 +235,7 @@ function AppShell() {
         </div>
       </div>
       <StatusBar connected={true} tmuxAvailable={tmuxAvailable} />
+      <AlerterFallbackToast />
       <CommandPalette
         open={isCommandPaletteOpen}
         onOpenChange={setCommandPaletteOpen}

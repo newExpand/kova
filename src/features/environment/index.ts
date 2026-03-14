@@ -1,2 +1,3 @@
 export type { EnvironmentCheck } from "./types";
-export { useSystemCheck } from "./hooks/useSystemCheck";
+export { useSystemCheck, getCachedEnvironment } from "./hooks/useSystemCheck";
+export { EnvironmentCheckCard } from "./components/EnvironmentCheckCard";

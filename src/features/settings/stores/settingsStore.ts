@@ -7,6 +7,7 @@ import {
   AGENT_TYPES,
   type AgentType,
 } from "../../../lib/tauri/commands";
+import { getCachedEnvironment } from "../../environment";
 import {
   DEFAULT_THEME_ID,
   getThemeById,
@@ -70,6 +71,7 @@ interface SettingsState {
   terminalFontSize: number;
   copyOnSelect: boolean;
   agentCommands: Record<AgentType, AgentCommandEntry>;
+  alerterInstalled: boolean | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -106,6 +108,7 @@ const initialState: SettingsState = {
   terminalFontSize: DEFAULT_FONT_SIZE,
   copyOnSelect: false,
   agentCommands: buildDefaultAgentCommands(),
+  alerterInstalled: null,
   isLoading: false,
   error: null,
 };
@@ -121,18 +124,38 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     fetchSettings: async () => {
       set({ isLoading: true, error: null });
       try {
-        const [style, themeId, glassMode, opacityStr, fontFamily, fontSizeStr, copyOnSelectStr] = await Promise.all([
-          getSetting("notification_style", "alert"),
+        const [rawStyle, themeId, glassMode, opacityStr, fontFamily, fontSizeStr, copyOnSelectStr, envResult] = await Promise.all([
+          getSetting("notification_style", ""),
           getSetting("terminal_theme", DEFAULT_THEME_ID),
           getSetting("terminal_glass_mode", "opaque"),
           getSetting("terminal_opacity", "0.85"),
           getSetting("terminal_font_family", DEFAULT_FONT_ID),
           getSetting("terminal_font_size", String(DEFAULT_FONT_SIZE)),
           getSetting("copy_on_select", "false"),
+          getCachedEnvironment().catch((envErr: unknown) => {
+            console.error("[settingsStore] Environment check failed, using default notification style:", envErr);
+            return null;
+          }),
         ]);
 
+        // Dynamic default: alerter detection is non-critical — failure must not break settings
+        const detectedAlerter = envResult?.alerterInstalled ?? null;
+        const defaultStyle = detectedAlerter === false ? "banner" : "alert";
+        const style = rawStyle || defaultStyle;
+
+        // If DB had no value, persist the computed default so backend uses the same style
+        let persistedStyle = style;
+        if (!rawStyle) {
+          try {
+            await setSetting("notification_style", defaultStyle);
+          } catch {
+            // Write failed — DB still empty, backend falls back to "alert"
+            persistedStyle = "alert";
+          }
+        }
+
         // Seed lastPersisted with DB values so rollback has correct targets
-        markPersisted("notification_style", style);
+        markPersisted("notification_style", persistedStyle);
         markPersisted("terminal_theme", themeId);
         markPersisted("terminal_glass_mode", glassMode);
         markPersisted("terminal_opacity", opacityStr);
@@ -172,6 +195,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
           terminalFontSize: parsedFontSize,
           copyOnSelect: copyOnSelectStr === "true",
           agentCommands,
+          alerterInstalled: detectedAlerter,
           isLoading: false,
         });
       } catch (e) {
