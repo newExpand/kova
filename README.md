@@ -13,6 +13,8 @@ Stable terminal + visual tmux & git worktree + AI agent monitoring — in one na
 
 ![Kova Screenshot](docs/assets/screenshots/screenshot-welcome.png)
 
+<video src="https://github.com/newExpand/kova/releases/download/v0.1.0/kova-demo.mp4" width="100%" controls></video>
+
 </div>
 
 ---
