@@ -128,15 +128,15 @@ describe("ProjectStore", () => {
         new Error("Duplicate path"),
       );
 
-      await expect(
-        act(async () => {
-          await useProjectStore.getState().createProject({
-            name: "Test",
-            path: "/dup",
-          });
-        }),
-      ).rejects.toThrow("Duplicate path");
+      let result: unknown;
+      await act(async () => {
+        result = await useProjectStore.getState().createProject({
+          name: "Test",
+          path: "/dup",
+        });
+      });
 
+      expect(result).toBeNull();
       expect(useProjectStore.getState().error).toBe("Duplicate path");
     });
 
