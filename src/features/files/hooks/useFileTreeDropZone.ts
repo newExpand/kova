@@ -82,12 +82,11 @@ export function useFileTreeDropZone(
           const container = containerRef.current;
           if (!container) return;
 
-          // Tauri drag-drop events report positions in physical pixels;
-          // convert to logical (CSS) pixels for getBoundingClientRect/elementsFromPoint.
-          const scaleFactor = window.devicePixelRatio;
+          // On macOS WKWebView, Tauri's PhysicalPosition already reports
+          // logical (point) coordinates — no devicePixelRatio conversion needed.
           const toLogical = (pos: { x: number; y: number }) => ({
-            x: pos.x / scaleFactor,
-            y: pos.y / scaleFactor,
+            x: pos.x,
+            y: pos.y,
           });
 
           if (event.payload.type === "enter") {

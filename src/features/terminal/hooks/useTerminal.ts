@@ -1353,13 +1353,34 @@ export function useTerminal(options?: UseTerminalOptions): UseTerminalResult {
 
             const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
               if (!isActiveRef.current) return;
+
+              // Check if cursor is within the terminal container bounds.
+              // Tauri's onDragDropEvent is window-level so all listeners fire;
+              // without this, dragging over the file panel also triggers the terminal overlay.
+              // NOTE: On macOS WKWebView, PhysicalPosition already reports logical
+              // (point) coordinates, so no devicePixelRatio conversion is needed.
+              const isInTerminal = (pos: { x: number; y: number }): boolean => {
+                const el = containerRef.current;
+                if (!el) return true;
+                const r = el.getBoundingClientRect();
+                return pos.x >= r.left && pos.x <= r.right && pos.y >= r.top && pos.y <= r.bottom;
+              };
+
               if (event.payload.type === "enter") {
-                onDragStateRef.current?.(true);
+                if (isInTerminal(event.payload.position)) {
+                  onDragStateRef.current?.(true);
+                }
+              } else if (event.payload.type === "over") {
+                onDragStateRef.current?.(isInTerminal(event.payload.position));
               } else if (event.payload.type === "leave") {
                 onDragStateRef.current?.(false);
               } else if (event.payload.type === "drop") {
                 onDragStateRef.current?.(false);
-                if (aliveRef.current && ptyRef.current) {
+                if (
+                  aliveRef.current &&
+                  ptyRef.current &&
+                  isInTerminal(event.payload.position)
+                ) {
                   const paths = event.payload.paths;
                   if (paths.length > 0) {
                     const escaped = paths.map((p) => escapeShellPath(p)).join(" ");
