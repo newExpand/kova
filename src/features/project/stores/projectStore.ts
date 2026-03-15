@@ -48,7 +48,7 @@ interface ProjectActions {
 
   // Data fetching
   fetchProjects: () => Promise<void>;
-  createProject: (input: CreateProjectInput) => Promise<Project>;
+  createProject: (input: CreateProjectInput) => Promise<Project | null>;
   updateProject: (id: string, input: UpdateProjectInput) => Promise<void>;
 
   // Reorder
@@ -146,7 +146,7 @@ export const useProjectStore = create<ProjectStore>()(
             undefined,
             "createProject/error",
           );
-          throw err;
+          return null;
         }
       },
 

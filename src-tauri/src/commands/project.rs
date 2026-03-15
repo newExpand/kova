@@ -24,14 +24,16 @@ pub fn create_project(
     // Claude per-project hooks for the new project (best-effort).
     // Gemini/Codex global hooks are already injected at boot time and
     // don't need per-project injection.
-    match super::hooks::read_event_server_port() {
-        Ok(port) => {
-            if let Err(e) = hooks::inject_hooks(std::path::Path::new(&project.path), port) {
-                warn!("Claude hook injection failed for {}: {}", project.path, e);
+    if agent == AgentType::ClaudeCode {
+        match super::hooks::read_event_server_port() {
+            Ok(port) => {
+                if let Err(e) = hooks::inject_hooks(std::path::Path::new(&project.path), port) {
+                    warn!("Claude hook injection failed for {}: {}", project.path, e);
+                }
             }
-        }
-        Err(e) => {
-            warn!("Cannot inject hooks (event server port unavailable): {}", e);
+            Err(e) => {
+                warn!("Cannot inject hooks (event server port unavailable): {}", e);
+            }
         }
     }
 

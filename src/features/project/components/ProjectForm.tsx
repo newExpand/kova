@@ -7,7 +7,7 @@ import type { CreateProjectInput, AgentType } from "../types";
 import { AGENT_TYPES, DEFAULT_AGENT_TYPE } from "../../../lib/tauri/commands";
 
 interface ProjectFormProps {
-  onSubmit: (input: CreateProjectInput) => void;
+  onSubmit: (input: CreateProjectInput) => void | Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
 }
@@ -28,10 +28,10 @@ function ProjectForm({ onSubmit, onCancel, isSubmitting }: ProjectFormProps) {
     }
   }, [name]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !path.trim()) return;
-    onSubmit({ name: name.trim(), path: path.trim(), agentType });
+    await onSubmit({ name: name.trim(), path: path.trim(), agentType });
   };
 
   return (

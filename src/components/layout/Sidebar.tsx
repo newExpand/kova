@@ -882,8 +882,8 @@ function Sidebar() {
           </DialogHeader>
           <ProjectForm
             onSubmit={async (input) => {
-              await createProject(input);
-              setIsAddOpen(false);
+              const project = await createProject(input);
+              if (project) setIsAddOpen(false);
             }}
             onCancel={() => setIsAddOpen(false)}
             isSubmitting={isCreating}

@@ -184,7 +184,7 @@ pub fn run() {
                     tracing::warn!("Codex notify injection failed: {}", e);
                 }
 
-                // Claude per-project hooks for each registered project
+                // Claude per-project hooks for Claude projects only
                 {
                     let db_state = app.state::<Mutex<DbConnection>>();
                     if let Ok(db) = db_state.lock() {
@@ -192,6 +192,9 @@ pub fn run() {
                             Ok(projects) => {
                                 let mut count = 0u32;
                                 for project in &projects {
+                                    if project.agent_type != models::agent_type::AgentType::ClaudeCode {
+                                        continue;
+                                    }
                                     if let Err(e) = services::hooks::inject_hooks(
                                         std::path::Path::new(&project.path),
                                         port,
