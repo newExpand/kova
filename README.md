@@ -89,7 +89,7 @@ Connect to remote machines over SSH. Full terminal + git graph support on remote
 
 ### Prerequisites
 
-- macOS 13+ Ventura (Apple Silicon recommended; Intel builds from source)
+- macOS 13+ Ventura (Apple Silicon or Intel)
 - [tmux](https://github.com/tmux/tmux) installed (`brew install tmux`)
 - [Git](https://git-scm.com/) installed
 - At least one AI coding agent: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
@@ -104,7 +104,9 @@ xattr -d com.apple.quarantine /Applications/Kova.app
 
 ### Download DMG
 
-1. Download [Kova_0.1.0_aarch64.dmg](https://github.com/newExpand/kova/releases/latest/download/Kova_0.1.0_aarch64.dmg) from the latest release (Apple Silicon).
+1. Download from the [latest release](https://github.com/newExpand/kova/releases/latest):
+   - Apple Silicon: [Kova_0.1.0_aarch64.dmg](https://github.com/newExpand/kova/releases/latest/download/Kova_0.1.0_aarch64.dmg)
+   - Intel: [Kova_0.1.0_x64.dmg](https://github.com/newExpand/kova/releases/latest/download/Kova_0.1.0_x64.dmg)
 2. Open the DMG, drag **Kova** to Applications.
 3. On first launch, macOS will block the app because it is not notarized. Remove the quarantine flag:
    ```bash
@@ -121,7 +123,9 @@ bun install
 bun tauri build
 ```
 
-The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`. This is the only option for Intel Macs.
+The `.dmg` will be in `src-tauri/target/release/bundle/dmg/`.
+
+> **Note**: Kova is macOS-only. Windows and Linux are not currently supported. See [Roadmap](#roadmap) for Linux plans.
 
 ## Tech Stack
 
